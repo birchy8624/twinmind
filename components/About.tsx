@@ -77,12 +77,12 @@ export default function About(){
         {pillars.map((item) => (
           <div
             key={item.title}
-            className="card relative flex flex-col gap-5 overflow-hidden p-8 hover:-translate-y-1 hover:ring-limeglow-500/40 hover:shadow-glow"
+            className="card relative flex flex-col items-start gap-5 overflow-hidden p-8 text-left hover:-translate-y-1 hover:ring-limeglow-500/40 hover:shadow-glow"
           >
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-base-900/85 text-limeglow-500 shadow-[0_0_45px_-20px_rgba(163,255,18,0.9)]">
               {item.icon}
             </div>
-            <div className="flex flex-col gap-3 text-center lg:text-left">
+            <div className="flex flex-col gap-3">
               <h3 className="text-lg font-semibold text-white">{item.title}</h3>
               <p className="text-white/75 leading-relaxed">{item.desc}</p>
             </div>
