@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+html, body {
+  @apply bg-base-900 text-white scroll-smooth;
+  font-feature-settings: 'ss01' on, 'liga' on;
+}
+
+.container { @apply mx-auto px-4 sm:px-6 lg:px-8; }
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-2xl px-5 py-3 font-medium transition-transform duration-200;
+}
+
+.btn-primary {
+  @apply bg-gradient-to-br from-limeglow-500 to-limeglow-700 text-black shadow-glow hover:scale-[1.02] active:scale-95;
+}
+
+.card {
+  @apply rounded-3xl bg-base-800/35 backdrop-blur-sm ring-1 ring-white/10 p-6 shadow-[0_24px_60px_-40px_rgba(0,0,0,0.8)] transition-all duration-300;
+}
+
+.section {
+  @apply py-20;
+}
