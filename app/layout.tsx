@@ -2,10 +2,31 @@ import './globals.css'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'TwinMinds Studio. AI + Human Craft for Beautiful, Fast Web Apps',
+  metadataBase: new URL('https://twinminds.studio'),
+  title: 'TwinMinds Studio — AI + Human Craft for Beautiful, Fast Web Apps',
   description: 'Where AI speed meets human creativity. Build smarter and ship faster with TwinMinds Studio. MVPs, web apps, internal tools, and AI integrations.',
   icons: { icon: '/favicon.svg' },
-  keywords: ['AI web app development','AI-powered MVP builder','SaaS product studio','startup MVP development','rapid prototyping agency','Next.js development studio','Tailwind CSS experts','AI app design and development','AI-driven product design','human + AI collaboration','software prototyping','custom web applications','UX and UI design studio','fast MVP launch partner','product design and build agency','TwinMind Studio','TwinMind web apps','AI software development studio']
+  keywords: ['AI web app development','AI-powered MVP builder','SaaS product studio','startup MVP development','rapid prototyping agency','Next.js development studio','Tailwind CSS experts','AI app design and development','AI-driven product design','human + AI collaboration','software prototyping','custom web applications','UX and UI design studio','fast MVP launch partner','product design and build agency','TwinMinds Studio','TwinMind web apps','AI software development studio'],
+  openGraph: {
+    title: 'TwinMinds Studio — AI + Human Craft for Beautiful, Fast Web Apps',
+    description: 'Where AI speed meets human creativity. Build smarter and ship faster with TwinMinds Studio. MVPs, web apps, internal tools, and AI integrations.',
+    url: 'https://twinminds.studio/',
+    type: 'website',
+    images: [
+      {
+        url: '/twinminds-preview.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'TwinMinds Studio marketing preview'
+      }
+    ]
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'TwinMinds Studio — AI + Human Craft for Beautiful, Fast Web Apps',
+    description: 'Where AI speed meets human creativity. Build smarter and ship faster with TwinMinds Studio. MVPs, web apps, internal tools, and AI integrations.',
+    images: ['/twinminds-preview.jpg']
+  }
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
