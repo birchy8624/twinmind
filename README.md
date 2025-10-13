@@ -19,3 +19,8 @@ Open http://localhost:3000
 - Edit copy in components
 - Update project links in `lib/projects.ts`
 - Replace email in `components/Contact.tsx`
+- Copy `.env.example` to `.env` and fill in:
+  - `NEXT_PUBLIC_SITE_URL` – production URL (e.g. `https://www.twinminds.studio/`)
+  - `RESEND_API_KEY` – API key from [Resend](https://resend.com)
+  - `RESEND_FROM_EMAIL` – verified sender (e.g. `"TwinMinds Studio <hello@twinminds.studio>"`)
+  - `CONTACT_TO_EMAIL` – inbox that should receive enquiries

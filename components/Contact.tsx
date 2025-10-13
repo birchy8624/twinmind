@@ -1,6 +1,6 @@
 'use client'
-import Section from './Section'
 import { useState } from 'react'
+import Section from './Section'
 
 const highlights = [
   { label: 'Avg. kickoff', value: '48h' },
@@ -10,21 +10,49 @@ const highlights = [
 
 export default function Contact(){
   const [status, setStatus] = useState<'idle'|'sending'|'sent'|'error'>('idle')
+  const accessKey = '2430f7c4-bacc-423c-aad1-8a976b352b37'
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>){
     e.preventDefault()
+    const formElement = e.currentTarget
+    if (!accessKey) {
+      setStatus('error')
+      console.error('Missing Web3Forms access key.')
+      return
+    }
+
     setStatus('sending')
-    const form = new FormData(e.currentTarget)
+    const form = new FormData(formElement)
+    form.append('access_key', accessKey)
+    form.append('subject', 'TwinMinds Studio – Website enquiry')
+    form.append('from_name', form.get('name')?.toString() ?? '')
+
+    const email = form.get('email')?.toString() ?? ''
+    form.append('replyto', email)
+
     try {
-      // Example POST to API route (stubbed). Replace with your email/Supabase logic.
-      await fetch('/api/contact', {
+      const response = await fetch('https://api.web3forms.com/submit', {
         method: 'POST',
-        body: JSON.stringify(Object.fromEntries(form.entries())),
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Accept': 'application/json' },
+        body: form
       })
+
+      if (!response.ok) {
+        const error = await response.json().catch(()=>({ message: 'Unknown error' }))
+        console.error('Web3Forms error:', error)
+        throw new Error(error.message ?? 'Failed to submit form.')
+      }
+
+      const result = await response.json()
+      if (!result.success) {
+        console.error('Web3Forms failure:', result)
+        throw new Error(result.message ?? 'Submission failed.')
+      }
+
       setStatus('sent')
-      e.currentTarget.reset()
-    } catch {
+      formElement.reset()
+    } catch (err) {
+      console.error(err)
       setStatus('error')
     }
   }
@@ -61,6 +89,7 @@ export default function Contact(){
         </div>
 
         <form onSubmit={onSubmit} className="card space-y-4 p-8">
+          <input type="checkbox" name="botcheck" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
           <div>
             <label className="block text-sm text-white/80">Name</label>
             <input name="name" required className="mt-1 w-full bg-base-700/60 rounded-xl px-4 py-3 ring-1 ring-white/10 focus:ring-limeglow-500/40 outline-none" />

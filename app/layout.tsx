@@ -1,7 +1,7 @@
 import './globals.css'
 import type { Metadata } from 'next'
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://twinminds.studio'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.twinminds.studio/'
 const previewImage = `${siteUrl.replace(/\/$/, '')}/twinminds-preview.jpg`
 
 export const metadata: Metadata = {

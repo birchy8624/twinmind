@@ -14,7 +14,7 @@ export default function Hero(){
           transition={{ duration: 0.8 }}
           className="text-4xl sm:text-6xl font-semibold tracking-tight text-balance"
         >
-          Two minds. <span className="bg-gradient-to-r from-limeglow-500 to-limeglow-700 bg-clip-text text-transparent">One vision.</span>
+          From Concept <span className="bg-gradient-to-r from-limeglow-500 to-limeglow-700 bg-clip-text text-transparent">to App.</span>
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 20 }}
