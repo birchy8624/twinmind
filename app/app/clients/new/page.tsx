@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import {
   Controller,
   FormProvider,
@@ -285,6 +285,24 @@ export default function NewClientPage() {
     }
   })
 
+  const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    const nativeEvent = event.nativeEvent
+
+    if (!(nativeEvent instanceof SubmitEvent)) {
+      event.preventDefault()
+      return
+    }
+
+    const submitter = nativeEvent.submitter
+
+    if (!(submitter instanceof HTMLButtonElement) || submitter.name !== 'create-client') {
+      event.preventDefault()
+      return
+    }
+
+    return handleSubmit(event)
+  }
+
   return (
     <FormProvider {...methods}>
       <div className="space-y-6">
@@ -298,7 +316,7 @@ export default function NewClientPage() {
         </header>
 
         <form
-          onSubmit={handleSubmit}
+          onSubmit={handleFormSubmit}
           className="flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-base-900/50 shadow-lg shadow-base-900/40 backdrop-blur"
         >
           <div className="border-b border-white/10 bg-base-900/60 px-6 py-5">
@@ -369,6 +387,7 @@ export default function NewClientPage() {
               {activeStep === steps.length - 1 ? (
                 <button
                   type="submit"
+                  name="create-client"
                   disabled={isSubmitting}
                   className="rounded-md px-4 py-2 text-sm font-semibold transition btn-gradient disabled:cursor-not-allowed disabled:opacity-60"
                 >
