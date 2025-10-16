@@ -201,5 +201,9 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     }
   }
 
+  if (!projectId) {
+    return fail('Failed to create project.')
+  }
+
   return { ok: true, projectId }
 }
