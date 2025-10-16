@@ -91,9 +91,23 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     }
   }
 
-  const fail = async (message: string): Promise<ActionResult> => {
+  type SupabaseActionError = { message?: string } | null
+
+  const fail = async (
+    context: string,
+    error: SupabaseActionError = null
+  ): Promise<ActionResult> => {
+    if (error) {
+      console.error(`${context} error:`, error)
+    }
+
     await cleanup()
-    return { ok: false, message }
+
+    if (error?.message) {
+      return { ok: false, message: `${context}: ${error.message}` }
+    }
+
+    return { ok: false, message: context }
   }
 
   const { data: clientRow, error: clientError } = await admin
@@ -107,8 +121,13 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     .select('id')
     .single()
 
-  if (clientError || !clientRow) {
-    return { ok: false, message: 'Failed to create client.' }
+  if (clientError) {
+    console.error('Create client error:', clientError)
+    return { ok: false, message: `Create client: ${clientError.message}` }
+  }
+
+  if (!clientRow) {
+    return { ok: false, message: 'Create client: Missing client row.' }
   }
 
   clientId = clientRow.id
@@ -123,8 +142,12 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
       }
     })
 
-    if (authError || !authResponse?.user) {
-      return fail('Failed to invite client user.')
+    if (authError) {
+      return fail('Invite client user', authError)
+    }
+
+    if (!authResponse?.user) {
+      return fail('Invite client user', { message: 'Missing created user.' })
     }
 
     invitedProfileId = authResponse.user.id
@@ -147,7 +170,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
       )
 
     if (profileError) {
-      return fail('Failed to create client profile.')
+      return fail('Create client profile', profileError)
     }
 
     const { error: memberError } = await admin.from('client_members').upsert({
@@ -156,7 +179,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     })
 
     if (memberError) {
-      return fail('Failed to link client membership.')
+      return fail('Link client membership', memberError)
     }
 
     // TODO: Trigger email invite for the client portal user.
@@ -175,8 +198,12 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     .select('id')
     .single()
 
-  if (projectError || !projectRow) {
-    return fail('Failed to create project.')
+  if (projectError) {
+    return fail('Create project', projectError)
+  }
+
+  if (!projectRow) {
+    return fail('Create project', { message: 'Missing project row.' })
   }
 
   projectId = projectRow.id
@@ -188,7 +215,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
   })
 
   if (briefError) {
-    return fail('Failed to save brief.')
+    return fail('Save brief', briefError)
   }
 
   if (project.invoice_amount && project.invoice_amount > 0) {
@@ -201,12 +228,12 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     })
 
     if (invoiceError) {
-      return fail('Failed to create quote.')
+      return fail('Create quote', invoiceError)
     }
   }
 
   if (!projectId) {
-    return fail('Failed to create project.')
+    return fail('Create project', { message: 'Missing project id.' })
   }
 
   return { ok: true, projectId }
