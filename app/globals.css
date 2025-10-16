@@ -19,6 +19,10 @@ html, body {
   @apply bg-gradient-to-br from-limeglow-500 to-limeglow-700 text-black shadow-glow hover:scale-[1.02] active:scale-95;
 }
 
+.btn-gradient {
+  @apply bg-gradient-to-br from-limeglow-500 via-limeglow-600 to-limeglow-700 text-base-900 shadow-glow hover:scale-[1.02] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-limeglow-500;
+}
+
 .card {
   @apply rounded-3xl bg-base-800/35 backdrop-blur-sm ring-1 ring-white/10 p-6 shadow-[0_24px_60px_-40px_rgba(0,0,0,0.8)] transition-all duration-300;
 }
