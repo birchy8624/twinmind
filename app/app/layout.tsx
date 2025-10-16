@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import type { Route } from 'next'
-import { usePathname } from 'next/navigation'
-import { useMemo, useState, type ReactNode } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { ToastProvider } from './_components/toast-context'
+import { ToastProvider, useToast } from './_components/toast-context'
+import { createClient } from '@/utils/supabaseBrowser'
 
 const navigation = [
   { href: '/app/dashboard', label: 'Dashboard', hint: 'Studio overview' },
@@ -24,7 +25,43 @@ type AppShellLayoutProps = {
 
 export default function AppShellLayout({ children }: AppShellLayoutProps) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { pushToast } = useToast()
+  const supabase = useMemo(() => createClient(), [])
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+
+  const handleSignOut = useCallback(async () => {
+    if (signingOut) {
+      return
+    }
+
+    setSigningOut(true)
+
+    try {
+      const { error } = await supabase.auth.signOut()
+
+      if (error) {
+        pushToast({
+          title: 'Unable to sign out',
+          description: error.message,
+          variant: 'error'
+        })
+        return
+      }
+
+      router.replace('/?signed_out=1')
+    } catch (error) {
+      console.error('Failed to sign out', error)
+      pushToast({
+        title: 'Unable to sign out',
+        description: 'Something went wrong. Please try again.',
+        variant: 'error'
+      })
+    } finally {
+      setSigningOut(false)
+    }
+  }, [signingOut, supabase, pushToast, router])
 
   const activeLabel = useMemo(() => {
     const match = navigation.find((item) => pathname?.startsWith(item.href))
@@ -181,7 +218,9 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
                     </Link>
                     <button
                       type="button"
-                      className="block w-full rounded-lg px-3 py-2 text-left text-sm text-rose-300 transition hover:bg-white/10 hover:text-rose-200"
+                      onClick={handleSignOut}
+                      disabled={signingOut}
+                      className="block w-full rounded-lg px-3 py-2 text-left text-sm text-rose-300 transition hover:bg-white/10 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Sign out
                     </button>
