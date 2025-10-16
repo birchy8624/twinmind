@@ -87,7 +87,7 @@ export function FileUploader({ onUploadComplete }: FileUploaderProps) {
     () =>
       `relative flex h-40 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 text-center transition-all ${
         isDragging
-          ? 'border-emerald-400/80 bg-emerald-500/10 text-emerald-100 shadow-[0_0_25px_rgba(16,185,129,0.35)]'
+          ? 'border-limeglow-500/80 bg-limeglow-500/10 text-limeglow-100 shadow-[0_0_25px_rgba(163,255,18,0.35)]'
           : 'border-white/10 bg-base-900/60 text-white/70 hover:border-white/20 hover:bg-base-900/70'
       }`,
     [isDragging]
@@ -142,7 +142,7 @@ export function FileUploader({ onUploadComplete }: FileUploaderProps) {
             </div>
             <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
               <motion.div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-indigo-400"
+                className="h-full rounded-full bg-gradient-to-r from-limeglow-500 via-limeglow-600 to-limeglow-700"
                 animate={{ width: `${progress}%` }}
                 transition={{ duration: 0.18, ease: 'easeOut' }}
               />

@@ -120,7 +120,7 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
                 </p>
                 <Link
                   href="/portal"
-                  className="mt-3 inline-flex text-[11px] font-semibold uppercase tracking-wide text-emerald-300 underline-offset-4 hover:text-emerald-200 hover:underline"
+                  className="mt-3 inline-flex text-[11px] font-semibold uppercase tracking-wide text-limeglow-300 underline-offset-4 hover:text-limeglow-100 hover:underline"
                 >
                   Open knowledge base →
                 </Link>
@@ -167,7 +167,7 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
                 </button>
                 <details className="relative ml-2 hidden md:block">
                   <summary className="flex cursor-pointer list-none items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-3 py-1.5 text-left text-sm text-white/80 transition hover:border-white/20 hover:text-white">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 text-sm font-semibold text-base-950">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-limeglow-500 via-limeglow-600 to-limeglow-700 text-sm font-semibold text-base-900">
                       EL
                     </span>
                     <span className="hidden text-xs uppercase tracking-wide text-white/60 lg:block">Evelyn Lopez</span>
