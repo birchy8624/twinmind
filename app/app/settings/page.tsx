@@ -176,7 +176,7 @@ export default function SettingsPage() {
                 <input
                   type="checkbox"
                   {...notificationForm.register(option.id as keyof NotificationFormValues)}
-                  className="mt-1 h-4 w-4 rounded border border-white/20 bg-base-950 text-emerald-400 focus:ring-emerald-400"
+                  className="mt-1 h-4 w-4 rounded border border-white/20 bg-base-950 text-limeglow-500 focus:ring-limeglow-500"
                 />
                 <span>
                   <span className="font-semibold text-white">{option.label}</span>

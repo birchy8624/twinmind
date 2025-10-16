@@ -75,7 +75,7 @@ export default function DashboardPage() {
               <h2 className="text-lg font-semibold text-white">Pipeline overview</h2>
               <p className="text-xs text-white/60">Active work by delivery stage</p>
             </div>
-            <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
+            <span className="rounded-full bg-limeglow-500/10 px-3 py-1 text-xs font-medium text-limeglow-300">
               {pipelineOverview.reduce((total, item) => total + item.count, 0)} open
             </span>
           </header>
@@ -84,8 +84,8 @@ export default function DashboardPage() {
               <BarChart data={pipelineOverview} barSize={24}>
                 <defs>
                   <linearGradient id="pipelineGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#34d399" stopOpacity={0.9} />
-                    <stop offset="95%" stopColor="#34d399" stopOpacity={0.2} />
+                    <stop offset="5%" stopColor="#a3ff12" stopOpacity={0.9} />
+                    <stop offset="95%" stopColor="#00ffa3" stopOpacity={0.25} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
@@ -122,8 +122,8 @@ export default function DashboardPage() {
                     <stop offset="100%" stopColor="#fbbf24" stopOpacity={0.2} />
                   </linearGradient>
                   <linearGradient id="paidGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="#34d399" stopOpacity={0.9} />
-                    <stop offset="100%" stopColor="#34d399" stopOpacity={0.2} />
+                    <stop offset="0%" stopColor="#a3ff12" stopOpacity={0.9} />
+                    <stop offset="100%" stopColor="#00ffa3" stopOpacity={0.25} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
@@ -242,7 +242,7 @@ export default function DashboardPage() {
           <ul className="mt-6 space-y-4">
             {activityFeed.map((activity) => (
               <li key={activity.id} className="flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4">
-                <div className="mt-1 h-2 w-2 rounded-full bg-emerald-300" />
+                <div className="mt-1 h-2 w-2 rounded-full bg-limeglow-500" />
                 <div>
                   <p className="text-sm text-white">
                     <span className="font-medium text-white">{activity.author}</span>{' '}

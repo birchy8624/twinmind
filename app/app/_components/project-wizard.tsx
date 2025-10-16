@@ -124,7 +124,7 @@ export function ProjectWizard() {
                     <div
                       className={`h-full transition-all ${
                         isCompleted
-                          ? 'w-full bg-emerald-400'
+                          ? 'w-full bg-limeglow-500'
                           : isActive
                             ? 'bg-white/70'
                             : 'w-0 bg-transparent'
