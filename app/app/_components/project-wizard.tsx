@@ -8,23 +8,15 @@ import { z } from 'zod'
 
 import { useToast } from './toast-context'
 
-const stepSchemas = [
-  z.object({
-    name: z.string().min(2, 'Project name is required'),
-    client: z.string().min(2, 'Client is required')
-  }),
-  z.object({
-    summary: z.string().min(12, 'Add a short summary (12+ characters)'),
-    services: z.string().min(3, 'List at least one service focus')
-  }),
-  z.object({
-    kickoffDate: z.string().min(1, 'Kickoff date is required'),
-    launchDate: z.string().min(1, 'Target launch is required'),
-    budget: z.string().min(1, 'Budget estimate is required')
-  })
-] as const
-
-const formSchema = stepSchemas.reduce((acc, schema) => acc.merge(schema), z.object({}))
+const formSchema = z.object({
+  name: z.string().min(2, 'Project name is required'),
+  client: z.string().min(2, 'Client is required'),
+  summary: z.string().min(12, 'Add a short summary (12+ characters)'),
+  services: z.string().min(3, 'List at least one service focus'),
+  kickoffDate: z.string().min(1, 'Kickoff date is required'),
+  launchDate: z.string().min(1, 'Target launch is required'),
+  budget: z.string().min(1, 'Budget estimate is required')
+})
 
 type ProjectWizardForm = z.infer<typeof formSchema>
 
