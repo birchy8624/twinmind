@@ -1,7 +1,16 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 
 type ToastVariant = 'success' | 'error' | 'info'
 
@@ -19,18 +28,40 @@ type ToastContextValue = {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
+const AUTO_DISMISS_DELAY = 3000
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
-
-  const pushToast = useCallback((toast: Omit<Toast, 'id'>) => {
-    setToasts((current) => {
-      const nextId = Date.now() + Math.random()
-      return [...current, { ...toast, id: nextId }]
-    })
-  }, [])
+  const timeoutsRef = useRef<Map<number, number>>(new Map())
 
   const removeToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id))
+
+    const timeoutId = timeoutsRef.current.get(id)
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId)
+      timeoutsRef.current.delete(id)
+    }
+  }, [])
+
+  const pushToast = useCallback(
+    (toast: Omit<Toast, 'id'>) => {
+      const nextId = Date.now() + Math.random()
+      setToasts((current) => [...current, { ...toast, id: nextId }])
+
+      const timeoutId = window.setTimeout(() => {
+        removeToast(nextId)
+      }, AUTO_DISMISS_DELAY)
+      timeoutsRef.current.set(nextId, timeoutId)
+    },
+    [removeToast]
+  )
+
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId))
+      timeoutsRef.current.clear()
+    }
   }, [])
 
   const value = useMemo(() => ({ pushToast, removeToast }), [pushToast, removeToast])
