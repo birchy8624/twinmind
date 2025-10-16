@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:link": "if [ -n \"$SUPABASE_PROJECT_ID\" ] && [ -n \"$SUPABASE_DB_PASSWORD\" ]; then npx supabase link --project-ref $SUPABASE_PROJECT_ID --password $SUPABASE_DB_PASSWORD --yes; fi",
+    "db:types": "npm run db:link && npx supabase gen types typescript --linked --schema public > src/types/supabase.ts",
+    "ci:check-types": "npm run db:types && git diff --exit-code src/types/supabase.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
