@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 
+import SignInForm from './SignInForm'
+
 import Footer from '@/components/Footer'
 import Navbar from '@/components/Navbar'
 
@@ -41,59 +43,7 @@ export default function SignInPage() {
           </div>
 
           <div className="card mx-auto w-full max-w-md p-8">
-            <form className="space-y-5">
-              <div>
-                <label htmlFor="email" className="block text-sm text-white/80">
-                  Email address
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  className="mt-2 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base text-white ring-1 ring-white/10 outline-none transition focus:ring-2 focus:ring-limeglow-500/40"
-                  placeholder="you@company.com"
-                />
-              </div>
-              <div>
-                <div className="flex items-center justify-between">
-                  <label htmlFor="password" className="block text-sm text-white/80">
-                    Password
-                  </label>
-                  <Link href="#" className="text-xs font-medium text-limeglow-400 hover:text-limeglow-300">
-                    Forgot password?
-                  </Link>
-                </div>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  className="mt-2 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base text-white ring-1 ring-white/10 outline-none transition focus:ring-2 focus:ring-limeglow-500/40"
-                  placeholder="Enter your password"
-                />
-              </div>
-              <div className="flex items-center justify-between text-sm text-white/70">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    name="remember"
-                    className="h-4 w-4 rounded border border-limeglow-500/40 bg-base-900/80 accent-limeglow-500 focus:ring-limeglow-500/40"
-                  />
-                  Remember me
-                </label>
-                <span className="text-xs text-white/50">Secure workspace access</span>
-              </div>
-              <button type="submit" className="btn btn-primary w-full">
-                Sign in
-              </button>
-              <p className="text-center text-sm text-white/60">
-                Don’t have an account yet?{' '}
-                <Link href="#contact" className="text-limeglow-400 hover:text-limeglow-300">
-                  Talk to our team
-                </Link>
-              </p>
-            </form>
+            <SignInForm />
           </div>
         </div>
       </section>
