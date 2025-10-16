@@ -34,7 +34,7 @@ const urlValidator = z
   .string()
   .trim()
   .refine((value) => value.length === 0 || isValidUrl(value), {
-    message: 'Enter a valid URL (https://...)'
+    message: 'Enter a valid URL'
   })
 
 const onboardingSchema = z.object({
@@ -90,7 +90,7 @@ const onboardingSchema = z.object({
           .string()
           .trim()
           .refine((value) => value.length === 0 || isValidUrl(value), {
-            message: 'Enter a valid URL (https://...)'
+            message: 'Enter a valid URL'
           })
       })
     )
@@ -775,6 +775,11 @@ function isValidUrl(value: string) {
     const url = new URL(value)
     return Boolean(url.protocol && url.host)
   } catch (error) {
-    return false
+    try {
+      const url = new URL(`https://${value}`)
+      return Boolean(url.host)
+    } catch (nestedError) {
+      return false
+    }
   }
 }
