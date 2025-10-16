@@ -2,12 +2,12 @@
 
 import Link from 'next/link'
 import type { Route } from 'next'
-import { usePathname, useRouter } from 'next/navigation'
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
+import { useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { ToastProvider, useToast } from './_components/toast-context'
-import { createClient } from '@/utils/supabaseBrowser'
+import { ToastProvider } from './_components/toast-context'
+import { WorkspaceAccountMenu } from './_components/workspace-account-menu'
 
 const navigation = [
   { href: '/app/dashboard', label: 'Dashboard', hint: 'Studio overview' },
@@ -24,52 +24,8 @@ type AppShellLayoutProps = {
 }
 
 export default function AppShellLayout({ children }: AppShellLayoutProps) {
-  return (
-    <ToastProvider>
-      <AppShellLayoutContent>{children}</AppShellLayoutContent>
-    </ToastProvider>
-  )
-}
-
-function AppShellLayoutContent({ children }: AppShellLayoutProps) {
   const pathname = usePathname()
-  const router = useRouter()
-  const { pushToast } = useToast()
-  const supabase = useMemo(() => createClient(), [])
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [signingOut, setSigningOut] = useState(false)
-
-  const handleSignOut = useCallback(async () => {
-    if (signingOut) {
-      return
-    }
-
-    setSigningOut(true)
-
-    try {
-      const { error } = await supabase.auth.signOut()
-
-      if (error) {
-        pushToast({
-          title: 'Unable to sign out',
-          description: error.message,
-          variant: 'error'
-        })
-        return
-      }
-
-      router.replace('/?signed_out=1')
-    } catch (error) {
-      console.error('Failed to sign out', error)
-      pushToast({
-        title: 'Unable to sign out',
-        description: 'Something went wrong. Please try again.',
-        variant: 'error'
-      })
-    } finally {
-      setSigningOut(false)
-    }
-  }, [signingOut, supabase, pushToast, router])
 
   const activeLabel = useMemo(() => {
     const match = navigation.find((item) => pathname?.startsWith(item.href))
@@ -100,7 +56,8 @@ function AppShellLayoutContent({ children }: AppShellLayoutProps) {
   )
 
   return (
-    <div className="min-h-screen bg-base-950 text-white">
+    <ToastProvider>
+      <div className="min-h-screen bg-base-950 text-white">
         <div className="flex min-h-screen">
           <aside className="hidden w-72 flex-col border-r border-white/10 bg-base-900/70 p-6 backdrop-blur lg:flex">
             <div className="mb-8">
@@ -209,30 +166,7 @@ function AppShellLayoutContent({ children }: AppShellLayoutProps) {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 18.5a3 3 0 0 1-6 0M5 9a7 7 0 1 1 14 0c0 5 1 6 1 6H4s1-1 1-6Z" />
                   </svg>
                 </button>
-                <details className="relative ml-2 hidden md:block">
-                  <summary className="flex cursor-pointer list-none items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-3 py-1.5 text-left text-sm text-white/80 transition hover:border-white/20 hover:text-white">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-limeglow-500 via-limeglow-600 to-limeglow-700 text-sm font-semibold text-base-900">
-                      EL
-                    </span>
-                    <span className="hidden text-xs uppercase tracking-wide text-white/60 lg:block">Evelyn Lopez</span>
-                  </summary>
-                  <div className="absolute right-0 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-base-900/80 p-2 shadow-lg">
-                    <Link
-                      href="/app/settings"
-                      className="block rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
-                    >
-                      View profile
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={handleSignOut}
-                      disabled={signingOut}
-                      className="block w-full rounded-lg px-3 py-2 text-left text-sm text-rose-300 transition hover:bg-white/10 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Sign out
-                    </button>
-                  </div>
-                </details>
+                <WorkspaceAccountMenu />
               </div>
               <div className="mt-4 flex flex-col gap-3 md:hidden">
                 <div className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 text-sm text-white/60 shadow-sm focus-within:border-white/30 focus-within:text-white/80">
@@ -297,6 +231,6 @@ function AppShellLayoutContent({ children }: AppShellLayoutProps) {
           ) : null}
         </AnimatePresence>
       </div>
-    </div>
+    </ToastProvider>
   )
 }
