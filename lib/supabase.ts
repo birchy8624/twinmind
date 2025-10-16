@@ -1,30 +1,17 @@
-export type ClientOnboardingSubmission = {
-  client_name: string
-  client_email: string
-  company: string
-  website: string | null
-  phone: string | null
-  timezone: string
-  budget: string | null
-  gdpr_consent: boolean
-  project_name: string
-  project_description: string
-  project_due_date: string | null
-  goals: string
-  target_users: string
-  core_features: string
-  integrations: string
-  timeline: string
-  success_metrics: string
-  competitors: string[]
-  risks: string
-  invite_client: boolean
-}
+import type { Database, Json } from '@/types/supabase'
 
-export type ClientOnboardingResponse = ClientOnboardingSubmission & {
-  id: string
-  created_at: string
-}
+type ClientOnboardingTable =
+  Database['public']['Tables']['client_onboarding_submissions']
+
+export type ClientOnboardingSubmission = Omit<
+  ClientOnboardingTable['Insert'],
+  'id' | 'created_at' | 'competitors'
+> & { competitors: string[] }
+
+export type ClientOnboardingResponse = Omit<
+  ClientOnboardingTable['Row'],
+  'competitors'
+> & { competitors: string[] }
 
 function getSupabaseCredentials() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -37,10 +24,23 @@ function getSupabaseCredentials() {
   return { url, anonKey }
 }
 
+const normalizeCompetitors = (value: Json): string[] => {
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return value as string[]
+  }
+
+  return []
+}
+
 export async function insertClientOnboarding(
   payload: ClientOnboardingSubmission
 ): Promise<ClientOnboardingResponse | null> {
   const { url, anonKey } = getSupabaseCredentials()
+
+  const supabasePayload: ClientOnboardingTable['Insert'] = {
+    ...payload,
+    competitors: payload.competitors,
+  }
 
   const response = await fetch(`${url}/rest/v1/client_onboarding_submissions`, {
     method: 'POST',
@@ -50,7 +50,7 @@ export async function insertClientOnboarding(
       Authorization: `Bearer ${anonKey}`,
       Prefer: 'return=representation'
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(supabasePayload)
   })
 
   if (!response.ok) {
@@ -66,6 +66,16 @@ export async function insertClientOnboarding(
     throw new Error(message)
   }
 
-  const data = (await response.json()) as ClientOnboardingResponse[]
-  return data[0] ?? null
+  const data = (await response.json()) as ClientOnboardingTable['Row'][]
+
+  if (!data[0]) {
+    return null
+  }
+
+  const { competitors, ...rest } = data[0]
+
+  return {
+    ...rest,
+    competitors: normalizeCompetitors(competitors ?? []),
+  }
 }
