@@ -136,7 +136,7 @@ export default function SettingsPage() {
           </label>
           <button
             type="submit"
-            className="mt-2 inline-flex w-full items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-base-950 transition hover:bg-white/80"
+            className="mt-2 inline-flex w-full items-center justify-center rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient"
           >
             Save profile
           </button>

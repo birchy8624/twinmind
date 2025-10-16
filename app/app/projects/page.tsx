@@ -112,7 +112,7 @@ export default function ProjectsPage() {
         </div>
         <Link
           href="/app/projects/new"
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-base-950 transition hover:bg-white/80"
+          className="inline-flex items-center justify-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient"
         >
           + New project
         </Link>
