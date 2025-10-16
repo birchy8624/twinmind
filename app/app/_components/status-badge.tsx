@@ -11,7 +11,10 @@ const statusStyles: Record<string, string> = {
   'In Review': 'bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/40',
   'In Delivery': 'bg-indigo-500/10 text-indigo-300 ring-1 ring-inset ring-indigo-500/40',
   Completed: 'bg-limeglow-500/10 text-limeglow-100 ring-1 ring-inset ring-limeglow-500/30',
-  Blocked: 'bg-rose-500/10 text-rose-300 ring-1 ring-inset ring-rose-500/40'
+  Blocked: 'bg-rose-500/10 text-rose-300 ring-1 ring-inset ring-rose-500/40',
+  Invited: 'bg-sky-500/10 text-sky-200 ring-1 ring-inset ring-sky-500/30',
+  Archived: 'bg-zinc-800/30 text-zinc-200 ring-1 ring-inset ring-zinc-600/40',
+  Unknown: 'bg-white/5 text-white/70 ring-1 ring-inset ring-white/20'
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
