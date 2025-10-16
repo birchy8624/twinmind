@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { Route } from 'next'
 import type { ReactNode } from 'react'
 
 const navigation = [
@@ -7,7 +8,7 @@ const navigation = [
   { href: '/app/projects', label: 'Projects' },
   { href: '/app/kanban', label: 'Pipeline' },
   { href: '/app/settings', label: 'Settings' }
-]
+] satisfies ReadonlyArray<{ href: Route; label: string }>
 
 export default function AppShellLayout({ children }: { children: ReactNode }) {
   return (

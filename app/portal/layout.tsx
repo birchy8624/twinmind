@@ -1,10 +1,11 @@
 import Link from 'next/link'
+import type { Route } from 'next'
 import type { ReactNode } from 'react'
 
 const portalNavigation = [
   { href: '/portal', label: 'Overview' },
   { href: '/portal/projects', label: 'Projects' }
-]
+] satisfies ReadonlyArray<{ href: Route; label: string }>
 
 export default function PortalLayout({ children }: { children: ReactNode }) {
   return (
