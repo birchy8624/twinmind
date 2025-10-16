@@ -57,8 +57,7 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
   return (
     <ToastProvider>
       <div className="min-h-screen bg-base-950 text-white">
-        <div className="flex min-h-screen">
-          <aside className="hidden w-72 flex-col border-r border-white/10 bg-base-900/70 p-6 backdrop-blur lg:flex">
+        <aside className="hidden w-72 flex-col border-r border-white/10 bg-base-900/70 p-6 backdrop-blur lg:fixed lg:inset-y-0 lg:flex">
             <div className="mb-8">
               <span className="sr-only">TwinMind Studio Control Center</span>
               <svg
@@ -128,8 +127,8 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
             </div>
           </aside>
 
-          <div className="flex flex-1 flex-col">
-            <header className="border-b border-white/10 bg-base-900/40 px-6 py-5 backdrop-blur">
+          <div className="flex min-h-screen flex-col lg:ml-72">
+            <header className="sticky top-0 z-40 border-b border-white/10 bg-base-900/40 px-6 py-5 backdrop-blur">
               <div className="flex items-center gap-4">
                 <button
                   type="button"
@@ -205,11 +204,10 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
                 </div>
               </div>
             </header>
-            <main className="flex-1 space-y-6 bg-base-900/20 p-6">
+            <main className="flex-1 space-y-6 overflow-y-auto bg-base-900/20 p-6">
               {children}
             </main>
           </div>
-        </div>
 
         <AnimatePresence>
           {mobileOpen ? (
