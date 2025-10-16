@@ -14,6 +14,8 @@ import {
 import { useRouter } from 'next/navigation'
 import { z } from 'zod'
 
+import { createClientProject } from './actions'
+import type { WizardPayload } from './actions'
 import { useToast } from '../../_components/toast-context'
 
 const timezones = [
@@ -178,6 +180,68 @@ const defaultValues: OnboardingForm = {
   inviteClient: false
 }
 
+const sanitizeCurrencyToNumber = (value?: string) => {
+  if (!value) return undefined
+
+  const numeric = value.replace(/[^0-9,.-]/g, '').replace(/,/g, '')
+  const amount = Number.parseFloat(numeric)
+
+  return Number.isFinite(amount) ? amount : undefined
+}
+
+const toList = (value: string) =>
+  value
+    .split(/\r?\n|,/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+
+const optionalString = (value?: string) => {
+  if (!value) return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+const formValuesToPayload = (values: OnboardingForm): WizardPayload => {
+  const competitorLinks = values.competitors
+    ?.map((item) => item.value.trim())
+    .filter((link) => link.length > 0)
+
+  const dueDateIso = values.projectDueDate
+    ? new Date(`${values.projectDueDate}T00:00:00.000Z`).toISOString()
+    : undefined
+
+  return {
+    inviteClient: values.inviteClient,
+    client: {
+      name: values.clientName.trim(),
+      email: values.clientEmail.trim(),
+      company: optionalString(values.company),
+      website: optionalString(values.website),
+      phone: optionalString(values.phone),
+      timezone: optionalString(values.timezone),
+      budget: optionalString(values.budget),
+      gdpr_consent: values.gdprConsent
+    },
+    project: {
+      name: values.projectName.trim(),
+      description: values.projectDescription.trim(),
+      due_date: dueDateIso,
+      invoice_amount: sanitizeCurrencyToNumber(values.budget),
+      currency: 'EUR'
+    },
+    brief: {
+      goals: values.briefGoals.trim(),
+      personas: toList(values.briefTargetUsers),
+      features: toList(values.briefFeatures),
+      integrations: toList(values.briefIntegrations),
+      timeline: optionalString(values.briefTimeline),
+      successMetrics: optionalString(values.briefSuccess),
+      competitors: competitorLinks ?? [],
+      risks: optionalString(values.briefRisks)
+    }
+  }
+}
+
 export default function NewClientPage() {
   const router = useRouter()
   const { pushToast } = useToast()
@@ -217,10 +281,20 @@ export default function NewClientPage() {
   }
 
   const handleSubmit = methods.handleSubmit(async (values) => {
-    try {
-      setIsSubmitting(true)
+    setIsSubmitting(true)
 
-      await new Promise((resolve) => setTimeout(resolve, 900))
+    try {
+      const payload = formValuesToPayload(values)
+      const result = await createClientProject(payload)
+
+      if (!result?.ok) {
+        pushToast({
+          title: 'Unable to create client',
+          description: result?.message ?? 'Something went wrong.',
+          variant: 'error'
+        })
+        return
+      }
 
       pushToast({
         title: 'Client + project created',
@@ -228,12 +302,14 @@ export default function NewClientPage() {
         variant: 'success'
       })
 
-      const mockProjectId = Math.random().toString(36).slice(2, 10)
-
-      methods.reset(defaultValues)
-      setActiveStep(0)
-
-      router.push(`/app/projects/${mockProjectId}`)
+      router.push(`/app/projects/${result.projectId}`)
+    } catch (error) {
+      console.error(error)
+      pushToast({
+        title: 'Something went wrong',
+        description: 'Unable to create client and project. Please try again.',
+        variant: 'error'
+      })
     } finally {
       setIsSubmitting(false)
     }
