@@ -116,7 +116,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
       name: client.name,
       website: client.website ?? null,
       notes: null,
-      status: 'active'
+      account_status: 'active'
     })
     .select('id')
     .single()
