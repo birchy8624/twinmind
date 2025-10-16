@@ -14,7 +14,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { z } from 'zod'
 
-import { insertClientOnboarding, type ClientOnboardingSubmission } from '@/lib/supabase'
+import { createClientProject, type WizardPayload } from './actions'
 
 import { useToast } from '../../_components/toast-context'
 
@@ -180,32 +180,43 @@ const defaultValues: OnboardingForm = {
   inviteClient: false
 }
 
-function formValuesToPayload(values: OnboardingForm): ClientOnboardingSubmission {
+function formValuesToPayload(values: OnboardingForm): WizardPayload {
   const competitorLinks = values.competitors
-    ?.map((item) => item.value.trim())
-    .filter((link): link is string => link.length > 0)
+    ?.map((item) => normalizeUrl(item.value.trim()))
+    .filter((link): link is string => Boolean(link))
+
+  const website = normalizeUrl(values.website)
+  const invoiceAmount = parseCurrency(values.budget)
 
   return {
-    client_name: values.clientName,
-    client_email: values.clientEmail,
-    company: values.company,
-    website: values.website ? values.website : null,
-    phone: values.phone ? values.phone : null,
-    timezone: values.timezone,
-    budget: values.budget ? values.budget : null,
-    gdpr_consent: values.gdprConsent,
-    project_name: values.projectName,
-    project_description: values.projectDescription,
-    project_due_date: values.projectDueDate ? values.projectDueDate : null,
-    goals: values.briefGoals,
-    target_users: values.briefTargetUsers,
-    core_features: values.briefFeatures,
-    integrations: values.briefIntegrations,
-    timeline: values.briefTimeline,
-    success_metrics: values.briefSuccess,
-    competitors: competitorLinks ?? [],
-    risks: values.briefRisks,
-    invite_client: values.inviteClient
+    inviteClient: values.inviteClient,
+    client: {
+      name: values.clientName,
+      email: values.clientEmail,
+      company: values.company || undefined,
+      website: website,
+      phone: values.phone || undefined,
+      timezone: values.timezone || undefined,
+      budget: values.budget || undefined,
+      gdpr_consent: values.gdprConsent
+    },
+    project: {
+      name: values.projectName,
+      description: values.projectDescription,
+      due_date: values.projectDueDate || undefined,
+      invoice_amount: invoiceAmount,
+      currency: 'EUR'
+    },
+    brief: {
+      goals: values.briefGoals,
+      personas: values.briefTargetUsers ? [values.briefTargetUsers] : [],
+      features: values.briefFeatures ? [values.briefFeatures] : [],
+      integrations: values.briefIntegrations ? [values.briefIntegrations] : [],
+      timeline: values.briefTimeline || undefined,
+      successMetrics: values.briefSuccess || undefined,
+      competitors: competitorLinks ?? [],
+      risks: values.briefRisks || undefined
+    }
   }
 }
 
@@ -257,20 +268,27 @@ export default function NewClientPage() {
     const payload = formValuesToPayload(values)
 
     try {
-      await insertClientOnboarding(payload)
+      const result = await createClientProject(payload)
+
+      if (!result.ok) {
+        pushToast({
+          title: 'Unable to create client',
+          description: result.message ?? 'We could not save this client. Please try again.',
+          variant: 'error'
+        })
+        return
+      }
 
       pushToast({
-        title: 'Client saved',
-        description: 'The onboarding details were stored in Supabase.',
+        title: 'Client + project created',
+        description: 'We set up the client, project, brief, and quote.',
         variant: 'success'
       })
-
-      const clientSlug = slugify(payload.client_name) || 'new-client'
 
       methods.reset(defaultValues)
       setActiveStep(0)
 
-      router.push(`/app/clients/${clientSlug}`)
+      router.push(`/app/projects/${result.projectId}`)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'We could not save this client. Please try again.'
@@ -835,6 +853,37 @@ function InviteToggle() {
   )
 }
 
+function normalizeUrl(value?: string): string | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return undefined
+  }
+
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`
+}
+
+function parseCurrency(value?: string): number | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  const cleaned = value.replace(/[^0-9.-]/g, '')
+  if (!cleaned) {
+    return undefined
+  }
+
+  const amount = Number(cleaned)
+  if (Number.isNaN(amount) || amount <= 0) {
+    return undefined
+  }
+
+  return amount
+}
+
 function isValidUrl(value: string) {
   try {
     const url = new URL(value)
@@ -847,13 +896,4 @@ function isValidUrl(value: string) {
       return false
     }
   }
-}
-
-function slugify(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
 }
