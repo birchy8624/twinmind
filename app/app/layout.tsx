@@ -24,6 +24,14 @@ type AppShellLayoutProps = {
 }
 
 export default function AppShellLayout({ children }: AppShellLayoutProps) {
+  return (
+    <ToastProvider>
+      <AppShellLayoutContent>{children}</AppShellLayoutContent>
+    </ToastProvider>
+  )
+}
+
+function AppShellLayoutContent({ children }: AppShellLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
   const { pushToast } = useToast()
@@ -92,8 +100,7 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
   )
 
   return (
-    <ToastProvider>
-      <div className="min-h-screen bg-base-950 text-white">
+    <div className="min-h-screen bg-base-950 text-white">
         <div className="flex min-h-screen">
           <aside className="hidden w-72 flex-col border-r border-white/10 bg-base-900/70 p-6 backdrop-blur lg:flex">
             <div className="mb-8">
@@ -290,6 +297,6 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
           ) : null}
         </AnimatePresence>
       </div>
-    </ToastProvider>
+    </div>
   )
 }
