@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useToast } from './toast-context'
 import { createClient } from '@/utils/supabaseBrowser'
+import type { Database } from '@/types/supabase'
 
 type WorkspaceAccountMenuProps = {
   className?: string
@@ -69,7 +70,7 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
           .from('profiles')
           .select('full_name')
           .eq('id', user.id)
-          .maybeSingle()
+          .maybeSingle<Pick<Database['public']['Tables']['profiles']['Row'], 'full_name'>>()
 
         if (profileError) {
           throw profileError
