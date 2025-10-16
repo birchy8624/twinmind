@@ -8,7 +8,7 @@ export default function Footer(){
           <a href="#portfolio" className="hover:text-white">Portfolio</a>
           <a href="#pricing" className="hover:text-white">Pricing</a>
           <a href="#contact" className="hover:text-white">Contact</a>
-          <a href="/signin" className="hover:text-white">Sign In</a>
+          <a href="/sign_in" className="hover:text-white">Sign In</a>
         </div>
       </div>
     </footer>
