@@ -1,70 +1,113 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+
+import { createClient } from '@/utils/supabaseBrowser'
+import type { Database } from '@/types/supabase'
 
 import { StatusBadge } from '../_components/status-badge'
 
-const clients = [
-  {
-    name: 'Acme Robotics',
-    status: 'Active',
-    owner: 'Sasha Greene',
-    industry: 'Robotics',
-    lastActivity: '3 days ago',
-    email: 'ops@acmerobotics.com'
-  },
-  {
-    name: 'Northwind Analytics',
-    status: 'Onboarding',
-    owner: 'Elijah Carter',
-    industry: 'Analytics',
-    lastActivity: '1 hour ago',
-    email: 'team@northwind.ai'
-  },
-  {
-    name: 'Orbit Labs',
-    status: 'Proposal Sent',
-    owner: 'Linh Tran',
-    industry: 'SaaS',
-    lastActivity: '5 hours ago',
-    email: 'hello@orbitlabs.com'
-  },
-  {
-    name: 'Cascade Ventures',
-    status: 'Active',
-    owner: 'Mason Smith',
-    industry: 'Venture Capital',
-    lastActivity: '2 days ago',
-    email: 'partners@cascade.vc'
-  },
-  {
-    name: 'Aurora Health',
-    status: 'Inactive',
-    owner: 'Evelyn Lopez',
-    industry: 'Healthcare',
-    lastActivity: '14 days ago',
-    email: 'ops@aurorahealth.com'
-  },
-  {
-    name: 'Lumen Finance',
-    status: 'Active',
-    owner: 'Sasha Greene',
-    industry: 'Fintech',
-    lastActivity: 'Yesterday',
-    email: 'finance@lumenhq.com'
-  }
-] as const
+type Client = Database['public']['Tables']['clients']['Row']
 
 const PAGE_SIZE = 4
 
-const statuses = ['All statuses', 'Active', 'Onboarding', 'Proposal Sent', 'Inactive']
+const statuses = ['All statuses', 'Active', 'Inactive', 'Invited', 'Archived']
+
+const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+
+const relativeTimeDivisions: { amount: number; unit: Intl.RelativeTimeFormatUnit }[] = [
+  { amount: 60, unit: 'second' },
+  { amount: 60, unit: 'minute' },
+  { amount: 24, unit: 'hour' },
+  { amount: 7, unit: 'day' },
+  { amount: 4.34524, unit: 'week' },
+  { amount: 12, unit: 'month' },
+  { amount: Number.POSITIVE_INFINITY, unit: 'year' }
+]
+
+function formatRelativeTimeFromNow(value: string | null) {
+  if (!value) return 'Unknown'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+
+  let duration = (date.getTime() - Date.now()) / 1000
+
+  for (const division of relativeTimeDivisions) {
+    if (Math.abs(duration) < division.amount) {
+      return relativeTimeFormatter.format(Math.round(duration), division.unit)
+    }
+    duration /= division.amount
+  }
+
+  return 'Unknown'
+}
+
+function formatStatus(status: Client['account_status']) {
+  if (!status) return 'Unknown'
+
+  return status
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ')
+}
 
 export default function ClientsPage() {
+  const [clients, setClients] = useState<Client[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
   const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const supabase = useMemo(() => {
+    try {
+      return createClient()
+    } catch (clientError) {
+      console.error(clientError)
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchClients = async () => {
+      if (!supabase) {
+        setError('Supabase client unavailable. Please check your configuration.')
+        setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      setError(null)
+
+      const { data, error: fetchError } = await supabase
+        .from('clients')
+        .select('id, name, website, account_status, created_at')
+        .order('created_at', { ascending: false })
+
+      if (!isMounted) return
+
+      if (fetchError) {
+        console.error(fetchError)
+        setError('We ran into an issue loading clients. Please try again.')
+        setClients([])
+      } else {
+        setClients(data ?? [])
+      }
+
+      setLoading(false)
+    }
+
+    void fetchClients()
+
+    return () => {
+      isMounted = false
+    }
+  }, [supabase])
 
   const filteredClients = useMemo(() => {
     const normalizedQuery = query.toLowerCase()
@@ -72,12 +115,12 @@ export default function ClientsPage() {
       const matchesQuery =
         !normalizedQuery ||
         client.name.toLowerCase().includes(normalizedQuery) ||
-        client.owner.toLowerCase().includes(normalizedQuery) ||
-        client.industry.toLowerCase().includes(normalizedQuery)
-      const matchesStatus = statusFilter === 'All statuses' || client.status === statusFilter
+        client.website?.toLowerCase().includes(normalizedQuery)
+      const matchesStatus =
+        statusFilter === 'All statuses' || formatStatus(client.account_status) === statusFilter
       return matchesQuery && matchesStatus
     })
-  }, [query, statusFilter])
+  }, [clients, query, statusFilter])
 
   const totalPages = Math.max(1, Math.ceil(filteredClients.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -124,7 +167,7 @@ export default function ClientsPage() {
               <input
                 type="search"
                 value={query}
-                placeholder="Search by name, owner, or industry"
+                placeholder="Search by name or website"
                 onChange={(event) => handleQueryChange(event.target.value)}
                 className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/40 focus:outline-none"
               />
@@ -155,10 +198,9 @@ export default function ClientsPage() {
             <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
               <tr>
                 <th className="px-5 py-3 font-medium">Client</th>
-                <th className="px-5 py-3 font-medium">Owner</th>
-                <th className="px-5 py-3 font-medium">Industry</th>
                 <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Last activity</th>
+                <th className="px-5 py-3 font-medium">Website</th>
+                <th className="px-5 py-3 font-medium">Created</th>
                 <th className="px-5 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
@@ -166,7 +208,7 @@ export default function ClientsPage() {
               <AnimatePresence initial={false}>
                 {pageClients.map((client) => (
                   <motion.tr
-                    key={client.name}
+                    key={client.id}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
@@ -175,14 +217,17 @@ export default function ClientsPage() {
                   >
                     <td className="px-5 py-4 text-sm font-medium text-white">
                       <div>{client.name}</div>
-                      <div className="text-xs text-white/50">{client.email}</div>
+                      <div className="text-xs text-white/50">{client.website || 'No website yet'}</div>
                     </td>
-                    <td className="px-5 py-4 text-sm">{client.owner}</td>
-                    <td className="px-5 py-4 text-sm">{client.industry}</td>
                     <td className="px-5 py-4">
-                      <StatusBadge status={client.status} />
+                      <StatusBadge status={formatStatus(client.account_status)} />
                     </td>
-                    <td className="px-5 py-4 text-sm">{client.lastActivity}</td>
+                    <td className="px-5 py-4 text-sm">{client.website ? client.website.replace(/^https?:\/\//, '') : '—'}</td>
+                    <td className="px-5 py-4 text-sm">
+                      <span title={new Date(client.created_at).toLocaleString()}>
+                        {formatRelativeTimeFromNow(client.created_at)}
+                      </span>
+                    </td>
                     <td className="px-5 py-4 text-right text-sm">
                       <Link
                         href={`/app/clients/${encodeURIComponent(client.name.toLowerCase().replace(/\s+/g, '-'))}`}
@@ -194,7 +239,21 @@ export default function ClientsPage() {
                   </motion.tr>
                 ))}
               </AnimatePresence>
-              {pageClients.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-white/50">
+                    Loading clients...
+                  </td>
+                </tr>
+              ) : null}
+              {!loading && error ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-rose-300">
+                    {error}
+                  </td>
+                </tr>
+              ) : null}
+              {!loading && !error && pageClients.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-10 text-center text-sm text-white/50">
                     No clients match your filters yet.
