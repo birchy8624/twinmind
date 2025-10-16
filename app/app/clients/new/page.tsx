@@ -14,8 +14,8 @@ import {
 import { useRouter } from 'next/navigation'
 import { z } from 'zod'
 
-import { createClientProject } from './actions'
-import type { WizardPayload } from './actions'
+import { insertClientOnboarding, type ClientOnboardingSubmission } from '@/lib/supabase'
+
 import { useToast } from '../../_components/toast-context'
 
 const timezones = [
@@ -180,65 +180,32 @@ const defaultValues: OnboardingForm = {
   inviteClient: false
 }
 
-const sanitizeCurrencyToNumber = (value?: string) => {
-  if (!value) return undefined
-
-  const numeric = value.replace(/[^0-9,.-]/g, '').replace(/,/g, '')
-  const amount = Number.parseFloat(numeric)
-
-  return Number.isFinite(amount) ? amount : undefined
-}
-
-const toList = (value: string) =>
-  value
-    .split(/\r?\n|,/)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-
-const optionalString = (value?: string) => {
-  if (!value) return undefined
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : undefined
-}
-
-const formValuesToPayload = (values: OnboardingForm): WizardPayload => {
+function formValuesToPayload(values: OnboardingForm): ClientOnboardingSubmission {
   const competitorLinks = values.competitors
     ?.map((item) => item.value.trim())
-    .filter((link) => link.length > 0)
-
-  const dueDateIso = values.projectDueDate
-    ? new Date(`${values.projectDueDate}T00:00:00.000Z`).toISOString()
-    : undefined
+    .filter((link): link is string => link.length > 0)
 
   return {
-    inviteClient: values.inviteClient,
-    client: {
-      name: values.clientName.trim(),
-      email: values.clientEmail.trim(),
-      company: optionalString(values.company),
-      website: optionalString(values.website),
-      phone: optionalString(values.phone),
-      timezone: optionalString(values.timezone),
-      budget: optionalString(values.budget),
-      gdpr_consent: values.gdprConsent
-    },
-    project: {
-      name: values.projectName.trim(),
-      description: values.projectDescription.trim(),
-      due_date: dueDateIso,
-      invoice_amount: sanitizeCurrencyToNumber(values.budget),
-      currency: 'EUR'
-    },
-    brief: {
-      goals: values.briefGoals.trim(),
-      personas: toList(values.briefTargetUsers),
-      features: toList(values.briefFeatures),
-      integrations: toList(values.briefIntegrations),
-      timeline: optionalString(values.briefTimeline),
-      successMetrics: optionalString(values.briefSuccess),
-      competitors: competitorLinks ?? [],
-      risks: optionalString(values.briefRisks)
-    }
+    client_name: values.clientName,
+    client_email: values.clientEmail,
+    company: values.company,
+    website: values.website ? values.website : null,
+    phone: values.phone ? values.phone : null,
+    timezone: values.timezone,
+    budget: values.budget ? values.budget : null,
+    gdpr_consent: values.gdprConsent,
+    project_name: values.projectName,
+    project_description: values.projectDescription,
+    project_due_date: values.projectDueDate ? values.projectDueDate : null,
+    goals: values.briefGoals,
+    target_users: values.briefTargetUsers,
+    core_features: values.briefFeatures,
+    integrations: values.briefIntegrations,
+    timeline: values.briefTimeline,
+    success_metrics: values.briefSuccess,
+    competitors: competitorLinks ?? [],
+    risks: values.briefRisks,
+    invite_client: values.inviteClient
   }
 }
 
@@ -258,6 +225,10 @@ export default function NewClientPage() {
   const progress = useMemo(() => ((activeStep + 1) / steps.length) * 100, [activeStep])
 
   const handleNext = async () => {
+    if (activeStep === steps.length - 1) {
+      return
+    }
+
     if (!currentStep.fields?.length) {
       setActiveStep((prev) => Math.min(prev + 1, steps.length - 1))
       return
@@ -283,31 +254,30 @@ export default function NewClientPage() {
   const handleSubmit = methods.handleSubmit(async (values) => {
     setIsSubmitting(true)
 
-    try {
-      const payload = formValuesToPayload(values)
-      const result = await createClientProject(payload)
+    const payload = formValuesToPayload(values)
 
-      if (!result?.ok) {
-        pushToast({
-          title: 'Unable to create client',
-          description: result?.message ?? 'Something went wrong.',
-          variant: 'error'
-        })
-        return
-      }
+    try {
+      await insertClientOnboarding(payload)
 
       pushToast({
-        title: 'Client + project created',
-        description: 'We generated the client record, project, brief, and quote.',
+        title: 'Client saved',
+        description: 'The onboarding details were stored in Supabase.',
         variant: 'success'
       })
 
-      router.push(`/app/projects/${result.projectId}`)
+      const clientSlug = slugify(payload.client_name) || 'new-client'
+
+      methods.reset(defaultValues)
+      setActiveStep(0)
+
+      router.push(`/app/clients/${clientSlug}`)
     } catch (error) {
-      console.error(error)
+      const message =
+        error instanceof Error ? error.message : 'We could not save this client. Please try again.'
+
       pushToast({
-        title: 'Something went wrong',
-        description: 'Unable to create client and project. Please try again.',
+        title: 'Unable to create client',
+        description: message,
         variant: 'error'
       })
     } finally {
@@ -540,8 +510,8 @@ function ReviewStep() {
       <div className="space-y-1">
         <h3 className="text-base font-semibold text-white">Review & create</h3>
         <p className="text-sm text-white/60">
-          Double-check the summary below. Submitting will create the client, project, brief, and a
-          draft quote (if an amount is provided).
+          Double-check the summary below. Click the create button when you are ready and we will store the client, project,
+          brief, and draft quote (if an amount is provided) in Supabase.
         </p>
       </div>
 
@@ -858,4 +828,13 @@ function isValidUrl(value: string) {
       return false
     }
   }
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
 }
