@@ -206,14 +206,6 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
               </div>
             </header>
             <main className="flex-1 space-y-6 bg-base-900/20 p-6">
-              <div className="grid gap-4 text-xs text-white/50 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/5 bg-base-900/40 p-4">
-                  <p>Search across projects, clients, and the knowledge base instantly.</p>
-                </div>
-                <div className="rounded-2xl border border-white/5 bg-base-900/40 p-4">
-                  <p>Hover cards, tables, and wizard flows echo the public site aesthetic.</p>
-                </div>
-              </div>
               {children}
             </main>
           </div>
