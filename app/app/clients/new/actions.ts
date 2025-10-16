@@ -22,7 +22,11 @@ const WizardSchema = z.object({
     name: z.string().min(1),
     email: z.string().email(),
     company: z.string().optional(),
-    website: z.string().url().optional(),
+    website: z
+      .string()
+      .trim()
+      .min(1)
+      .optional(),
     phone: z.string().optional(),
     timezone: z.string().optional(),
     budget: z.string().optional(),
