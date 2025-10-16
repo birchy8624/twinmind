@@ -11,7 +11,7 @@ import { StatusBadge } from '../_components/status-badge'
 
 type Client = Database['public']['Tables']['clients']['Row']
 
-const PAGE_SIZE = 4
+const PAGE_SIZE = 8
 
 const statuses = ['All statuses', 'Active', 'Inactive', 'Invited', 'Archived']
 
