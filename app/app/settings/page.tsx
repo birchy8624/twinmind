@@ -136,7 +136,7 @@ export default function SettingsPage() {
           </label>
           <button
             type="submit"
-            className="mt-2 inline-flex w-full items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-base-950 transition hover:bg-white/80"
+            className="mt-2 inline-flex w-full items-center justify-center rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient"
           >
             Save profile
           </button>
@@ -176,7 +176,7 @@ export default function SettingsPage() {
                 <input
                   type="checkbox"
                   {...notificationForm.register(option.id as keyof NotificationFormValues)}
-                  className="mt-1 h-4 w-4 rounded border border-white/20 bg-base-950 text-emerald-400 focus:ring-emerald-400"
+                  className="mt-1 h-4 w-4 rounded border border-white/20 bg-base-950 text-limeglow-500 focus:ring-limeglow-500"
                 />
                 <span>
                   <span className="font-semibold text-white">{option.label}</span>
