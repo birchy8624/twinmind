@@ -62,7 +62,7 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
             <div className="mb-8">
               <span className="sr-only">TwinMind Studio Control Center</span>
               <svg
-                className="h-12 w-auto"
+                className="h-8 w-auto"
                 width="1154"
                 height="273"
                 viewBox="0 0 1154 273"
