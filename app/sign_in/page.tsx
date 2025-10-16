@@ -75,7 +75,11 @@ export default function SignInPage() {
               </div>
               <div className="flex items-center justify-between text-sm text-white/70">
                 <label className="inline-flex items-center gap-2">
-                  <input type="checkbox" name="remember" className="h-4 w-4 rounded border-white/30 bg-base-800/80" />
+                  <input
+                    type="checkbox"
+                    name="remember"
+                    className="h-4 w-4 rounded border border-limeglow-500/40 bg-base-900/80 accent-limeglow-500 focus:ring-limeglow-500/40"
+                  />
                   Remember me
                 </label>
                 <span className="text-xs text-white/50">Secure workspace access</span>
