@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { createServerClient } from '@/utils/supabaseServer'
+import type { Database } from '@/types/supabase'
 
 const BriefSchema = z.object({
   goals: z.string().min(1),
@@ -110,14 +111,15 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     return { ok: false, message: context }
   }
 
+  const clientInsert: Database['public']['Tables']['clients']['Insert'] = {
+    name: client.name,
+    website: client.website ?? null,
+    account_status: 'active'
+  }
+
   const { data: clientRow, error: clientError } = await admin
     .from('clients')
-    .insert({
-      name: client.name,
-      website: client.website ?? null,
-      notes: null,
-      account_status: 'active'
-    })
+    .insert(clientInsert)
     .select('id')
     .single()
 
@@ -152,31 +154,34 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
 
     invitedProfileId = authResponse.user.id
 
+    const profileUpsert: Database['public']['Tables']['profiles']['Insert'] = {
+      id: invitedProfileId,
+      role: 'client',
+      full_name: client.name,
+      company: client.company ?? null,
+      email: client.email,
+      phone: client.phone ?? null,
+      timezone: client.timezone ?? null,
+      gdpr_consent: client.gdpr_consent,
+      updated_at: new Date().toISOString(),
+    }
+
     const { error: profileError } = await admin
       .from('profiles')
-      .upsert(
-        {
-          id: invitedProfileId,
-          role: 'client',
-          full_name: client.name,
-          company: client.company ?? null,
-          email: client.email,
-          phone: client.phone ?? null,
-          timezone: client.timezone ?? null,
-          gdpr_consent: client.gdpr_consent,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'id' }
-      )
+      .upsert(profileUpsert, { onConflict: 'id' })
 
     if (profileError) {
       return fail('Create client profile', profileError)
     }
 
-    const { error: memberError } = await admin.from('client_members').upsert({
+    const memberUpsert: Database['public']['Tables']['client_members']['Insert'] = {
       client_id: clientId,
       profile_id: invitedProfileId
-    })
+    }
+
+    const { error: memberError } = await admin
+      .from('client_members')
+      .upsert(memberUpsert)
 
     if (memberError) {
       return fail('Link client membership', memberError)
@@ -185,16 +190,18 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     // TODO: Trigger email invite for the client portal user.
   }
 
+  const projectInsert: Database['public']['Tables']['projects']['Insert'] = {
+    client_id: clientId,
+    name: project.name,
+    description: project.description,
+    status: 'Brief Gathered',
+    due_date: project.due_date ?? null,
+    assignee_profile_id: ownerUser.id
+  }
+
   const { data: projectRow, error: projectError } = await admin
     .from('projects')
-    .insert({
-      client_id: clientId,
-      name: project.name,
-      description: project.description,
-      status: 'Brief Gathered',
-      due_date: project.due_date ?? null,
-      assignee_profile_id: ownerUser.id
-    })
+    .insert(projectInsert)
     .select('id')
     .single()
 
@@ -208,24 +215,31 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
 
   projectId = projectRow.id
 
-  const { error: briefError } = await admin.from('briefs').insert({
+  const briefInsert: Database['public']['Tables']['briefs']['Insert'] = {
     project_id: projectId,
-    answers: brief,
+    answers:
+      brief as Database['public']['Tables']['briefs']['Insert']['answers'],
     completed: true
-  })
+  }
+
+  const { error: briefError } = await admin.from('briefs').insert(briefInsert)
 
   if (briefError) {
     return fail('Save brief', briefError)
   }
 
   if (project.invoice_amount && project.invoice_amount > 0) {
-    const { error: invoiceError } = await admin.from('invoices').insert({
+    const invoiceInsert: Database['public']['Tables']['invoices']['Insert'] = {
       project_id: projectId,
       status: 'Quote',
       amount: project.invoice_amount,
       currency: project.currency ?? 'EUR',
       issued_at: new Date().toISOString()
-    })
+    }
+
+    const { error: invoiceError } = await admin
+      .from('invoices')
+      .insert(invoiceInsert)
 
     if (invoiceError) {
       return fail('Create quote', invoiceError)
