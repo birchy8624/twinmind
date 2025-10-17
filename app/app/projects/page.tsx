@@ -33,9 +33,9 @@ const relativeTimeDivisions: { amount: number; unit: Intl.RelativeTimeFormatUnit
   { amount: Number.POSITIVE_INFINITY, unit: 'year' }
 ]
 
-function formatRelativeTimeFromNow(value: string | null) {
+function formatRelativeTimeFromNow(value: string | Date | null) {
   if (!value) return 'Unknown'
-  const date = new Date(value)
+  const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return 'Unknown'
 
   let duration = (date.getTime() - Date.now()) / 1000
@@ -249,6 +249,13 @@ export default function ProjectsPage() {
               <AnimatePresence initial={false}>
                 {pageProjects.map((project) => {
                   const readableStatus = formatStatus(project.status)
+                  const createdAtDate = project.created_at
+                    ? new Date(project.created_at)
+                    : null
+                  const createdAt =
+                    createdAtDate && !Number.isNaN(createdAtDate.getTime())
+                      ? createdAtDate
+                      : null
                   return (
                   <motion.tr
                     key={project.id}
@@ -270,9 +277,13 @@ export default function ProjectsPage() {
                       <StatusBadge status={readableStatus} />
                     </td>
                     <td className="px-5 py-4 text-sm">
-                      <span title={new Date(project.created_at).toLocaleString()}>
-                        {formatRelativeTimeFromNow(project.created_at)}
-                      </span>
+                      {createdAt ? (
+                        <span title={createdAt.toLocaleString()}>
+                          {formatRelativeTimeFromNow(createdAt)}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="px-5 py-4 text-sm">
                       <span title={project.due_date ? new Date(project.due_date).toLocaleDateString() : undefined}>
