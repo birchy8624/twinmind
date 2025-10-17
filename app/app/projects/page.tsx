@@ -1,69 +1,157 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+
+import { createClient } from '@/utils/supabaseBrowser'
+import type { Database } from '@/types/supabase'
 
 import { StatusBadge } from '../_components/status-badge'
 
-const projects = [
-  {
-    name: 'Atlas UI Refresh',
-    client: 'Acme Robotics',
-    status: 'In Delivery',
-    owner: 'Sasha Greene',
-    lastUpdate: 'Today',
-    budget: '$48,000'
-  },
-  {
-    name: 'Helios Data Room',
-    client: 'Northwind Analytics',
-    status: 'In Review',
-    owner: 'Elijah Carter',
-    lastUpdate: '2 days ago',
-    budget: '$32,000'
-  },
-  {
-    name: 'Orbit Marketing Site',
-    client: 'Orbit Labs',
-    status: 'Discovery',
-    owner: 'Linh Tran',
-    lastUpdate: '4 days ago',
-    budget: '$18,000'
-  },
-  {
-    name: 'Nova CRM Implementation',
-    client: 'Cascade Ventures',
-    status: 'In Delivery',
-    owner: 'Mason Smith',
-    lastUpdate: 'Yesterday',
-    budget: '$27,500'
-  },
-  {
-    name: 'Aurora Knowledge Base',
-    client: 'Aurora Health',
-    status: 'Blocked',
-    owner: 'Evelyn Lopez',
-    lastUpdate: '6 days ago',
-    budget: '$22,400'
-  },
-  {
-    name: 'Lumen Investor Deck',
-    client: 'Lumen Finance',
-    status: 'In Review',
-    owner: 'Sasha Greene',
-    lastUpdate: 'Yesterday',
-    budget: '$9,500'
-  }
-] as const
+type ProjectRow = Database['public']['Tables']['projects']['Row']
+type ClientRow = Database['public']['Tables']['clients']['Row']
+type ProfileRow = Database['public']['Tables']['profiles']['Row']
 
-const PAGE_SIZE = 4
-const statusFilters = ['All statuses', 'Discovery', 'In Delivery', 'In Review', 'Blocked']
+type Project = ProjectRow & {
+  client: Pick<ClientRow, 'id' | 'name'> | null
+  assignee: Pick<ProfileRow, 'id' | 'full_name'> | null
+}
+
+const PAGE_SIZE = 8
+const statusFilters = ['All statuses', 'Brief Gathered', 'In Progress', 'Completed', 'Archived']
+
+const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+
+const relativeTimeDivisions: { amount: number; unit: Intl.RelativeTimeFormatUnit }[] = [
+  { amount: 60, unit: 'second' },
+  { amount: 60, unit: 'minute' },
+  { amount: 24, unit: 'hour' },
+  { amount: 7, unit: 'day' },
+  { amount: 4.34524, unit: 'week' },
+  { amount: 12, unit: 'month' },
+  { amount: Number.POSITIVE_INFINITY, unit: 'year' }
+]
+
+function formatRelativeTimeFromNow(value: string | null) {
+  if (!value) return 'Unknown'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+
+  let duration = (date.getTime() - Date.now()) / 1000
+
+  for (const division of relativeTimeDivisions) {
+    if (Math.abs(duration) < division.amount) {
+      return relativeTimeFormatter.format(Math.round(duration), division.unit)
+    }
+    duration /= division.amount
+  }
+
+  return 'Unknown'
+}
+
+function formatStatus(status: ProjectRow['status'] | null) {
+  if (!status) return 'Unknown'
+
+  return status
+    .toString()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function formatDueDate(value: string | null) {
+  if (!value) return 'No due date'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'No due date'
+
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
+}
 
 export default function ProjectsPage() {
+  const [projects, setProjects] = useState<Project[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
   const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const supabase = useMemo(() => {
+    try {
+      return createClient()
+    } catch (clientError) {
+      console.error(clientError)
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchProjects = async () => {
+      if (!supabase) {
+        setError('Supabase client unavailable. Please verify your configuration.')
+        setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      setError(null)
+
+      const { data, error: fetchError } = await supabase
+        .from('projects')
+        .select(
+          `
+            id,
+            name,
+            status,
+            description,
+            due_date,
+            created_at,
+            clients:client_id ( id, name ),
+            assignee_profile:assignee_profile_id ( id, full_name )
+          `
+        )
+        .order('created_at', { ascending: false })
+
+      if (!isMounted) return
+
+      if (fetchError) {
+        console.error(fetchError)
+        setError('We ran into an issue loading projects. Please try again.')
+        setProjects([])
+      } else {
+        type ProjectQuery = ProjectRow & {
+          clients: Pick<ClientRow, 'id' | 'name'> | null
+          assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
+        }
+
+        const typedProjects = (data ?? []) as ProjectQuery[]
+        const normalizedProjects: Project[] = typedProjects.map(
+          ({ clients, assignee_profile, ...rest }) => ({
+            ...rest,
+            client: clients ?? null,
+            assignee: assignee_profile ?? null
+          })
+        )
+
+        setProjects(normalizedProjects)
+      }
+
+      setLoading(false)
+    }
+
+    void fetchProjects()
+
+    return () => {
+      isMounted = false
+    }
+  }, [supabase])
 
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.toLowerCase()
@@ -71,12 +159,14 @@ export default function ProjectsPage() {
       const matchesQuery =
         !normalizedQuery ||
         project.name.toLowerCase().includes(normalizedQuery) ||
-        project.client.toLowerCase().includes(normalizedQuery) ||
-        project.owner.toLowerCase().includes(normalizedQuery)
-      const matchesStatus = statusFilter === 'All statuses' || project.status === statusFilter
+        project.description.toLowerCase().includes(normalizedQuery) ||
+        project.client?.name.toLowerCase().includes(normalizedQuery) ||
+        project.assignee?.full_name?.toLowerCase().includes(normalizedQuery)
+      const matchesStatus =
+        statusFilter === 'All statuses' || formatStatus(project.status) === statusFilter
       return matchesQuery && matchesStatus
     })
-  }, [query, statusFilter])
+  }, [projects, query, statusFilter])
 
   const totalPages = Math.max(1, Math.ceil(filteredProjects.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -151,15 +241,17 @@ export default function ProjectsPage() {
                 <th className="px-5 py-3 font-medium">Owner</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Last update</th>
-                <th className="px-5 py-3 font-medium">Budget</th>
+                <th className="px-5 py-3 font-medium">Due date</th>
                 <th className="px-5 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               <AnimatePresence initial={false}>
-                {pageProjects.map((project) => (
+                {pageProjects.map((project) => {
+                  const readableStatus = formatStatus(project.status)
+                  return (
                   <motion.tr
-                    key={project.name}
+                    key={project.id}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
@@ -168,15 +260,25 @@ export default function ProjectsPage() {
                   >
                     <td className="px-5 py-4 text-sm font-medium text-white">
                       {project.name}
-                      <p className="text-xs text-white/50">{project.client}</p>
+                      <p className="text-xs text-white/50 line-clamp-2">
+                        {project.description}
+                      </p>
                     </td>
-                    <td className="px-5 py-4 text-sm">{project.client}</td>
-                    <td className="px-5 py-4 text-sm">{project.owner}</td>
+                    <td className="px-5 py-4 text-sm">{project.client?.name ?? 'Unknown client'}</td>
+                    <td className="px-5 py-4 text-sm">{project.assignee?.full_name ?? 'Unassigned'}</td>
                     <td className="px-5 py-4">
-                      <StatusBadge status={project.status} />
+                      <StatusBadge status={readableStatus} />
                     </td>
-                    <td className="px-5 py-4 text-sm">{project.lastUpdate}</td>
-                    <td className="px-5 py-4 text-sm">{project.budget}</td>
+                    <td className="px-5 py-4 text-sm">
+                      <span title={new Date(project.created_at).toLocaleString()}>
+                        {formatRelativeTimeFromNow(project.created_at)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-sm">
+                      <span title={project.due_date ? new Date(project.due_date).toLocaleDateString() : undefined}>
+                        {formatDueDate(project.due_date)}
+                      </span>
+                    </td>
                     <td className="px-5 py-4 text-right text-sm">
                       <Link
                         href={`/app/projects/${encodeURIComponent(project.name.toLowerCase().replace(/\s+/g, '-'))}`}
@@ -186,9 +288,24 @@ export default function ProjectsPage() {
                       </Link>
                     </td>
                   </motion.tr>
-                ))}
+                  )
+                })}
               </AnimatePresence>
-              {pageProjects.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-white/50">
+                    Loading projects...
+                  </td>
+                </tr>
+              ) : null}
+              {!loading && error ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-rose-300">
+                    {error}
+                  </td>
+                </tr>
+              ) : null}
+              {!loading && !error && pageProjects.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-5 py-10 text-center text-sm text-white/50">
                     No projects match the current filters yet.
@@ -201,15 +318,23 @@ export default function ProjectsPage() {
 
         <div className="mt-5 flex flex-col gap-3 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">
           <p>
-            Showing <span className="font-semibold text-white">{pageProjects.length}</span> of{' '}
-            <span className="font-semibold text-white">{filteredProjects.length}</span> projects
+            {loading ? (
+              <span className="text-white/70">Loading projects...</span>
+            ) : error ? (
+              <span className="text-rose-300">Unable to display project counts.</span>
+            ) : (
+              <>
+                Showing <span className="font-semibold text-white">{pageProjects.length}</span> of{' '}
+                <span className="font-semibold text-white">{filteredProjects.length}</span> projects
+              </>
+            )}
           </p>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setPage((value) => Math.max(1, value - 1))}
               className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={currentPage === 1}
+              disabled={loading || currentPage === 1}
             >
               Prev
             </button>
@@ -220,7 +345,7 @@ export default function ProjectsPage() {
               type="button"
               onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
               className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={currentPage === totalPages}
+              disabled={loading || currentPage === totalPages}
             >
               Next
             </button>
