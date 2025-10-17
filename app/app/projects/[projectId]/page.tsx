@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
 import { createClient } from '@/utils/supabaseBrowser'
+
+type SupabaseBrowserClient = ReturnType<typeof createClient>
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
@@ -300,7 +301,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const { pushToast } = useToast()
 
-  const supabase = useMemo<SupabaseClient<Database> | null>(() => {
+  const supabase = useMemo<SupabaseBrowserClient | null>(() => {
     try {
       return createClient()
     } catch (clientError) {
