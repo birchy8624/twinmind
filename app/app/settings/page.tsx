@@ -2,16 +2,20 @@
 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { motion } from 'framer-motion'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { ConfirmModal } from '../_components/confirm-modal'
 import { useToast } from '../_components/toast-context'
+import { createBrowserClient } from '@/lib/supabaseClient'
+import type { Database } from '@/types/supabase'
 
 const profileSchema = z.object({
   name: z.string().min(2, 'Name is required'),
-  title: z.string().min(2, 'Title is required'),
+  role: z.enum(['owner', 'client'], {
+    errorMap: () => ({ message: 'Select a workspace role' })
+  }),
   email: z.string().email('Enter a valid email')
 })
 
@@ -25,19 +29,162 @@ const notificationSchema = z.object({
 
 type NotificationFormValues = z.infer<typeof notificationSchema>
 
+type ProfileInsert = Database['public']['Tables']['profiles']['Insert']
+type RoleEnum = Database['public']['Enums']['role']
+
+const PROFILES = 'profiles' as const
+const DEFAULT_ROLE: RoleEnum = 'client'
+
+const ROLE_LABELS: Record<RoleEnum, string> = {
+  owner: 'Owner',
+  client: 'Client'
+}
+const ROLE_OPTIONS: Array<{ value: RoleEnum; label: string }> = [
+  { value: 'owner', label: ROLE_LABELS.owner },
+  { value: 'client', label: ROLE_LABELS.client }
+]
+
+const resolveMetadataName = (metadata: Record<string, unknown> | undefined) => {
+  if (!metadata) {
+    return null
+  }
+
+  const firstName = typeof metadata['first_name'] === 'string' ? metadata['first_name'] : null
+  const lastName = typeof metadata['last_name'] === 'string' ? metadata['last_name'] : null
+  const fullName = typeof metadata['full_name'] === 'string' ? metadata['full_name'] : null
+  const nameCandidate =
+    firstName && lastName
+      ? `${firstName} ${lastName}`
+      : fullName ?? firstName ?? (typeof metadata['name'] === 'string' ? metadata['name'] : null)
+
+  const trimmed = typeof nameCandidate === 'string' ? nameCandidate.trim() : ''
+
+  return trimmed ? trimmed : null
+}
+
+const resolveMetadataRole = (metadata: Record<string, unknown> | undefined): RoleEnum | null => {
+  if (!metadata) {
+    return null
+  }
+
+  const keysToCheck = ['role', 'title', 'position']
+
+  for (const key of keysToCheck) {
+    const value = metadata[key]
+    if (typeof value !== 'string') {
+      continue
+    }
+
+    const normalized = value.trim().toLowerCase()
+
+    if (normalized === 'owner') {
+      return 'owner'
+    }
+
+    if (normalized === 'client') {
+      return 'client'
+    }
+  }
+
+  return null
+}
+
+const toRoleLabel = (role: RoleEnum) => ROLE_LABELS[role]
+
 export default function SettingsPage() {
   const { pushToast } = useToast()
+  const supabase = useMemo(createBrowserClient, [])
   const [resetModalOpen, setResetModalOpen] = useState(false)
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null)
 
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     mode: 'onBlur',
     defaultValues: {
-      name: 'Evelyn Lopez',
-      title: 'Engagement Lead',
-      email: 'evelyn@twinmind.studio'
+      name: '',
+      role: DEFAULT_ROLE,
+      email: ''
     }
   })
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadProfile = async () => {
+      if (isMounted) {
+        setIsLoadingProfile(true)
+      }
+
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser()
+
+        if (userError) {
+          throw userError
+        }
+
+        if (!user) {
+          if (isMounted) {
+            setActiveProfileId(null)
+          }
+          return
+        }
+
+        const metadataName = resolveMetadataName(user.user_metadata)
+        const metadataRole = resolveMetadataRole(user.user_metadata)
+
+        const { data: profile, error: profileError } = await supabase
+          .from(PROFILES)
+          .select('id, full_name, role, email')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (profileError) {
+          throw profileError
+        }
+
+        const resolvedName = profile?.full_name?.trim() || metadataName || user.email || ''
+        const resolvedRole = profile?.role ?? metadataRole ?? DEFAULT_ROLE
+        const resolvedEmail = profile?.email?.trim() || user.email || ''
+
+        if (isMounted) {
+          setActiveProfileId(user.id)
+          profileForm.reset(
+            {
+              name: resolvedName,
+              role: resolvedRole,
+              email: resolvedEmail
+            },
+            { keepDirty: false }
+          )
+        }
+      } catch (error) {
+        console.error('Failed to load profile', error)
+
+        if (isMounted) {
+          setActiveProfileId(null)
+          pushToast({
+            title: 'Unable to load profile',
+            description: 'Refresh the page to try again or contact support if the issue continues.',
+            variant: 'error'
+          })
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingProfile(false)
+        }
+      }
+    }
+
+    void loadProfile()
+
+    return () => {
+      isMounted = false
+    }
+  }, [profileForm, pushToast, supabase])
 
   const notificationForm = useForm<NotificationFormValues>({
     resolver: zodResolver(notificationSchema),
@@ -50,12 +197,62 @@ export default function SettingsPage() {
   })
 
   const handleProfileSubmit = profileForm.handleSubmit(
-    (values) => {
-      pushToast({
-        title: 'Profile updated',
-        description: `${values.name}, your workspace preferences are synced.`,
-        variant: 'success'
-      })
+    async (values) => {
+      const userId = activeProfileId
+
+      if (!userId) {
+        pushToast({
+          title: 'No active profile',
+          description: 'You need to be signed in to update your profile.',
+          variant: 'error'
+        })
+        return
+      }
+
+      const trimmedName = values.name.trim()
+      const trimmedEmail = values.email.trim()
+      const role = values.role
+
+      try {
+        const payload: ProfileInsert = {
+          id: userId,
+          full_name: trimmedName,
+          role,
+          email: trimmedEmail,
+          updated_at: new Date().toISOString()
+        }
+
+        const { error } = await supabase
+          .from(PROFILES)
+          .upsert(payload)
+          .eq('id', userId)
+
+        if (error) {
+          throw error
+        }
+
+        profileForm.reset(
+          {
+            name: trimmedName,
+            role,
+            email: trimmedEmail
+          },
+          { keepDirty: false }
+        )
+
+        pushToast({
+          title: 'Profile updated',
+          description: `${trimmedName}, your workspace preferences are synced as ${toRoleLabel(role)}.`,
+          variant: 'success'
+        })
+      } catch (error) {
+        console.error('Failed to update profile', error)
+        pushToast({
+          title: 'Unable to save profile',
+          description: 'Something went wrong while saving. Please try again.',
+          variant: 'error'
+        })
+      }
     },
     () =>
       pushToast({
@@ -106,21 +303,28 @@ export default function SettingsPage() {
             <input
               type="text"
               {...profileForm.register('name')}
-              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
+              disabled={isLoadingProfile || profileForm.formState.isSubmitting}
+              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
             />
             {profileForm.formState.errors.name ? (
               <span className="text-xs font-medium text-rose-300">{profileForm.formState.errors.name.message}</span>
             ) : null}
           </label>
           <label className="space-y-2 text-sm">
-            <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Role / title</span>
-            <input
-              type="text"
-              {...profileForm.register('title')}
-              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
-            />
-            {profileForm.formState.errors.title ? (
-              <span className="text-xs font-medium text-rose-300">{profileForm.formState.errors.title.message}</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Workspace role</span>
+            <select
+              {...profileForm.register('role')}
+              disabled={isLoadingProfile || profileForm.formState.isSubmitting}
+              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {profileForm.formState.errors.role ? (
+              <span className="text-xs font-medium text-rose-300">{profileForm.formState.errors.role.message}</span>
             ) : null}
           </label>
           <label className="space-y-2 text-sm">
@@ -128,7 +332,8 @@ export default function SettingsPage() {
             <input
               type="email"
               {...profileForm.register('email')}
-              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
+              disabled={isLoadingProfile || profileForm.formState.isSubmitting}
+              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
             />
             {profileForm.formState.errors.email ? (
               <span className="text-xs font-medium text-rose-300">{profileForm.formState.errors.email.message}</span>
@@ -136,9 +341,10 @@ export default function SettingsPage() {
           </label>
           <button
             type="submit"
-            className="mt-2 inline-flex w-full items-center justify-center rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient"
+            disabled={isLoadingProfile || profileForm.formState.isSubmitting}
+            className="mt-2 inline-flex w-full items-center justify-center rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient disabled:cursor-not-allowed disabled:opacity-70"
           >
-            Save profile
+            {profileForm.formState.isSubmitting ? 'Saving…' : 'Save profile'}
           </button>
         </motion.form>
 
