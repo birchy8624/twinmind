@@ -11,10 +11,12 @@ type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
 type BriefRow = Database['public']['Tables']['briefs']['Row']
+type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 
 type Project = ProjectRow & {
   client: Pick<ClientRow, 'id' | 'name'> | null
   assignee: Pick<ProfileRow, 'id' | 'full_name'> | null
+  budget: string | null
 }
 
 type EditableProject = {
@@ -24,6 +26,7 @@ type EditableProject = {
   dueDate: string
   clientId: string
   assigneeId: string
+  budget: string
 }
 
 type BriefAnswers = {
@@ -36,6 +39,39 @@ type BriefAnswers = {
   competitors: string[]
   risks: string | null
 }
+
+type BriefFormState = {
+  goals: string
+  personas: string
+  features: string
+  integrations: string
+  timeline: string
+  successMetrics: string
+  competitors: string
+  risks: string
+}
+
+const createEmptyBriefFormState = (): BriefFormState => ({
+  goals: '',
+  personas: '',
+  features: '',
+  integrations: '',
+  timeline: '',
+  successMetrics: '',
+  competitors: '',
+  risks: ''
+})
+
+const mapBriefAnswersToFormState = (answers: BriefAnswers | null): BriefFormState => ({
+  goals: answers?.goals ?? '',
+  personas: answers ? answers.personas.join('\n') : '',
+  features: answers ? answers.features.join('\n') : '',
+  integrations: answers ? answers.integrations.join('\n') : '',
+  timeline: answers?.timeline ?? '',
+  successMetrics: answers?.successMetrics ?? '',
+  competitors: answers ? answers.competitors.join('\n') : '',
+  risks: answers?.risks ?? ''
+})
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -105,6 +141,29 @@ function formatDisplayDate(value: string | null) {
   })
 }
 
+function formatBudgetFromInvoice(amount: InvoiceRow['amount'] | null | undefined, currency: InvoiceRow['currency'] | null | undefined) {
+  if (amount === null || amount === undefined) {
+    return null
+  }
+
+  const numericAmount = typeof amount === 'number' ? amount : Number(amount)
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+    return null
+  }
+
+  const normalizedCurrency = currency && currency.trim().length > 0 ? currency.trim().toUpperCase() : 'EUR'
+
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: normalizedCurrency
+    }).format(numericAmount)
+  } catch (error) {
+    console.error('Failed to format invoice amount as currency', error)
+    return `${numericAmount.toFixed(2)} ${normalizedCurrency}`
+  }
+}
+
 function formatDateInput(value: string | null) {
   if (!value) return ''
   const date = new Date(value)
@@ -126,7 +185,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const [assignees, setAssignees] = useState<Array<Pick<ProfileRow, 'id' | 'full_name'>>>([])
   const [loadingProject, setLoadingProject] = useState(true)
   const [loadingOptions, setLoadingOptions] = useState(true)
-  const [briefAnswers, setBriefAnswers] = useState<BriefAnswers | null>(null)
+  const [briefFormState, setBriefFormState] = useState<BriefFormState>(() => createEmptyBriefFormState())
   const [error, setError] = useState<string | null>(null)
 
   const supabase = useMemo(() => {
@@ -153,7 +212,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setLoadingOptions(true)
       setError(null)
 
-      const [projectResponse, clientsResponse, assigneesResponse, briefResponse] = await Promise.all([
+      const [projectResponse, clientsResponse, assigneesResponse, briefResponse, invoiceResponse] = await Promise.all([
         supabase
           .from('projects')
           .select(
@@ -182,6 +241,14 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           .from('briefs')
           .select('answers')
           .eq('project_id', params.projectId)
+          .maybeSingle(),
+        supabase
+          .from('invoices')
+          .select('amount, currency, issued_at, created_at')
+          .eq('project_id', params.projectId)
+          .order('issued_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(1)
           .maybeSingle()
       ])
 
@@ -191,10 +258,20 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       if (briefResponse.error) {
         console.error(briefResponse.error)
-        setBriefAnswers(null)
+        setBriefFormState(createEmptyBriefFormState())
       } else {
         const briefData = briefResponse.data as Pick<BriefRow, 'answers'> | null
-        setBriefAnswers(normalizeBriefAnswers(briefData?.answers ?? null))
+        const normalizedBriefAnswers = normalizeBriefAnswers(briefData?.answers ?? null)
+        setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
+      }
+
+      let projectBudget: string | null = null
+
+      if (invoiceResponse.error) {
+        console.error(invoiceResponse.error)
+      } else if (invoiceResponse.data) {
+        const invoiceData = invoiceResponse.data as Pick<InvoiceRow, 'amount' | 'currency'>
+        projectBudget = formatBudgetFromInvoice(invoiceData.amount, invoiceData.currency)
       }
 
       if (clientsResponse.error) {
@@ -215,7 +292,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         console.error(projectResponse.error)
         setProject(null)
         setFormState(null)
-        setBriefAnswers(null)
+        setBriefFormState(createEmptyBriefFormState())
         setError('We ran into an issue loading this project. Please try again.')
         return
       }
@@ -223,7 +300,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       if (!projectResponse.data) {
         setProject(null)
         setFormState(null)
-        setBriefAnswers(null)
+        setBriefFormState(createEmptyBriefFormState())
         setError('We could not find this project. It may have been removed.')
         return
       }
@@ -237,7 +314,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       const normalizedProject: Project = {
         ...typedProject,
         client: typedProject.clients ?? null,
-        assignee: typedProject.assignee_profile ?? null
+        assignee: typedProject.assignee_profile ?? null,
+        budget: projectBudget
       }
 
       setProject(normalizedProject)
@@ -247,7 +325,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         status: normalizedProject.status ?? '',
         dueDate: formatDateInput(normalizedProject.due_date),
         clientId: normalizedProject.client?.id ?? '',
-        assigneeId: normalizedProject.assignee?.id ?? ''
+        assigneeId: normalizedProject.assignee?.id ?? '',
+        budget: normalizedProject.budget ?? ''
       })
     }
 
@@ -268,11 +347,24 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
     })
   }
 
+  const handleBriefFieldChange = <Key extends keyof BriefFormState>(field: Key, value: BriefFormState[Key]) => {
+    setBriefFormState((previous) => ({
+      ...previous,
+      [field]: value
+    }))
+  }
+
   const isLoading = loadingProject
 
   const readableProjectName = formState?.name || project?.name || 'Project overview'
   const readableStatus = project?.status ?? 'Unknown'
   const readableDueDate = project ? formatDisplayDate(project.due_date) : 'No due date set'
+  const readableBudget =
+    formState?.budget && formState.budget.trim().length > 0
+      ? formState.budget
+      : project?.budget && project.budget.trim().length > 0
+        ? project.budget
+        : 'Not set'
   const readableCreatedAt = project
     ? new Date(project.created_at).toLocaleString('en-US', {
         month: 'long',
@@ -333,7 +425,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                 <p className="text-xs uppercase tracking-[0.3em] text-white/40">Project basics</p>
                 <h2 className="text-lg font-semibold text-white">Core details</h2>
                 <p className="text-sm text-white/60">
-                  Update the client, owner, status, description, and due dates for this project.
+                  Update the client, owner, status, budget, description, and due dates for this project.
                 </p>
               </header>
               <div className="grid gap-5 md:grid-cols-2">
@@ -409,6 +501,16 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                     className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
                   />
                 </label>
+                <label className="space-y-2 text-sm text-white/70 md:col-span-2 md:max-w-xs">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Budget</span>
+                  <input
+                    type="text"
+                    value={formState.budget}
+                    onChange={(event) => handleFieldChange('budget', event.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder="$25,000"
+                  />
+                </label>
                 <label className="space-y-2 text-sm text-white/70 md:col-span-2">
                   <span className="text-xs uppercase tracking-wide text-white/50">Project description</span>
                   <textarea
@@ -426,86 +528,94 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
               <header className="mb-4 space-y-1">
                 <p className="text-xs uppercase tracking-[0.3em] text-white/40">Discovery</p>
                 <h2 className="text-lg font-semibold text-white">The Brief</h2>
-                <p className="text-sm text-white/60">Review the answers captured when this project was kicked off.</p>
+                <p className="text-sm text-white/60">Review and refine the answers captured when this project was kicked off.</p>
               </header>
-              {briefAnswers ? (
-                <dl className="space-y-5 text-sm text-white/70">
-                  <div className="space-y-1">
-                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Goals</dt>
-                    <dd className="whitespace-pre-line text-white/80">{briefAnswers.goals ?? 'Not provided'}</dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Personas</dt>
-                    <dd className="text-white/80">
-                      {briefAnswers.personas.length > 0 ? (
-                        <ul className="list-disc space-y-1 pl-5">
-                          {briefAnswers.personas.map((persona) => (
-                            <li key={persona}>{persona}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Key features</dt>
-                    <dd className="text-white/80">
-                      {briefAnswers.features.length > 0 ? (
-                        <ul className="list-disc space-y-1 pl-5">
-                          {briefAnswers.features.map((feature) => (
-                            <li key={feature}>{feature}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Integrations</dt>
-                    <dd className="text-white/80">
-                      {briefAnswers.integrations.length > 0 ? (
-                        <ul className="list-disc space-y-1 pl-5">
-                          {briefAnswers.integrations.map((integration) => (
-                            <li key={integration}>{integration}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Timeline</dt>
-                    <dd className="text-white/80">{briefAnswers.timeline ?? 'Not provided'}</dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Success metrics</dt>
-                    <dd className="text-white/80">{briefAnswers.successMetrics ?? 'Not provided'}</dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Competitors</dt>
-                    <dd className="text-white/80">
-                      {briefAnswers.competitors.length > 0 ? (
-                        <ul className="list-disc space-y-1 pl-5">
-                          {briefAnswers.competitors.map((competitor) => (
-                            <li key={competitor}>{competitor}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Risks</dt>
-                    <dd className="whitespace-pre-line text-white/80">{briefAnswers.risks ?? 'Not provided'}</dd>
-                  </div>
-                </dl>
-              ) : (
-                <p className="text-sm text-white/60">We don&apos;t have a brief on file for this project yet.</p>
-              )}
+              <div className="grid gap-5 md:grid-cols-2">
+                <label className="space-y-2 text-sm text-white/70 md:col-span-2">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Goals</span>
+                  <textarea
+                    rows={4}
+                    value={briefFormState.goals}
+                    onChange={(event) => handleBriefFieldChange('goals', event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder="Outline the primary objectives and the outcomes we are targeting."
+                  />
+                </label>
+                <label className="space-y-2 text-sm text-white/70">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Personas</span>
+                  <textarea
+                    rows={4}
+                    value={briefFormState.personas}
+                    onChange={(event) => handleBriefFieldChange('personas', event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder={['Product manager', 'Operations lead', 'Customer support'].join('\n')}
+                  />
+                  <span className="block text-xs text-white/40">Separate each persona with a new line.</span>
+                </label>
+                <label className="space-y-2 text-sm text-white/70">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Key features</span>
+                  <textarea
+                    rows={4}
+                    value={briefFormState.features}
+                    onChange={(event) => handleBriefFieldChange('features', event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder={['Real-time dashboards', 'Role-based access', 'AI-assisted insights'].join('\n')}
+                  />
+                  <span className="block text-xs text-white/40">List one feature per line.</span>
+                </label>
+                <label className="space-y-2 text-sm text-white/70">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Integrations</span>
+                  <textarea
+                    rows={3}
+                    value={briefFormState.integrations}
+                    onChange={(event) => handleBriefFieldChange('integrations', event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder={['Salesforce', 'HubSpot', 'Segment'].join('\n')}
+                  />
+                  <span className="block text-xs text-white/40">Use line breaks for multiple integrations.</span>
+                </label>
+                <label className="space-y-2 text-sm text-white/70">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Timeline</span>
+                  <input
+                    type="text"
+                    value={briefFormState.timeline}
+                    onChange={(event) => handleBriefFieldChange('timeline', event.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder="Beta launch in Q3 with GA in November."
+                  />
+                </label>
+                <label className="space-y-2 text-sm text-white/70">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Success metrics</span>
+                  <textarea
+                    rows={3}
+                    value={briefFormState.successMetrics}
+                    onChange={(event) => handleBriefFieldChange('successMetrics', event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder="Increase activation rate to 45% and reduce handoff time by half."
+                  />
+                </label>
+                <label className="space-y-2 text-sm text-white/70">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Competitors</span>
+                  <textarea
+                    rows={3}
+                    value={briefFormState.competitors}
+                    onChange={(event) => handleBriefFieldChange('competitors', event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder={['Acme Analytics', 'Northwind Suite'].join('\n')}
+                  />
+                  <span className="block text-xs text-white/40">Add one competitor per line.</span>
+                </label>
+                <label className="space-y-2 text-sm text-white/70 md:col-span-2">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Risks</span>
+                  <textarea
+                    rows={4}
+                    value={briefFormState.risks}
+                    onChange={(event) => handleBriefFieldChange('risks', event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder="Identify open questions, dependencies, or blockers we should monitor."
+                  />
+                </label>
+              </div>
             </section>
           </div>
 
@@ -531,6 +641,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                 <div className="flex items-start justify-between gap-3">
                   <dt className="text-white/50">Due date</dt>
                   <dd className="text-right text-white/80">{readableDueDate}</dd>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-white/50">Budget</dt>
+                  <dd className="text-right text-white/80">{readableBudget}</dd>
                 </div>
                 <div className="flex items-start justify-between gap-3">
                   <dt className="text-white/50">Countdown</dt>
