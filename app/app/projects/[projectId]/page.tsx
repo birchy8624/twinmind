@@ -33,6 +33,7 @@ type BriefAnswers = {
   goals: string | null
   personas: string[]
   features: string[]
+  bookings: string | null
   integrations: string[]
   timeline: string | null
   successMetrics: string | null
@@ -44,6 +45,7 @@ type BriefFormState = {
   goals: string
   personas: string
   features: string
+  bookings: string
   integrations: string
   timeline: string
   successMetrics: string
@@ -55,6 +57,7 @@ const createEmptyBriefFormState = (): BriefFormState => ({
   goals: '',
   personas: '',
   features: '',
+  bookings: '',
   integrations: '',
   timeline: '',
   successMetrics: '',
@@ -66,6 +69,7 @@ const mapBriefAnswersToFormState = (answers: BriefAnswers | null): BriefFormStat
   goals: answers?.goals ?? '',
   personas: answers ? answers.personas.join('\n') : '',
   features: answers ? answers.features.join('\n') : '',
+  bookings: answers?.bookings ?? '',
   integrations: answers ? answers.integrations.join('\n') : '',
   timeline: answers?.timeline ?? '',
   successMetrics: answers?.successMetrics ?? '',
@@ -90,6 +94,7 @@ function normalizeBriefAnswers(value: unknown): BriefAnswers | null {
     goals: extractString(value.goals),
     personas: extractStringArray(value.personas),
     features: extractStringArray(value.features),
+    bookings: extractString(value.bookings),
     integrations: extractStringArray(value.integrations),
     timeline: extractString(value.timeline),
     successMetrics: extractString(value.successMetrics),
@@ -552,20 +557,30 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                   />
                   <span className="block text-xs text-white/40">Separate each persona with a new line.</span>
                 </label>
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Key features</span>
-                  <textarea
-                    rows={4}
-                    value={briefFormState.features}
-                    onChange={(event) => handleBriefFieldChange('features', event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder={['Real-time dashboards', 'Role-based access', 'AI-assisted insights'].join('\n')}
-                  />
-                  <span className="block text-xs text-white/40">List one feature per line.</span>
-                </label>
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Integrations</span>
-                  <textarea
+              <label className="space-y-2 text-sm text-white/70">
+                <span className="text-xs uppercase tracking-wide text-white/50">Key features</span>
+                <textarea
+                  rows={4}
+                  value={briefFormState.features}
+                  onChange={(event) => handleBriefFieldChange('features', event.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                  placeholder={['Real-time dashboards', 'Role-based access', 'AI-assisted insights'].join('\n')}
+                />
+                <span className="block text-xs text-white/40">List one feature per line.</span>
+              </label>
+              <label className="space-y-2 text-sm text-white/70">
+                <span className="text-xs uppercase tracking-wide text-white/50">Bookings</span>
+                <textarea
+                  rows={3}
+                  value={briefFormState.bookings}
+                  onChange={(event) => handleBriefFieldChange('bookings', event.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                  placeholder="How are bookings or scheduling handled today?"
+                />
+              </label>
+              <label className="space-y-2 text-sm text-white/70">
+                <span className="text-xs uppercase tracking-wide text-white/50">Integrations</span>
+                <textarea
                     rows={3}
                     value={briefFormState.integrations}
                     onChange={(event) => handleBriefFieldChange('integrations', event.target.value)}
