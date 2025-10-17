@@ -190,7 +190,7 @@ export default function SettingsPage() {
 
         const { error: profileError } = await supabase
           .from('profiles')
-          .update(profileUpdates)
+          .update<Database['public']['Tables']['profiles']['Update']>(profileUpdates)
           .eq('id', user.id)
 
         if (profileError) {
