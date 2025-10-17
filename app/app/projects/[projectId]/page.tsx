@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
+import { createClient } from '@/utils/supabaseBrowser'
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
@@ -50,6 +51,33 @@ type BriefFormState = {
   successMetrics: string
   competitors: string
   risks: string
+}
+
+const parseBriefAnswersFromJson = (value: unknown): BriefAnswers | null => {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const toNullableString = (input: unknown): string | null =>
+    typeof input === 'string' && input.trim().length > 0 ? input : null
+
+  const toStringArray = (input: unknown): string[] => {
+    if (!Array.isArray(input)) return []
+    return input.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  }
+
+  const candidate = value as Partial<Record<keyof BriefAnswers, unknown>>
+
+  return {
+    goals: toNullableString(candidate.goals) ?? null,
+    personas: toStringArray(candidate.personas),
+    features: toStringArray(candidate.features),
+    integrations: toStringArray(candidate.integrations),
+    timeline: toNullableString(candidate.timeline) ?? null,
+    successMetrics: toNullableString(candidate.successMetrics) ?? null,
+    competitors: toStringArray(candidate.competitors),
+    risks: toNullableString(candidate.risks) ?? null
+  }
 }
 
 const createEmptyBriefFormState = (): BriefFormState => ({
@@ -263,70 +291,6 @@ const normalizeDateColumnInput = (value: string): string | null => {
   return parsed.toISOString().slice(0, 10)
 }
 
-const createMockProjectData = (projectId: string) => {
-  const mockClients: Array<Pick<ClientRow, 'id' | 'name'>> = [
-    { id: 'client-mock-1', name: 'Radiant Labs' },
-    { id: 'client-mock-2', name: 'Northwind Co.' }
-  ]
-
-  const mockAssignees: Array<Pick<ProfileRow, 'id' | 'full_name'>> = [
-    { id: 'profile-mock-1', full_name: 'Avery Blair' },
-    { id: 'profile-mock-2', full_name: 'Jordan Ellis' }
-  ]
-
-  const mockBriefAnswers: BriefAnswers = {
-    goals: 'Launch a refreshed marketing site with a bold visual identity.',
-    personas: ['Marketing managers', 'Founders of seed stage startups'],
-    features: ['Modular landing pages', 'Analytics integrations', 'Resource library'],
-    integrations: ['HubSpot', 'Segment'],
-    timeline: 'Go-live in 6 weeks with iterative releases after launch.',
-    successMetrics: '20% lift in demo requests and newsletter signups.',
-    competitors: ['LumenOS', 'Brightly'],
-    risks: 'Tight timeline with overlapping brand initiatives.'
-  }
-
-  const mockInvoice: InvoiceInfo = {
-    id: 'invoice-mock-1',
-    amount: 25000,
-    currency: 'EUR'
-  }
-
-  const now = new Date()
-  const dueDate = new Date(now)
-  dueDate.setDate(now.getDate() + 21)
-
-  const mockProject: Project = {
-    id: projectId,
-    name: 'Radiant Labs Website Refresh',
-    status: 'In Progress',
-    description:
-      'Redesign the marketing site to showcase the new product positioning and enable rapid landing page testing.',
-    client_id: mockClients[0]?.id ?? 'client-mock-1',
-    assignee_profile_id: mockAssignees[0]?.id ?? null,
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
-    due_date: dueDate.toISOString(),
-    archived: false,
-    labels: ['Website'],
-    tags: ['design', 'marketing'],
-    priority: 'medium',
-    value_invoiced: mockInvoice.amount,
-    value_paid: 0,
-    value_quote: mockInvoice.amount,
-    client: mockClients[0] ?? null,
-    assignee: mockAssignees[0] ?? null,
-    budget: formatBudgetFromInvoice(mockInvoice.amount, mockInvoice.currency)
-  }
-
-  return {
-    project: mockProject,
-    clients: mockClients,
-    assignees: mockAssignees,
-    briefAnswers: mockBriefAnswers,
-    invoice: mockInvoice
-  }
-}
-
 interface ProjectOverviewPageProps {
   params: {
     projectId: string
@@ -348,38 +312,172 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const { pushToast } = useToast()
 
+  const supabase = useMemo(() => {
+    try {
+      return createClient()
+    } catch (clientError) {
+      console.error(clientError)
+      return null
+    }
+  }, [])
+
   useEffect(() => {
-    setLoadingProject(true)
-    setLoadingOptions(true)
-    setError(null)
+    let isMounted = true
 
-    const timeout = setTimeout(() => {
-      const { project: mockProject, clients: mockClients, assignees: mockAssignees, briefAnswers, invoice } =
-        createMockProjectData(params.projectId)
+    const fetchProjectData = async () => {
+      if (!supabase) {
+        setError('Supabase client is not available. Please check your environment configuration.')
+        setLoadingProject(false)
+        setLoadingOptions(false)
+        return
+      }
 
-      setClients(mockClients)
-      setAssignees(mockAssignees)
-      setInvoiceDetails(invoice)
-      setStoredBriefAnswers(briefAnswers)
-      setBriefFormState(mapBriefAnswersToFormState(briefAnswers))
-      setProject(mockProject)
-      setFormState({
-        name: mockProject.name ?? '',
-        description: mockProject.description ?? '',
-        status: mockProject.status ?? '',
-        dueDate: formatDateInput(mockProject.due_date),
-        clientId: mockProject.client?.id ?? '',
-        assigneeId: mockProject.assignee?.id ?? '',
-        budget: mockProject.budget ?? ''
-      })
+      setLoadingProject(true)
+      setLoadingOptions(true)
+      setError(null)
+
+      const projectPromise = supabase
+        .from('projects')
+        .select(
+          `
+            id,
+            name,
+            status,
+            description,
+            due_date,
+            created_at,
+            updated_at,
+            archived,
+            labels,
+            tags,
+            priority,
+            client_id,
+            assignee_profile_id,
+            value_invoiced,
+            value_paid,
+            value_quote,
+            clients:client_id ( id, name ),
+            assignee_profile:assignee_profile_id ( id, full_name ),
+            invoices ( id, amount, currency )
+          `
+        )
+        .eq('id', params.projectId)
+        .maybeSingle()
+
+      const clientsPromise = supabase.from('clients').select('id, name').order('name', { ascending: true })
+      const assigneesPromise = supabase
+        .from('profiles')
+        .select('id, full_name')
+        .order('full_name', { ascending: true })
+      const briefPromise = supabase
+        .from('briefs')
+        .select('answers')
+        .eq('project_id', params.projectId)
+        .maybeSingle()
+
+      const [projectResult, clientsResult, assigneesResult, briefResult] = await Promise.all([
+        projectPromise,
+        clientsPromise,
+        assigneesPromise,
+        briefPromise
+      ])
+
+      if (!isMounted) {
+        return
+      }
+
+      const { data: clientsData, error: clientsError } = clientsResult
+      const { data: assigneesData, error: assigneesError } = assigneesResult
+
+      if (clientsError) {
+        console.error('Failed to load clients', clientsError)
+      }
+      if (assigneesError) {
+        console.error('Failed to load profiles', assigneesError)
+      }
+
+      setClients((clientsData ?? []) as Array<Pick<ClientRow, 'id' | 'name'>>)
+      setAssignees((assigneesData ?? []) as Array<Pick<ProfileRow, 'id' | 'full_name'>>)
       setLoadingOptions(false)
+
+      const { data: projectData, error: projectError } = projectResult
+
+      if (projectError) {
+        console.error('Failed to load project', projectError)
+        setProject(null)
+        setFormState(null)
+        setInvoiceDetails(null)
+        setStoredBriefAnswers(null)
+        setBriefFormState(createEmptyBriefFormState())
+        setError('We could not load this project. Please try again.')
+        setLoadingProject(false)
+        return
+      }
+
+      if (!projectData) {
+        setProject(null)
+        setFormState(null)
+        setInvoiceDetails(null)
+        setStoredBriefAnswers(null)
+        setBriefFormState(createEmptyBriefFormState())
+        setError('We could not find this project.')
+        setLoadingProject(false)
+        return
+      }
+
+      type ProjectQuery = ProjectRow & {
+        clients: Pick<ClientRow, 'id' | 'name'> | null
+        assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
+        invoices: InvoiceInfo[] | null
+      }
+
+      const { clients: projectClient, assignee_profile: projectAssignee, invoices, ...projectRest } =
+        projectData as ProjectQuery
+
+      const invoiceRecord = invoices && invoices.length > 0 ? invoices[0] : null
+
+      setInvoiceDetails(invoiceRecord)
+
+      const formattedBudget = invoiceRecord
+        ? formatBudgetFromInvoice(invoiceRecord.amount, invoiceRecord.currency)
+        : null
+
+      const normalizedProject: Project = {
+        ...projectRest,
+        client: projectClient ?? null,
+        assignee: projectAssignee ?? null,
+        budget: formattedBudget
+      }
+
+      setProject(normalizedProject)
+      setFormState({
+        name: normalizedProject.name ?? '',
+        description: normalizedProject.description ?? '',
+        status: normalizedProject.status ?? '',
+        dueDate: formatDateInput(normalizedProject.due_date),
+        clientId: normalizedProject.client?.id ?? normalizedProject.client_id ?? '',
+        assigneeId: normalizedProject.assignee?.id ?? normalizedProject.assignee_profile_id ?? '',
+        budget: normalizedProject.budget ?? ''
+      })
+
+      const { data: briefData, error: briefError } = briefResult
+      if (briefError) {
+        console.error('Failed to load brief answers', briefError)
+      }
+
+      const normalizedBriefAnswers = parseBriefAnswersFromJson(briefData?.answers ?? null)
+      setStoredBriefAnswers(normalizedBriefAnswers)
+      setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
+
       setLoadingProject(false)
-    }, 200)
+    }
+
+    void fetchProjectData()
 
     return () => {
-      clearTimeout(timeout)
+      isMounted = false
     }
-  }, [params.projectId])
+  }, [params.projectId, supabase])
 
   const handleFieldChange = <Key extends keyof EditableProject>(field: Key, value: EditableProject[Key]) => {
     setFormState((previous) => {
