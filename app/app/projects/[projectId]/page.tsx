@@ -6,15 +6,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabaseClient'
 
-type SupabaseBrowserClient = ReturnType<typeof createClient>
-
-const PROJECTS_TABLE: keyof Database['public']['Tables'] = 'projects'
-const BRIEFS_TABLE: keyof Database['public']['Tables'] = 'briefs'
-const CLIENTS_TABLE: keyof Database['public']['Tables'] = 'clients'
-const PROFILES_TABLE: keyof Database['public']['Tables'] = 'profiles'
-const INVOICES_TABLE: keyof Database['public']['Tables'] = 'invoices'
+const PROJECTS_TABLE = 'projects' as const
+const BRIEFS_TABLE = 'briefs' as const
+const CLIENTS_TABLE = 'clients' as const
+const PROFILES_TABLE = 'profiles' as const
+const INVOICES_TABLE = 'invoices' as const
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
@@ -321,26 +319,12 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const { pushToast } = useToast()
 
-  const supabase = useMemo<SupabaseBrowserClient | null>(() => {
-    try {
-      return createClient()
-    } catch (clientError) {
-      console.error(clientError)
-      return null
-    }
-  }, [])
+  const supabase = useMemo(createBrowserClient, [])
 
   useEffect(() => {
     let isMounted = true
 
     const fetchData = async () => {
-      if (!supabase) {
-        setError('Supabase client unavailable. Please verify your configuration.')
-        setLoadingProject(false)
-        setLoadingOptions(false)
-        return
-      }
-
       setLoadingProject(true)
       setLoadingOptions(true)
       setError(null)
@@ -492,15 +476,6 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   }
 
   const handleSaveChanges = async () => {
-    if (!supabase) {
-      pushToast({
-        title: 'Supabase unavailable',
-        description: 'We could not reach the database client. Please check your configuration.',
-        variant: 'error'
-      })
-      return
-    }
-
     if (!formState) {
       return
     }
@@ -731,7 +706,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           <button
             type="button"
             onClick={handleSaveChanges}
-            disabled={saving || !formState || !supabase}
+            disabled={saving || !formState}
             className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition btn-gradient disabled:cursor-not-allowed disabled:opacity-60"
             aria-busy={saving}
           >
