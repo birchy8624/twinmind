@@ -498,6 +498,16 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       return
     }
 
+    if (!supabase) {
+      setError('Supabase client is not available. Please check your environment configuration.')
+      pushToast({
+        title: 'Unable to save project',
+        description: 'Supabase client is not available. Please refresh and try again.',
+        variant: 'error'
+      })
+      return
+    }
+
     const trimmedName = formState.name.trim()
     const trimmedDescription = formState.description.trim()
     const selectedStatus = formState.status
@@ -538,13 +548,74 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         setTimeout(resolve, 300)
       })
 
+      const { error: projectUpdateError } = await supabase
+        .from('projects')
+        .update({
+          name: trimmedName,
+          description: trimmedDescription,
+          status: selectedStatus as ProjectRow['status'],
+          client_id: selectedClientId,
+          assignee_profile_id: assigneeValue,
+          due_date: normalizedDueDate,
+          value_quote: parsedBudget ? parsedBudget.amount : null,
+          value_invoiced: parsedBudget ? parsedBudget.amount : null
+        })
+        .eq('id', params.projectId)
+
+      if (projectUpdateError) {
+        console.error('Failed to update project in Supabase', projectUpdateError)
+        throw new Error(projectUpdateError.message)
+      }
+
       let nextInvoiceDetails: InvoiceInfo | null = null
 
       if (parsedBudget) {
-        nextInvoiceDetails = {
-          id: invoiceDetails?.id ?? 'invoice-mock-1',
-          amount: parsedBudget.amount,
-          currency: parsedBudget.currency
+        if (invoiceDetails?.id) {
+          const { data: updatedInvoice, error: invoiceUpdateError } = await supabase
+            .from('invoices')
+            .update({
+              amount: parsedBudget.amount,
+              currency: parsedBudget.currency
+            })
+            .eq('id', invoiceDetails.id)
+            .select('id, amount, currency')
+            .maybeSingle()
+
+          if (invoiceUpdateError) {
+            console.error('Failed to update invoice in Supabase', invoiceUpdateError)
+            throw new Error(invoiceUpdateError.message)
+          }
+
+          nextInvoiceDetails =
+            updatedInvoice ?? {
+              id: invoiceDetails.id,
+              amount: parsedBudget.amount,
+              currency: parsedBudget.currency
+            }
+        } else {
+          const { data: createdInvoice, error: invoiceInsertError } = await supabase
+            .from('invoices')
+            .insert({
+              project_id: params.projectId,
+              amount: parsedBudget.amount,
+              currency: parsedBudget.currency
+            })
+            .select('id, amount, currency')
+            .single()
+
+          if (invoiceInsertError) {
+            console.error('Failed to create invoice in Supabase', invoiceInsertError)
+            throw new Error(invoiceInsertError.message)
+          }
+
+          nextInvoiceDetails = createdInvoice
+        }
+      } else if (invoiceDetails?.id) {
+        const { error: invoiceDeleteError } = await supabase.from('invoices').delete().eq('id', invoiceDetails.id)
+
+        if (invoiceDeleteError) {
+          console.error('Failed to delete invoice in Supabase', invoiceDeleteError)
+          throw new Error(invoiceDeleteError.message)
         }
       }
 
@@ -559,9 +630,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setInvoiceDetails(nextInvoiceDetails)
 
       setProject((previous) => {
-        if (!previous) return previous
+        const reference = previous ?? project
+        if (!reference) return previous
         return {
-          ...previous,
+          ...reference,
           name: trimmedName,
           description: trimmedDescription,
           status: selectedStatus as ProjectRow['status'],
@@ -572,7 +644,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           assignee: updatedAssignee,
           budget: formattedBudget,
           value_quote: parsedBudget ? parsedBudget.amount : null,
-          value_invoiced: parsedBudget ? parsedBudget.amount : null
+          value_invoiced: parsedBudget ? parsedBudget.amount : null,
+          updated_at: new Date().toISOString()
         }
       })
 
