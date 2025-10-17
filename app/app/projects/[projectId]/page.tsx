@@ -45,7 +45,9 @@ function normalizeBriefAnswers(value: unknown): BriefAnswers | null {
 
   const extractString = (input: unknown): string | null => (typeof input === 'string' && input.trim() ? input : null)
   const extractStringArray = (input: unknown): string[] =>
-    Array.isArray(input) ? input.filter((item): item is string => typeof item === 'string' && item.trim()) : []
+    Array.isArray(input)
+      ? input.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : []
 
   return {
     goals: extractString(value.goals),
