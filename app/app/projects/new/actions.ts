@@ -10,7 +10,6 @@ const BriefSchema = z.object({
   goals: z.string().min(1),
   personas: z.array(z.string()).default([]),
   features: z.array(z.string()).default([]),
-  bookings: z.string().optional(),
   integrations: z.array(z.string()).default([]),
   timeline: z.string().optional(),
   successMetrics: z.string().optional(),

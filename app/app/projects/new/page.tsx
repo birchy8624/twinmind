@@ -45,10 +45,6 @@ const projectSchema = z.object({
     .string()
     .trim()
     .min(3, 'Highlight the core features we should focus on'),
-  bookings: z
-    .string()
-    .trim()
-    .min(3, 'Capture any booking or scheduling requirements'),
   integrations: z
     .string()
     .trim()
@@ -88,7 +84,6 @@ const steps: StepConfig[] = [
       'goals',
       'personas',
       'keyFeatures',
-      'bookings',
       'integrations',
       'timeline',
       'successMetrics',
@@ -112,7 +107,6 @@ const defaultValues: NewProjectForm = {
   goals: '',
   personas: '',
   keyFeatures: '',
-  bookings: '',
   integrations: '',
   timeline: '',
   successMetrics: '',
@@ -438,11 +432,6 @@ function BriefQuestionsStep() {
           placeholder={["Real-time dashboards", "Role-based access", "AI-assisted insights"].join('\n')}
         />
         <TextareaField
-          id="bookings"
-          label="Bookings"
-          placeholder="How are bookings or scheduling handled today?"
-        />
-        <TextareaField
           id="integrations"
           label="Integrations"
           placeholder={["Salesforce", "HubSpot", "Segment"].join('\n')}
@@ -498,7 +487,6 @@ function ReviewStep({ clients, loadingClients }: ReviewStepProps) {
     ['Goals', values.goals || '—'],
     ['Personas', formatMultiline(values.personas)],
     ['Key features', formatMultiline(values.keyFeatures)],
-    ['Bookings', values.bookings || '—'],
     ['Integrations', formatMultiline(values.integrations)],
     ['Timeline', values.timeline || '—'],
     ['Success metrics', values.successMetrics || '—'],
@@ -668,7 +656,6 @@ function formValuesToPayload(values: NewProjectForm): ProjectWizardPayload {
       goals: values.goals,
       personas,
       features,
-      bookings: values.bookings || undefined,
       integrations,
       timeline: values.timeline || undefined,
       successMetrics: values.successMetrics || undefined,
@@ -685,7 +672,11 @@ function splitLines(value: string): string[] {
     .filter(Boolean)
 }
 
-function formatMultiline(value: string): string {
+function formatMultiline(value?: string | null): string {
+  if (!value) {
+    return '—'
+  }
+
   const lines = splitLines(value)
   if (!lines.length) {
     return '—'
