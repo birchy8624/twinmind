@@ -206,15 +206,18 @@ export default function ClientsPage() {
             </thead>
             <tbody className="divide-y divide-white/5">
               <AnimatePresence initial={false}>
-                {pageClients.map((client) => (
-                  <motion.tr
-                    key={client.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className="bg-base-900/40 transition hover:bg-base-900/60 hover:shadow-[0_0_30px_rgba(59,130,246,0.25)]"
-                  >
+                {pageClients.map((client) => {
+                  const createdAt = client.created_at ? new Date(client.created_at) : null
+
+                  return (
+                    <motion.tr
+                      key={client.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="bg-base-900/40 transition hover:bg-base-900/60 hover:shadow-[0_0_30px_rgba(59,130,246,0.25)]"
+                    >
                     <td className="px-5 py-4 text-sm font-medium text-white">
                       <div>{client.name}</div>
                       <div className="text-xs text-white/50">{client.website || 'No website yet'}</div>
@@ -224,7 +227,7 @@ export default function ClientsPage() {
                     </td>
                     <td className="px-5 py-4 text-sm">{client.website ? client.website.replace(/^https?:\/\//, '') : '—'}</td>
                     <td className="px-5 py-4 text-sm">
-                      <span title={new Date(client.created_at).toLocaleString()}>
+                      <span title={createdAt ? createdAt.toLocaleString() : undefined}>
                         {formatRelativeTimeFromNow(client.created_at)}
                       </span>
                     </td>
@@ -236,8 +239,9 @@ export default function ClientsPage() {
                         Open
                       </Link>
                     </td>
-                  </motion.tr>
-                ))}
+                    </motion.tr>
+                  )
+                })}
               </AnimatePresence>
               {loading ? (
                 <tr>
