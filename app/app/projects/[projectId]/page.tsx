@@ -10,6 +10,12 @@ import { createClient } from '@/utils/supabaseBrowser'
 
 type SupabaseBrowserClient = ReturnType<typeof createClient>
 
+const PROJECTS_TABLE: keyof Database['public']['Tables'] = 'projects'
+const BRIEFS_TABLE: keyof Database['public']['Tables'] = 'briefs'
+const CLIENTS_TABLE: keyof Database['public']['Tables'] = 'clients'
+const PROFILES_TABLE: keyof Database['public']['Tables'] = 'profiles'
+const INVOICES_TABLE: keyof Database['public']['Tables'] = 'invoices'
+
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
@@ -327,7 +333,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       const [projectResponse, clientsResponse, assigneesResponse, briefResponse, invoiceResponse] = await Promise.all([
         supabase
-          .from('projects')
+          .from(PROJECTS_TABLE)
           .select(
             `
               id,
@@ -343,20 +349,20 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           .eq('id', params.projectId)
           .maybeSingle(),
         supabase
-          .from('clients')
+          .from(CLIENTS_TABLE)
           .select('id, name')
           .order('name', { ascending: true }),
         supabase
-          .from('profiles')
+          .from(PROFILES_TABLE)
           .select('id, full_name')
           .order('full_name', { ascending: true }),
         supabase
-          .from('briefs')
+          .from(BRIEFS_TABLE)
           .select('answers')
           .eq('project_id', params.projectId)
           .maybeSingle(),
         supabase
-          .from('invoices')
+          .from(INVOICES_TABLE)
           .select('id, amount, currency, issued_at, created_at')
           .eq('project_id', params.projectId)
           .order('issued_at', { ascending: false })
@@ -529,7 +535,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       }
 
       const { error: projectError } = await supabase
-        .from('projects')
+        .from(PROJECTS_TABLE)
         .update<Database['public']['Tables']['projects']['Update']>(projectUpdate)
         .eq('id', params.projectId)
 
@@ -546,7 +552,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       }
 
       const { error: briefError } = await supabase
-        .from('briefs')
+        .from(BRIEFS_TABLE)
         .upsert(briefUpsert, { onConflict: 'project_id' })
 
       if (briefError) {
@@ -558,7 +564,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       if (parsedBudget) {
         if (invoiceDetails?.id) {
           const { data: updatedInvoice, error: updateInvoiceError } = await supabase
-            .from('invoices')
+            .from(INVOICES_TABLE)
             .update({ amount: parsedBudget.amount, currency: parsedBudget.currency })
             .eq('id', invoiceDetails.id)
             .select('id, amount, currency')
@@ -571,7 +577,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           nextInvoiceDetails = updatedInvoice as InvoiceInfo
         } else {
           const { data: insertedInvoice, error: insertInvoiceError } = await supabase
-            .from('invoices')
+            .from(INVOICES_TABLE)
             .insert({
               project_id: params.projectId,
               status: 'Quote',
@@ -589,7 +595,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           nextInvoiceDetails = insertedInvoice as InvoiceInfo
         }
       } else if (invoiceDetails?.id) {
-        const { error: deleteInvoiceError } = await supabase.from('invoices').delete().eq('id', invoiceDetails.id)
+        const { error: deleteInvoiceError } = await supabase
+          .from(INVOICES_TABLE)
+          .delete()
+          .eq('id', invoiceDetails.id)
 
         if (deleteInvoiceError) {
           throw new Error(deleteInvoiceError.message)
