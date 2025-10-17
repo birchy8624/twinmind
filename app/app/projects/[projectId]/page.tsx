@@ -179,7 +179,44 @@ const parseBudgetInput = (value: string, fallbackCurrency?: string): ParsedBudge
   return { amount, currency }
 }
 
-const statusOptions: ProjectRow['status'][] = ['Backlog', 'In Progress', 'Completed', 'Archived']
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeBriefAnswers(value: unknown): BriefAnswers | null {
+  if (!isRecord(value)) return null
+
+  const extractString = (input: unknown): string | null => (typeof input === 'string' && input.trim() ? input : null)
+  const extractStringArray = (input: unknown): string[] =>
+    Array.isArray(input)
+      ? input.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : []
+
+  return {
+    goals: extractString(value.goals),
+    personas: extractStringArray(value.personas),
+    features: extractStringArray(value.features),
+    integrations: extractStringArray(value.integrations),
+    timeline: extractString(value.timeline),
+    successMetrics: extractString(value.successMetrics),
+    competitors: extractStringArray(value.competitors),
+    risks: extractString(value.risks)
+  }
+}
+
+const statusOptions: ProjectRow['status'][] = [
+  'Backlog',
+  'Call Arranged',
+  'Brief Gathered',
+  'UI Stage',
+  'DB Stage',
+  'Auth Stage',
+  'Build',
+  'QA',
+  'Handover',
+  'Closed',
+  'Archived'
+]
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
