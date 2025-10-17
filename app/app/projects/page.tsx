@@ -19,7 +19,7 @@ type Project = ProjectRow & {
 }
 
 const PAGE_SIZE = 8
-const statusFilters = ['All statuses', 'Brief Gathered', 'In Progress', 'Completed', 'Archived']
+const statusFilters = ['All statuses', 'Backlog', 'In Progress', 'Completed', 'Archived']
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
@@ -156,12 +156,17 @@ export default function ProjectsPage() {
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.toLowerCase()
     return projects.filter((project) => {
+      const projectName = project.name.toLowerCase()
+      const projectDescription = project.description?.toLowerCase() ?? ''
+      const clientName = project.client?.name?.toLowerCase() ?? ''
+      const assigneeName = project.assignee?.full_name?.toLowerCase() ?? ''
+
       const matchesQuery =
         !normalizedQuery ||
-        project.name.toLowerCase().includes(normalizedQuery) ||
-        project.description.toLowerCase().includes(normalizedQuery) ||
-        project.client?.name.toLowerCase().includes(normalizedQuery) ||
-        project.assignee?.full_name?.toLowerCase().includes(normalizedQuery)
+        projectName.includes(normalizedQuery) ||
+        projectDescription.includes(normalizedQuery) ||
+        clientName.includes(normalizedQuery) ||
+        assigneeName.includes(normalizedQuery)
       const matchesStatus =
         statusFilter === 'All statuses' || formatStatus(project.status) === statusFilter
       return matchesQuery && matchesStatus

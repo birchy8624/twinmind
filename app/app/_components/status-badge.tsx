@@ -10,7 +10,7 @@ const statusStyles: Record<string, string> = {
   Discovery: 'bg-limeglow-500/10 text-limeglow-200 ring-1 ring-inset ring-limeglow-500/40',
   'In Review': 'bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/40',
   'In Delivery': 'bg-indigo-500/10 text-indigo-300 ring-1 ring-inset ring-indigo-500/40',
-  'Brief Gathered': 'bg-sky-500/10 text-sky-200 ring-1 ring-inset ring-sky-500/40',
+  Backlog: 'bg-sky-500/10 text-sky-200 ring-1 ring-inset ring-sky-500/40',
   'In Progress': 'bg-indigo-500/10 text-indigo-200 ring-1 ring-inset ring-indigo-500/40',
   Completed: 'bg-limeglow-500/10 text-limeglow-100 ring-1 ring-inset ring-limeglow-500/30',
   Blocked: 'bg-rose-500/10 text-rose-300 ring-1 ring-inset ring-rose-500/40',

@@ -194,7 +194,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     client_id: clientId,
     name: project.name,
     description: project.description,
-    status: 'Brief Gathered',
+    status: 'Backlog',
     due_date: project.due_date ?? null,
     assignee_profile_id: ownerUser.id
   }
