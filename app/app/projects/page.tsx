@@ -92,6 +92,12 @@ export default function ProjectsPage() {
             Monitor project health across clients and quickly surface work that needs attention.
           </p>
         </div>
+        <Link
+          href="/app/projects/new"
+          className="inline-flex items-center justify-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient"
+        >
+          + New project
+        </Link>
       </header>
 
       <motion.div className="rounded-3xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
