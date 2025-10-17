@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   Controller,
   FormProvider,
@@ -225,6 +225,7 @@ export default function NewClientPage() {
   const { pushToast } = useToast()
   const [activeStep, setActiveStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [canSubmitReview, setCanSubmitReview] = useState(false)
 
   const methods = useForm<OnboardingForm>({
     resolver: zodResolver(onboardingSchema),
@@ -234,6 +235,32 @@ export default function NewClientPage() {
 
   const currentStep = steps[activeStep]
   const progress = useMemo(() => ((activeStep + 1) / steps.length) * 100, [activeStep])
+
+  useEffect(() => {
+    setCanSubmitReview(false)
+
+    if (currentStep.id !== 'review') {
+      return
+    }
+
+    let rafId: number | null = null
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+    rafId = requestAnimationFrame(() => {
+      timeoutId = setTimeout(() => {
+        setCanSubmitReview(true)
+      }, 50)
+    })
+
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+      }
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId)
+      }
+    }
+  }, [activeStep, currentStep.id])
 
   const handleNext = async () => {
     if (activeStep === steps.length - 1) {
@@ -314,6 +341,11 @@ export default function NewClientPage() {
     const submitter = nativeEvent.submitter
 
     if (!(submitter instanceof HTMLButtonElement) || submitter.name !== 'create-client') {
+      event.preventDefault()
+      return
+    }
+
+    if (!canSubmitReview) {
       event.preventDefault()
       return
     }
@@ -406,7 +438,7 @@ export default function NewClientPage() {
                 <button
                   type="submit"
                   name="create-client"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !canSubmitReview}
                   className="rounded-md px-4 py-2 text-sm font-semibold transition btn-gradient disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSubmitting ? 'Creating…' : 'Create client & project'}
