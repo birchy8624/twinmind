@@ -316,6 +316,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const [error, setError] = useState<string | null>(null)
   const [invoiceDetails, setInvoiceDetails] = useState<InvoiceInfo | null>(null)
   const [saving, setSaving] = useState(false)
+  const [storedBriefAnswers, setStoredBriefAnswers] = useState<BriefAnswers | null>(null)
 
   const { pushToast } = useToast()
 
@@ -376,9 +377,11 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       if (briefResponse.error) {
         console.error(briefResponse.error)
         setBriefFormState(createEmptyBriefFormState())
+        setStoredBriefAnswers(null)
       } else {
         const briefData = briefResponse.data as Pick<BriefRow, 'answers'> | null
         const normalizedBriefAnswers = normalizeBriefAnswers(briefData?.answers ?? null)
+        setStoredBriefAnswers(normalizedBriefAnswers)
         setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
       }
 
@@ -413,6 +416,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         console.error(projectResponse.error)
         setProject(null)
         setFormState(null)
+        setStoredBriefAnswers(null)
         setBriefFormState(createEmptyBriefFormState())
         setError('We ran into an issue loading this project. Please try again.')
         return
@@ -421,6 +425,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       if (!projectResponse.data) {
         setProject(null)
         setFormState(null)
+        setStoredBriefAnswers(null)
         setBriefFormState(createEmptyBriefFormState())
         setError('We could not find this project. It may have been removed.')
         return
@@ -545,12 +550,12 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         throw new Error(projectError.message)
       }
 
-      const briefAnswers = mapBriefFormStateToAnswers(briefFormState)
+      const normalizedBriefAnswers = mapBriefFormStateToAnswers(briefFormState)
 
       const briefUpsert: Database['public']['Tables']['briefs']['Insert'] = {
         project_id: params.projectId,
-        answers: briefAnswers,
-        completed: hasBriefContent(briefAnswers)
+        answers: normalizedBriefAnswers,
+        completed: hasBriefContent(normalizedBriefAnswers)
       }
 
       const { error: briefError } = await supabase
@@ -650,7 +655,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         budget: formattedBudget ?? ''
       })
 
-      setBriefFormState(mapBriefAnswersToFormState(briefAnswers))
+      setStoredBriefAnswers(normalizedBriefAnswers)
+      setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
 
       pushToast({
         title: 'Project updated',
@@ -696,6 +702,16 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       })
     : 'Unknown'
   const readableCountdown = project ? formatRelativeTimeFromNow(project.due_date) : 'Unknown'
+  const readableDescription = project?.description?.trim()
+    ? project.description
+    : 'Not provided yet'
+
+  const resolvedBriefAnswers = useMemo(() => {
+    if (storedBriefAnswers) return storedBriefAnswers
+    return mapBriefFormStateToAnswers(briefFormState)
+  }, [storedBriefAnswers, briefFormState])
+
+  const hasBriefSummary = resolvedBriefAnswers ? hasBriefContent(resolvedBriefAnswers) : false
 
   return (
     <div className="space-y-6">
@@ -948,6 +964,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                 <h2 className="text-lg font-semibold text-white">Key details</h2>
               </header>
               <dl className="space-y-4 text-sm text-white/70">
+                <div className="space-y-1">
+                  <dt className="text-white/50">Project name</dt>
+                  <dd className="text-white/80">{project?.name ?? 'Untitled project'}</dd>
+                </div>
                 <div className="flex items-start justify-between gap-3">
                   <dt className="text-white/50">Client</dt>
                   <dd className="text-right text-white/80">
@@ -976,7 +996,106 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                   <dt className="text-white/50">Created</dt>
                   <dd className="text-right text-white/80">{readableCreatedAt}</dd>
                 </div>
+                <div className="space-y-1">
+                  <dt className="text-white/50">Project description</dt>
+                  <dd className="whitespace-pre-line text-white/80">{readableDescription}</dd>
+                </div>
               </dl>
+            </section>
+
+            <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
+              <header className="mb-4 space-y-1">
+                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Brief responses</p>
+                <h2 className="text-lg font-semibold text-white">Discovery summary</h2>
+              </header>
+              {hasBriefSummary ? (
+                <dl className="space-y-4 text-sm text-white/70">
+                  <div className="space-y-1">
+                    <dt className="text-white/50">Goals</dt>
+                    <dd className="whitespace-pre-line text-white/80">
+                      {resolvedBriefAnswers?.goals ?? 'Not provided'}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-white/50">Personas</dt>
+                    <dd className="text-white/80">
+                      {resolvedBriefAnswers?.personas && resolvedBriefAnswers.personas.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-5 text-left">
+                          {resolvedBriefAnswers.personas.map((persona) => (
+                            <li key={persona}>{persona}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        'Not provided'
+                      )}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-white/50">Key features</dt>
+                    <dd className="text-white/80">
+                      {resolvedBriefAnswers?.features && resolvedBriefAnswers.features.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-5 text-left">
+                          {resolvedBriefAnswers.features.map((feature) => (
+                            <li key={feature}>{feature}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        'Not provided'
+                      )}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-white/50">Integrations</dt>
+                    <dd className="text-white/80">
+                      {resolvedBriefAnswers?.integrations && resolvedBriefAnswers.integrations.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-5 text-left">
+                          {resolvedBriefAnswers.integrations.map((integration) => (
+                            <li key={integration}>{integration}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        'Not provided'
+                      )}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-white/50">Timeline</dt>
+                    <dd className="whitespace-pre-line text-white/80">
+                      {resolvedBriefAnswers?.timeline ?? 'Not provided'}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-white/50">Success metrics</dt>
+                    <dd className="whitespace-pre-line text-white/80">
+                      {resolvedBriefAnswers?.successMetrics ?? 'Not provided'}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-white/50">Competitors</dt>
+                    <dd className="text-white/80">
+                      {resolvedBriefAnswers?.competitors && resolvedBriefAnswers.competitors.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-5 text-left">
+                          {resolvedBriefAnswers.competitors.map((competitor) => (
+                            <li key={competitor}>{competitor}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        'Not provided'
+                      )}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-white/50">Risks</dt>
+                    <dd className="whitespace-pre-line text-white/80">
+                      {resolvedBriefAnswers?.risks ?? 'Not provided'}
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <p className="text-sm text-white/60">
+                  We don&apos;t have any discovery answers for this project yet. Capture details in the brief to see them here.
+                </p>
+              )}
             </section>
 
             <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
