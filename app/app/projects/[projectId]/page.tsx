@@ -685,8 +685,9 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       : project?.budget && project.budget.trim().length > 0
         ? project.budget
         : 'Not set'
-  const readableCreatedAt = project
-    ? new Date(project.created_at).toLocaleString('en-US', {
+  const createdAt = project?.created_at ? new Date(project.created_at) : null
+  const readableCreatedAt = createdAt
+    ? createdAt.toLocaleString('en-US', {
         month: 'long',
         day: 'numeric',
         year: 'numeric',
