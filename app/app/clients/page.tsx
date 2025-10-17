@@ -86,7 +86,7 @@ export default function ClientsPage() {
 
       const { data, error: fetchError } = await supabase
         .from('clients')
-        .select('id, name, website, account_status, created_at')
+        .select('id, name, company, website, account_status, created_at')
         .order('created_at', { ascending: false })
 
       if (!isMounted) return
@@ -115,6 +115,7 @@ export default function ClientsPage() {
       const matchesQuery =
         !normalizedQuery ||
         client.name.toLowerCase().includes(normalizedQuery) ||
+        (client.company ? client.company.toLowerCase().includes(normalizedQuery) : false) ||
         client.website?.toLowerCase().includes(normalizedQuery)
       const matchesStatus =
         statusFilter === 'All statuses' || formatStatus(client.account_status) === statusFilter
@@ -167,7 +168,7 @@ export default function ClientsPage() {
               <input
                 type="search"
                 value={query}
-                placeholder="Search by name or website"
+                placeholder="Search by company, contact, or website"
                 onChange={(event) => handleQueryChange(event.target.value)}
                 className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/40 focus:outline-none"
               />
@@ -216,8 +217,10 @@ export default function ClientsPage() {
                     className="bg-base-900/40 transition hover:bg-base-900/60 hover:shadow-[0_0_30px_rgba(59,130,246,0.25)]"
                   >
                     <td className="px-5 py-4 text-sm font-medium text-white">
-                      <div>{client.name}</div>
-                      <div className="text-xs text-white/50">{client.website || 'No website yet'}</div>
+                      <div>{client.company || client.name}</div>
+                      <div className="text-xs text-white/50">
+                        {client.company && client.name ? client.name : client.website || 'No website yet'}
+                      </div>
                     </td>
                     <td className="px-5 py-4">
                       <StatusBadge status={formatStatus(client.account_status)} />
@@ -230,7 +233,9 @@ export default function ClientsPage() {
                     </td>
                     <td className="px-5 py-4 text-right text-sm">
                       <Link
-                        href={`/app/clients/${encodeURIComponent(client.name.toLowerCase().replace(/\s+/g, '-'))}`}
+                        href={`/app/clients/${encodeURIComponent(
+                          (client.company || client.name).toLowerCase().replace(/\s+/g, '-')
+                        )}`}
                         className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/20 hover:text-white"
                       >
                         Open

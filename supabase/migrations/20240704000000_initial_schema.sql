@@ -7,6 +7,7 @@ create table if not exists public.clients (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
   name text not null,
+  company text,
   website text,
   account_status text not null default 'active'
 );
