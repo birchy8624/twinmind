@@ -530,7 +530,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       const { error: projectError } = await supabase
         .from('projects')
-        .update(projectUpdate)
+        .update<Database['public']['Tables']['projects']['Update']>(projectUpdate)
         .eq('id', params.projectId)
 
       if (projectError) {
