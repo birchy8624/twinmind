@@ -10,6 +10,7 @@ import { createClient } from '@/utils/supabaseBrowser'
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
+type BriefRow = Database['public']['Tables']['briefs']['Row']
 
 type Project = ProjectRow & {
   client: Pick<ClientRow, 'id' | 'name'> | null
@@ -192,7 +193,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         console.error(briefResponse.error)
         setBriefAnswers(null)
       } else {
-        setBriefAnswers(normalizeBriefAnswers(briefResponse.data?.answers))
+        const briefData = briefResponse.data as Pick<BriefRow, 'answers'> | null
+        setBriefAnswers(normalizeBriefAnswers(briefData?.answers ?? null))
       }
 
       if (clientsResponse.error) {
