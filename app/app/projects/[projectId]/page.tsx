@@ -6,18 +6,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
-import { createBrowserClient } from '@/lib/supabaseClient'
-
-const PROJECTS_TABLE = 'projects' as const
-const BRIEFS_TABLE = 'briefs' as const
-const CLIENTS_TABLE = 'clients' as const
-const PROFILES_TABLE = 'profiles' as const
-const INVOICES_TABLE = 'invoices' as const
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
-type BriefRow = Database['public']['Tables']['briefs']['Row']
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 
 type Project = ProjectRow & {
@@ -48,9 +40,6 @@ type BriefAnswers = {
 }
 
 type InvoiceInfo = Pick<InvoiceRow, 'id' | 'amount' | 'currency'>
-type ProjectUpdate = Database['public']['Tables']['projects']['Update']
-type InvoiceUpdate = Database['public']['Tables']['invoices']['Update']
-type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
 
 type BriefFormState = {
   goals: string
@@ -189,31 +178,6 @@ const parseBudgetInput = (value: string, fallbackCurrency?: string): ParsedBudge
   return { amount, currency }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function normalizeBriefAnswers(value: unknown): BriefAnswers | null {
-  if (!isRecord(value)) return null
-
-  const extractString = (input: unknown): string | null => (typeof input === 'string' && input.trim() ? input : null)
-  const extractStringArray = (input: unknown): string[] =>
-    Array.isArray(input)
-      ? input.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      : []
-
-  return {
-    goals: extractString(value.goals),
-    personas: extractStringArray(value.personas),
-    features: extractStringArray(value.features),
-    integrations: extractStringArray(value.integrations),
-    timeline: extractString(value.timeline),
-    successMetrics: extractString(value.successMetrics),
-    competitors: extractStringArray(value.competitors),
-    risks: extractString(value.risks)
-  }
-}
-
 const statusOptions: ProjectRow['status'][] = ['Backlog', 'In Progress', 'Completed', 'Archived']
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
@@ -299,6 +263,70 @@ const normalizeDateColumnInput = (value: string): string | null => {
   return parsed.toISOString().slice(0, 10)
 }
 
+const createMockProjectData = (projectId: string) => {
+  const mockClients: Array<Pick<ClientRow, 'id' | 'name'>> = [
+    { id: 'client-mock-1', name: 'Radiant Labs' },
+    { id: 'client-mock-2', name: 'Northwind Co.' }
+  ]
+
+  const mockAssignees: Array<Pick<ProfileRow, 'id' | 'full_name'>> = [
+    { id: 'profile-mock-1', full_name: 'Avery Blair' },
+    { id: 'profile-mock-2', full_name: 'Jordan Ellis' }
+  ]
+
+  const mockBriefAnswers: BriefAnswers = {
+    goals: 'Launch a refreshed marketing site with a bold visual identity.',
+    personas: ['Marketing managers', 'Founders of seed stage startups'],
+    features: ['Modular landing pages', 'Analytics integrations', 'Resource library'],
+    integrations: ['HubSpot', 'Segment'],
+    timeline: 'Go-live in 6 weeks with iterative releases after launch.',
+    successMetrics: '20% lift in demo requests and newsletter signups.',
+    competitors: ['LumenOS', 'Brightly'],
+    risks: 'Tight timeline with overlapping brand initiatives.'
+  }
+
+  const mockInvoice: InvoiceInfo = {
+    id: 'invoice-mock-1',
+    amount: 25000,
+    currency: 'EUR'
+  }
+
+  const now = new Date()
+  const dueDate = new Date(now)
+  dueDate.setDate(now.getDate() + 21)
+
+  const mockProject: Project = {
+    id: projectId,
+    name: 'Radiant Labs Website Refresh',
+    status: 'In Progress',
+    description:
+      'Redesign the marketing site to showcase the new product positioning and enable rapid landing page testing.',
+    client_id: mockClients[0]?.id ?? 'client-mock-1',
+    assignee_profile_id: mockAssignees[0]?.id ?? null,
+    created_at: now.toISOString(),
+    updated_at: now.toISOString(),
+    due_date: dueDate.toISOString(),
+    archived: false,
+    labels: ['Website'],
+    tags: ['design', 'marketing'],
+    priority: 'medium',
+    value_invoiced: mockInvoice.amount,
+    value_paid: 0,
+    value_quote: mockInvoice.amount,
+    client: mockClients[0] ?? null,
+    assignee: mockAssignees[0] ?? null,
+    budget: formatBudgetFromInvoice(mockInvoice.amount, mockInvoice.currency)
+  }
+
+  return {
+    project: mockProject,
+    clients: mockClients,
+    assignees: mockAssignees,
+    briefAnswers: mockBriefAnswers,
+    invoice: mockInvoice
+  }
+}
+
 interface ProjectOverviewPageProps {
   params: {
     projectId: string
@@ -320,148 +348,38 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const { pushToast } = useToast()
 
-  const supabase = useMemo(createBrowserClient, [])
-
   useEffect(() => {
-    let isMounted = true
+    setLoadingProject(true)
+    setLoadingOptions(true)
+    setError(null)
 
-    const fetchData = async () => {
-      setLoadingProject(true)
-      setLoadingOptions(true)
-      setError(null)
+    const timeout = setTimeout(() => {
+      const { project: mockProject, clients: mockClients, assignees: mockAssignees, briefAnswers, invoice } =
+        createMockProjectData(params.projectId)
 
-      const [projectResponse, clientsResponse, assigneesResponse, briefResponse, invoiceResponse] = await Promise.all([
-        supabase
-          .from(PROJECTS_TABLE)
-          .select(
-            `
-              id,
-              name,
-              status,
-              description,
-              due_date,
-              created_at,
-              clients:client_id ( id, name ),
-              assignee_profile:assignee_profile_id ( id, full_name )
-            `
-          )
-          .eq('id', params.projectId)
-          .maybeSingle(),
-        supabase
-          .from(CLIENTS_TABLE)
-          .select('id, name')
-          .order('name', { ascending: true }),
-        supabase
-          .from(PROFILES_TABLE)
-          .select('id, full_name')
-          .order('full_name', { ascending: true }),
-        supabase
-          .from(BRIEFS_TABLE)
-          .select('answers')
-          .eq('project_id', params.projectId)
-          .maybeSingle(),
-        supabase
-          .from(INVOICES_TABLE)
-          .select('id, amount, currency, issued_at, created_at')
-          .eq('project_id', params.projectId)
-          .order('issued_at', { ascending: false })
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      ])
-
-      if (!isMounted) return
-
-      setLoadingOptions(false)
-
-      if (briefResponse.error) {
-        console.error(briefResponse.error)
-        setBriefFormState(createEmptyBriefFormState())
-        setStoredBriefAnswers(null)
-      } else {
-        const briefData = briefResponse.data as Pick<BriefRow, 'answers'> | null
-        const normalizedBriefAnswers = normalizeBriefAnswers(briefData?.answers ?? null)
-        setStoredBriefAnswers(normalizedBriefAnswers)
-        setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
-      }
-
-      let projectBudget: string | null = null
-
-      if (invoiceResponse.error) {
-        console.error(invoiceResponse.error)
-        setInvoiceDetails(null)
-      } else if (invoiceResponse.data) {
-        const invoiceData = invoiceResponse.data as InvoiceInfo
-        projectBudget = formatBudgetFromInvoice(invoiceData.amount, invoiceData.currency)
-        setInvoiceDetails(invoiceData)
-      } else {
-        setInvoiceDetails(null)
-      }
-
-      if (clientsResponse.error) {
-        console.error(clientsResponse.error)
-      } else {
-        setClients(clientsResponse.data ?? [])
-      }
-
-      if (assigneesResponse.error) {
-        console.error(assigneesResponse.error)
-      } else {
-        setAssignees(assigneesResponse.data ?? [])
-      }
-
-      setLoadingProject(false)
-
-      if (projectResponse.error) {
-        console.error(projectResponse.error)
-        setProject(null)
-        setFormState(null)
-        setStoredBriefAnswers(null)
-        setBriefFormState(createEmptyBriefFormState())
-        setError('We ran into an issue loading this project. Please try again.')
-        return
-      }
-
-      if (!projectResponse.data) {
-        setProject(null)
-        setFormState(null)
-        setStoredBriefAnswers(null)
-        setBriefFormState(createEmptyBriefFormState())
-        setError('We could not find this project. It may have been removed.')
-        return
-      }
-
-      type ProjectQuery = ProjectRow & {
-        clients: Pick<ClientRow, 'id' | 'name'> | null
-        assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
-      }
-
-      const typedProject = projectResponse.data as ProjectQuery
-      const normalizedProject: Project = {
-        ...typedProject,
-        client: typedProject.clients ?? null,
-        assignee: typedProject.assignee_profile ?? null,
-        budget: projectBudget
-      }
-
-      setProject(normalizedProject)
+      setClients(mockClients)
+      setAssignees(mockAssignees)
+      setInvoiceDetails(invoice)
+      setStoredBriefAnswers(briefAnswers)
+      setBriefFormState(mapBriefAnswersToFormState(briefAnswers))
+      setProject(mockProject)
       setFormState({
-        name: normalizedProject.name ?? '',
-        description: normalizedProject.description ?? '',
-        status: normalizedProject.status ?? '',
-        dueDate: formatDateInput(normalizedProject.due_date),
-        clientId: normalizedProject.client?.id ?? '',
-        assigneeId: normalizedProject.assignee?.id ?? '',
-        budget: normalizedProject.budget ?? ''
+        name: mockProject.name ?? '',
+        description: mockProject.description ?? '',
+        status: mockProject.status ?? '',
+        dueDate: formatDateInput(mockProject.due_date),
+        clientId: mockProject.client?.id ?? '',
+        assigneeId: mockProject.assignee?.id ?? '',
+        budget: mockProject.budget ?? ''
       })
-    }
-
-    void fetchData()
+      setLoadingOptions(false)
+      setLoadingProject(false)
+    }, 200)
 
     return () => {
-      isMounted = false
+      clearTimeout(timeout)
     }
-  }, [supabase, params.projectId])
+  }, [params.projectId])
 
   const handleFieldChange = <Key extends keyof EditableProject>(field: Key, value: EditableProject[Key]) => {
     setFormState((previous) => {
@@ -516,106 +434,22 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setSaving(true)
       setError(null)
 
-      if (!supabase) {
-        const message = 'We could not connect to the database client. Please refresh and try again.'
-        setError(message)
-        pushToast({
-          title: 'Unable to save project',
-          description: message,
-          variant: 'error'
-        })
-        setSaving(false)
-        return
-      }
-
       const assigneeValue = formState.assigneeId.trim() ? formState.assigneeId : null
 
       const normalizedDueDate = normalizeDateColumnInput(formState.dueDate)
-
-      const projectUpdate: ProjectUpdate = {
-        assignee_profile_id: assigneeValue,
-        client_id: selectedClientId,
-        description: trimmedDescription,
-        due_date: normalizedDueDate,
-        name: trimmedName,
-        status: selectedStatus as ProjectUpdate['status']
-      }
-
-      const { error: projectError } = await supabase
-        .from(PROJECTS_TABLE)
-        .update(projectUpdate)
-        .eq('id', params.projectId)
-
-      if (projectError) {
-        throw new Error(projectError.message)
-      }
-
       const normalizedBriefAnswers = mapBriefFormStateToAnswers(briefFormState)
 
-      const briefUpsert: Database['public']['Tables']['briefs']['Insert'] = {
-        project_id: params.projectId,
-        answers: normalizedBriefAnswers,
-        completed: hasBriefContent(normalizedBriefAnswers)
-      }
-
-      const { error: briefError } = await supabase
-        .from(BRIEFS_TABLE)
-        .upsert(briefUpsert, { onConflict: 'project_id' })
-
-      if (briefError) {
-        throw new Error(briefError.message)
-      }
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300)
+      })
 
       let nextInvoiceDetails: InvoiceInfo | null = null
 
       if (parsedBudget) {
-        if (invoiceDetails?.id) {
-          const invoiceUpdate: InvoiceUpdate = {
-            amount: parsedBudget.amount,
-            currency: parsedBudget.currency
-          }
-
-          const { data: updatedInvoice, error: updateInvoiceError } = await supabase
-            .from(INVOICES_TABLE)
-            .update(invoiceUpdate)
-            .eq('id', invoiceDetails.id)
-            .select('id, amount, currency')
-            .single()
-
-          if (updateInvoiceError) {
-            throw new Error(updateInvoiceError.message)
-          }
-
-          nextInvoiceDetails = updatedInvoice as InvoiceInfo
-        } else {
-          const invoiceInsert: InvoiceInsert = {
-            amount: parsedBudget.amount,
-            currency: parsedBudget.currency,
-            issued_at: new Date().toISOString(),
-            project_id: params.projectId,
-            status: 'Quote'
-          }
-
-          const { data: insertedInvoice, error: insertInvoiceError } = await supabase
-            .from(INVOICES_TABLE)
-            .insert(invoiceInsert)
-            .select('id, amount, currency')
-            .single()
-
-          if (insertInvoiceError) {
-            throw new Error(insertInvoiceError.message)
-          }
-
-          nextInvoiceDetails = insertedInvoice as InvoiceInfo
-        }
-      } else if (invoiceDetails?.id) {
-        const { error: deleteInvoiceError } = await supabase
-          .from(INVOICES_TABLE)
-          .delete()
-          .eq('id', invoiceDetails.id)
-
-        if (deleteInvoiceError) {
-          throw new Error(deleteInvoiceError.message)
+        nextInvoiceDetails = {
+          id: invoiceDetails?.id ?? 'invoice-mock-1',
+          amount: parsedBudget.amount,
+          currency: parsedBudget.currency
         }
       }
 
@@ -641,7 +475,9 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           assignee_profile_id: assigneeValue,
           client: updatedClient,
           assignee: updatedAssignee,
-          budget: formattedBudget
+          budget: formattedBudget,
+          value_quote: parsedBudget ? parsedBudget.amount : null,
+          value_invoiced: parsedBudget ? parsedBudget.amount : null
         }
       })
 
