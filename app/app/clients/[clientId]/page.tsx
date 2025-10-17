@@ -266,14 +266,14 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
               <dt className="text-xs uppercase tracking-wide text-white/40">Website</dt>
               <dd className="mt-1 text-sm text-white/80">
                 {normalizedWebsite ? (
-                  <Link
+                  <a
                     href={normalizedWebsite.href}
                     target="_blank"
                     rel="noreferrer"
                     className="text-sky-300 transition hover:text-sky-200"
                   >
                     {normalizedWebsite.hostname}
-                  </Link>
+                  </a>
                 ) : (
                   '—'
                 )}
