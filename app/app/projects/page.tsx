@@ -156,12 +156,16 @@ export default function ProjectsPage() {
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.toLowerCase()
     return projects.filter((project) => {
+      const normalizedDescription = project.description?.toLowerCase() ?? ''
+      const normalizedClientName = project.client?.name?.toLowerCase() ?? ''
+      const normalizedAssigneeName = project.assignee?.full_name?.toLowerCase() ?? ''
+
       const matchesQuery =
         !normalizedQuery ||
         project.name.toLowerCase().includes(normalizedQuery) ||
-        project.description.toLowerCase().includes(normalizedQuery) ||
-        project.client?.name.toLowerCase().includes(normalizedQuery) ||
-        project.assignee?.full_name?.toLowerCase().includes(normalizedQuery)
+        normalizedDescription.includes(normalizedQuery) ||
+        normalizedClientName.includes(normalizedQuery) ||
+        normalizedAssigneeName.includes(normalizedQuery)
       const matchesStatus =
         statusFilter === 'All statuses' || formatStatus(project.status) === statusFilter
       return matchesQuery && matchesStatus

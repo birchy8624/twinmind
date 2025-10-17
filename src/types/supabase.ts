@@ -9,27 +9,67 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      briefs: {
+      audit_log: {
         Row: {
-          answers: Json
-          completed: boolean
-          created_at: string
           id: string
-          project_id: string
+          actor_profile_id: string | null
+          action: string
+          entity_type: string
+          entity_id: string
+          meta: Json | null
+          created_at: string | null
         }
         Insert: {
-          answers: Json
-          completed?: boolean
-          created_at?: string
           id?: string
-          project_id: string
+          actor_profile_id?: string | null
+          action: string
+          entity_type: string
+          entity_id: string
+          meta?: Json | null
+          created_at?: string | null
         }
         Update: {
-          answers?: Json
-          completed?: boolean
-          created_at?: string
+          id?: string
+          actor_profile_id?: string | null
+          action?: string
+          entity_type?: string
+          entity_id?: string
+          meta?: Json | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'audit_log_actor_profile_id_fkey'
+            columns: ['actor_profile_id']
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      briefs: {
+        Row: {
+          id: string
+          project_id: string
+          answers: Json
+          completed: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          answers: Json
+          completed?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
           id?: string
           project_id?: string
+          answers?: Json
+          completed?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -42,22 +82,25 @@ export type Database = {
       }
       client_members: {
         Row: {
-          client_id: string
-          created_at: string
           id: string
+          client_id: string
           profile_id: string
+          role: string | null
+          created_at: string | null
         }
         Insert: {
-          client_id: string
-          created_at?: string
           id?: string
+          client_id: string
           profile_id: string
+          role?: string | null
+          created_at?: string | null
         }
         Update: {
-          client_id?: string
-          created_at?: string
           id?: string
+          client_id?: string
           profile_id?: string
+          role?: string | null
+          created_at?: string | null
         }
         Relationships: [
           {
@@ -74,132 +117,265 @@ export type Database = {
           }
         ]
       }
-      client_onboarding_submissions: {
-        Row: {
-          budget: string | null
-          client_email: string
-      client_name: string
-      company: string | null
-      created_at: string
-      goals: string
-      gdpr_consent: boolean
-      id: string
-      integrations: string | null
-      invite_client: boolean
-      core_features: string
-      competitors: Json
-      phone: string | null
-      project_description: string
-      project_due_date: string | null
-      project_name: string
-      risks: string | null
-      success_metrics: string | null
-      target_users: string
-      timeline: string | null
-      timezone: string | null
-      website: string | null
-        }
-        Insert: {
-          budget?: string | null
-          client_email: string
-      client_name: string
-      company?: string | null
-      created_at?: string
-      goals: string
-      gdpr_consent?: boolean
-      id?: string
-      integrations?: string | null
-      invite_client?: boolean
-      core_features: string
-      competitors?: Json
-      phone?: string | null
-      project_description: string
-      project_due_date?: string | null
-      project_name: string
-          risks?: string | null
-          success_metrics?: string | null
-          target_users: string
-          timeline?: string | null
-          timezone?: string | null
-          website?: string | null
-        }
-        Update: {
-          budget?: string | null
-          client_email?: string
-      client_name?: string
-      company?: string | null
-      created_at?: string
-      goals?: string
-      gdpr_consent?: boolean
-      id?: string
-      integrations?: string | null
-      invite_client?: boolean
-      core_features?: string
-      competitors?: Json
-      phone?: string | null
-      project_description?: string
-      project_due_date?: string | null
-      project_name?: string
-          risks?: string | null
-          success_metrics?: string | null
-          target_users?: string
-          timeline?: string | null
-          timezone?: string | null
-          website?: string | null
-        }
-        Relationships: []
-      }
       clients: {
         Row: {
-          account_status: 'active' | 'inactive' | 'invited' | 'archived'
-          created_at: string
           id: string
           name: string
           website: string | null
+          notes: string | null
+          account_status: string | null
+          created_at: string | null
+          updated_at: string | null
         }
         Insert: {
-          account_status?: 'active' | 'inactive' | 'invited' | 'archived'
-          created_at?: string
           id?: string
           name: string
           website?: string | null
+          notes?: string | null
+          account_status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
         Update: {
-          account_status?: 'active' | 'inactive' | 'invited' | 'archived'
-          created_at?: string
           id?: string
           name?: string
           website?: string | null
+          notes?: string | null
+          account_status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
-      invoices: {
+      comments: {
         Row: {
-          amount: number
-          created_at: string
-          currency: string
           id: string
-          issued_at: string | null
           project_id: string
-          status: 'Quote' | 'Draft' | 'Sent' | 'Paid' | 'Cancelled'
+          author_profile_id: string
+          body: string
+          visibility: string
+          created_at: string | null
         }
         Insert: {
-          amount: number
-          created_at?: string
-          currency?: string
           id?: string
-          issued_at?: string | null
           project_id: string
-          status?: 'Quote' | 'Draft' | 'Sent' | 'Paid' | 'Cancelled'
+          author_profile_id: string
+          body: string
+          visibility?: string
+          created_at?: string | null
         }
         Update: {
-          amount?: number
-          created_at?: string
-          currency?: string
           id?: string
-          issued_at?: string | null
           project_id?: string
-          status?: 'Quote' | 'Draft' | 'Sent' | 'Paid' | 'Cancelled'
+          author_profile_id?: string
+          body?: string
+          visibility?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'comments_author_profile_id_fkey'
+            columns: ['author_profile_id']
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'comments_project_id_fkey'
+            columns: ['project_id']
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      contacts: {
+        Row: {
+          id: string
+          client_id: string
+          profile_id: string | null
+          first_name: string | null
+          last_name: string | null
+          email: string
+          phone: string | null
+          title: string | null
+          is_primary: boolean | null
+          gdpr_consent: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          client_id: string
+          profile_id?: string | null
+          first_name?: string | null
+          last_name?: string | null
+          email: string
+          phone?: string | null
+          title?: string | null
+          is_primary?: boolean | null
+          gdpr_consent?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          client_id?: string
+          profile_id?: string | null
+          first_name?: string | null
+          last_name?: string | null
+          email?: string
+          phone?: string | null
+          title?: string | null
+          is_primary?: boolean | null
+          gdpr_consent?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'contacts_client_id_fkey'
+            columns: ['client_id']
+            referencedRelation: 'clients'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'contacts_profile_id_fkey'
+            columns: ['profile_id']
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      files: {
+        Row: {
+          id: string
+          project_id: string
+          uploaded_by_profile_id: string
+          storage_path: string
+          filename: string
+          size: number | null
+          mime: string | null
+          visibility: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          uploaded_by_profile_id: string
+          storage_path: string
+          filename: string
+          size?: number | null
+          mime?: string | null
+          visibility?: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          uploaded_by_profile_id?: string
+          storage_path?: string
+          filename?: string
+          size?: number | null
+          mime?: string | null
+          visibility?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'files_project_id_fkey'
+            columns: ['project_id']
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'files_uploaded_by_profile_id_fkey'
+            columns: ['uploaded_by_profile_id']
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      invites: {
+        Row: {
+          id: string
+          client_id: string
+          email: string
+          token: string
+          expires_at: string
+          accepted_profile_id: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          client_id: string
+          email: string
+          token: string
+          expires_at: string
+          accepted_profile_id?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          client_id?: string
+          email?: string
+          token?: string
+          expires_at?: string
+          accepted_profile_id?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'invites_accepted_profile_id_fkey'
+            columns: ['accepted_profile_id']
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'invites_client_id_fkey'
+            columns: ['client_id']
+            referencedRelation: 'clients'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      invoices: {
+        Row: {
+          id: string
+          project_id: string
+          status: string
+          amount: number
+          currency: string
+          issued_at: string | null
+          due_at: string | null
+          paid_at: string | null
+          external_url: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          status?: string
+          amount: number
+          currency?: string
+          issued_at?: string | null
+          due_at?: string | null
+          paid_at?: string | null
+          external_url?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          status?: string
+          amount?: number
+          currency?: string
+          issued_at?: string | null
+          due_at?: string | null
+          paid_at?: string | null
+          external_url?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -210,75 +386,167 @@ export type Database = {
           }
         ]
       }
-      profiles: {
+      pipeline_order: {
         Row: {
-          company: string | null
-          created_at: string
-          email: string | null
-          full_name: string | null
-          gdpr_consent: boolean
           id: string
-          phone: string | null
-          role: 'owner' | 'admin' | 'client' | 'member'
-          timezone: string | null
-          updated_at: string
+          pipeline_column: string
+          order_ids: string[]
+          updated_at: string | null
         }
         Insert: {
-          company?: string | null
-          created_at?: string
-          email?: string | null
-          full_name?: string | null
-          gdpr_consent?: boolean
-          id: string
-          phone?: string | null
-          role: 'owner' | 'admin' | 'client' | 'member'
-          timezone?: string | null
-          updated_at?: string
+          id?: string
+          pipeline_column: string
+          order_ids?: string[]
+          updated_at?: string | null
         }
         Update: {
-          company?: string | null
-          created_at?: string
-          email?: string | null
-          full_name?: string | null
-          gdpr_consent?: boolean
           id?: string
-          phone?: string | null
-          role?: 'owner' | 'admin' | 'client' | 'member'
-          timezone?: string | null
-          updated_at?: string
+          pipeline_column?: string
+          order_ids?: string[]
+          updated_at?: string | null
         }
         Relationships: []
       }
-      projects: {
+      profiles: {
         Row: {
-          assignee_profile_id: string | null
-          client_id: string
-          created_at: string
-          description: string
-          due_date: string | null
           id: string
-          name: string
-          status: 'Brief Gathered' | 'In Progress' | 'Completed' | 'Archived'
+          role: string
+          full_name: string | null
+          company: string | null
+          email: string | null
+          phone: string | null
+          timezone: string | null
+          gdpr_consent: boolean | null
+          created_at: string | null
+          updated_at: string | null
         }
         Insert: {
-          assignee_profile_id?: string | null
-          client_id: string
-          created_at?: string
-          description: string
-          due_date?: string | null
-          id?: string
-          name: string
-          status?: 'Brief Gathered' | 'In Progress' | 'Completed' | 'Archived'
+          id: string
+          role: string
+          full_name?: string | null
+          company?: string | null
+          email?: string | null
+          phone?: string | null
+          timezone?: string | null
+          gdpr_consent?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
         }
         Update: {
-          assignee_profile_id?: string | null
-          client_id?: string
-          created_at?: string
-          description?: string
-          due_date?: string | null
           id?: string
+          role?: string
+          full_name?: string | null
+          company?: string | null
+          email?: string | null
+          phone?: string | null
+          timezone?: string | null
+          gdpr_consent?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'profiles_id_fkey'
+            columns: ['id']
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      project_stage_events: {
+        Row: {
+          id: string
+          project_id: string
+          from_status: string | null
+          to_status: string
+          changed_by_profile_id: string | null
+          changed_at: string | null
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          from_status?: string | null
+          to_status: string
+          changed_by_profile_id?: string | null
+          changed_at?: string | null
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          from_status?: string | null
+          to_status?: string
+          changed_by_profile_id?: string | null
+          changed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'project_stage_events_changed_by_profile_id_fkey'
+            columns: ['changed_by_profile_id']
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'project_stage_events_project_id_fkey'
+            columns: ['project_id']
+            referencedRelation: 'projects'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      projects: {
+        Row: {
+          id: string
+          client_id: string
+          name: string
+          description: string | null
+          status: string
+          priority: string | null
+          value_quote: number | null
+          value_invoiced: number | null
+          value_paid: number | null
+          due_date: string | null
+          assignee_profile_id: string | null
+          labels: string[] | null
+          tags: string[] | null
+          archived: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          client_id: string
+          name: string
+          description?: string | null
+          status?: string
+          priority?: string | null
+          value_quote?: number | null
+          value_invoiced?: number | null
+          value_paid?: number | null
+          due_date?: string | null
+          assignee_profile_id?: string | null
+          labels?: string[] | null
+          tags?: string[] | null
+          archived?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          client_id?: string
           name?: string
-          status?: 'Brief Gathered' | 'In Progress' | 'Completed' | 'Archived'
+          description?: string | null
+          status?: string
+          priority?: string | null
+          value_quote?: number | null
+          value_invoiced?: number | null
+          value_paid?: number | null
+          due_date?: string | null
+          assignee_profile_id?: string | null
+          labels?: string[] | null
+          tags?: string[] | null
+          archived?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -303,7 +571,10 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      invoice_status: string
+      priority_enum: string
+      project_status: string
+      visibility_enum: string
     }
     CompositeTypes: {
       [_ in never]: never
