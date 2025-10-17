@@ -11,10 +11,12 @@ type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
 type BriefRow = Database['public']['Tables']['briefs']['Row']
+type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 
 type Project = ProjectRow & {
   client: Pick<ClientRow, 'id' | 'name'> | null
   assignee: Pick<ProfileRow, 'id' | 'full_name'> | null
+  budget: string | null
 }
 
 type EditableProject = {
@@ -139,6 +141,29 @@ function formatDisplayDate(value: string | null) {
   })
 }
 
+function formatBudgetFromInvoice(amount: InvoiceRow['amount'] | null | undefined, currency: InvoiceRow['currency'] | null | undefined) {
+  if (amount === null || amount === undefined) {
+    return null
+  }
+
+  const numericAmount = typeof amount === 'number' ? amount : Number(amount)
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+    return null
+  }
+
+  const normalizedCurrency = currency && currency.trim().length > 0 ? currency.trim().toUpperCase() : 'EUR'
+
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: normalizedCurrency
+    }).format(numericAmount)
+  } catch (error) {
+    console.error('Failed to format invoice amount as currency', error)
+    return `${numericAmount.toFixed(2)} ${normalizedCurrency}`
+  }
+}
+
 function formatDateInput(value: string | null) {
   if (!value) return ''
   const date = new Date(value)
@@ -187,7 +212,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setLoadingOptions(true)
       setError(null)
 
-      const [projectResponse, clientsResponse, assigneesResponse, briefResponse] = await Promise.all([
+      const [projectResponse, clientsResponse, assigneesResponse, briefResponse, invoiceResponse] = await Promise.all([
         supabase
           .from('projects')
           .select(
@@ -217,6 +242,14 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           .from('briefs')
           .select('answers')
           .eq('project_id', params.projectId)
+          .maybeSingle(),
+        supabase
+          .from('invoices')
+          .select('amount, currency, issued_at, created_at')
+          .eq('project_id', params.projectId)
+          .order('issued_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(1)
           .maybeSingle()
       ])
 
@@ -231,6 +264,15 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         const briefData = briefResponse.data as Pick<BriefRow, 'answers'> | null
         const normalizedBriefAnswers = normalizeBriefAnswers(briefData?.answers ?? null)
         setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
+      }
+
+      let projectBudget: string | null = null
+
+      if (invoiceResponse.error) {
+        console.error(invoiceResponse.error)
+      } else if (invoiceResponse.data) {
+        const invoiceData = invoiceResponse.data as Pick<InvoiceRow, 'amount' | 'currency'>
+        projectBudget = formatBudgetFromInvoice(invoiceData.amount, invoiceData.currency)
       }
 
       if (clientsResponse.error) {
@@ -273,7 +315,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       const normalizedProject: Project = {
         ...typedProject,
         client: typedProject.clients ?? null,
-        assignee: typedProject.assignee_profile ?? null
+        assignee: typedProject.assignee_profile ?? null,
+        budget: projectBudget
       }
 
       setProject(normalizedProject)
