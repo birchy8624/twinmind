@@ -1,7 +1,10 @@
 'use client'
 
-import { useCallback, useMemo, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
+
+import { createClient } from '@/utils/supabaseBrowser'
+import type { Database } from '@/types/supabase'
 
 import { StatusBadge } from '../_components/status-badge'
 
@@ -14,6 +17,10 @@ const PIPELINE_COLUMNS = [
 ] as const
 
 type ColumnStatus = (typeof PIPELINE_COLUMNS)[number]['status']
+
+type ProjectRow = Database['public']['Tables']['projects']['Row']
+type ClientRow = Database['public']['Tables']['clients']['Row']
+type ProfileRow = Database['public']['Tables']['profiles']['Row']
 
 type KanbanProject = {
   id: string
@@ -34,69 +41,6 @@ type DragState = {
   projectId: string
   fromStatus: ColumnStatus
 }
-
-const MOCK_PROJECTS: KanbanProject[] = [
-  {
-    id: 'proj-backlog-1',
-    name: 'Marketing Launch Plan',
-    status: 'Backlog',
-    client: { id: 'client-nova', name: 'Nova Systems' },
-    assignee: { id: 'profile-amelia', full_name: 'Amelia Rivers' },
-    value_quote: 42000,
-    due_date: '2024-08-20',
-    labels: ['Strategy'],
-    tags: ['marketing', 'launch'],
-    created_at: '2024-05-10T09:12:00Z'
-  },
-  {
-    id: 'proj-ui-1',
-    name: 'Atlas Portal Redesign',
-    status: 'Brief Gathered',
-    client: { id: 'client-atlas', name: 'Atlas Ventures' },
-    assignee: { id: 'profile-jordan', full_name: 'Jordan Miles' },
-    value_quote: 58500,
-    due_date: '2024-07-05',
-    labels: ['Design'],
-    tags: ['ui', 'research'],
-    created_at: '2024-04-28T11:45:00Z'
-  },
-  {
-    id: 'proj-build-1',
-    name: 'Aurora Mobile Build',
-    status: 'Build',
-    client: { id: 'client-aurora', name: 'Aurora Labs' },
-    assignee: { id: 'profile-sasha', full_name: 'Sasha Lin' },
-    value_quote: 73500,
-    due_date: '2024-06-30',
-    labels: ['Development'],
-    tags: ['mobile', 'react native'],
-    created_at: '2024-03-15T14:22:00Z'
-  },
-  {
-    id: 'proj-qa-1',
-    name: 'Helios QA Suite',
-    status: 'Build',
-    client: { id: 'client-helios', name: 'Helios Manufacturing' },
-    assignee: { id: 'profile-diego', full_name: 'Diego Ramos' },
-    value_quote: 31200,
-    due_date: '2024-06-18',
-    labels: ['QA'],
-    tags: ['automation'],
-    created_at: '2024-04-02T08:05:00Z'
-  },
-  {
-    id: 'proj-closed-1',
-    name: 'Beacon Analytics Delivery',
-    status: 'Closed',
-    client: { id: 'client-beacon', name: 'Beacon Analytics' },
-    assignee: { id: 'profile-lena', full_name: 'Lena Patel' },
-    value_quote: 81000,
-    due_date: '2024-05-12',
-    labels: ['Delivery'],
-    tags: ['data', 'handover'],
-    created_at: '2024-02-22T16:30:00Z'
-  }
-]
 
 function createEmptyOrders(): ColumnOrders {
   return PIPELINE_COLUMNS.reduce((acc, column) => {
@@ -205,20 +149,8 @@ function DropZone({ isActive, isDragging, onDrop, onDragOver, onDragLeave, child
 }
 
 export default function KanbanPage() {
-  const [projects, setProjects] = useState<Map<string, KanbanProject>>(() => {
-    const map = new Map<string, KanbanProject>()
-    for (const project of MOCK_PROJECTS) {
-      map.set(project.id, project)
-    }
-    return map
-  })
-  const [columnOrders, setColumnOrders] = useState<ColumnOrders>(() => {
-    const orders = createEmptyOrders()
-    for (const project of MOCK_PROJECTS) {
-      orders[project.status] = [...orders[project.status], project.id]
-    }
-    return orders
-  })
+  const [projects, setProjects] = useState<Map<string, KanbanProject>>(new Map())
+  const [columnOrders, setColumnOrders] = useState<ColumnOrders>(() => createEmptyOrders())
   const [searchTerm, setSearchTerm] = useState('')
   const [clientFilter, setClientFilter] = useState<string>('all')
   const [assigneeFilter, setAssigneeFilter] = useState<string>('all')
@@ -226,6 +158,125 @@ export default function KanbanPage() {
   const [tagFilter, setTagFilter] = useState<string>('all')
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [activeDrop, setActiveDrop] = useState<{ status: ColumnStatus; beforeId: string | null } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+
+  const supabase = useMemo(() => {
+    try {
+      return createClient()
+    } catch (clientError) {
+      console.error(clientError)
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchProjects = async () => {
+      if (!supabase) {
+        if (isMounted) {
+          setError('Supabase client unavailable. Please verify your configuration.')
+          setProjects(new Map())
+          setColumnOrders(createEmptyOrders())
+          setLoading(false)
+        }
+        return
+      }
+
+      setLoading(true)
+      setError(null)
+      setUpdateError(null)
+
+      const { data, error: fetchError } = await supabase
+        .from('projects')
+        .select(
+          `
+            id,
+            name,
+            status,
+            value_quote,
+            due_date,
+            created_at,
+            labels,
+            tags,
+            clients:client_id ( id, name ),
+            assignee_profile:assignee_profile_id ( id, full_name )
+          `
+        )
+        .in(
+          'status',
+          PIPELINE_COLUMNS.map((column) => column.status)
+        )
+        .order('created_at', { ascending: false })
+
+      if (!isMounted) return
+
+      if (fetchError) {
+        console.error(fetchError)
+        setError('We ran into an issue loading projects. Please try again.')
+        setProjects(new Map())
+        setColumnOrders(createEmptyOrders())
+      } else {
+        type ProjectQuery = ProjectRow & {
+          clients: Pick<ClientRow, 'id' | 'name'> | null
+          assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
+        }
+
+        const typedProjects = (data ?? []) as ProjectQuery[]
+
+        const projectMap = new Map<string, KanbanProject>()
+        const orders = createEmptyOrders()
+
+        for (const project of typedProjects) {
+          if (!isColumnStatus(project.status)) {
+            continue
+          }
+
+          const labels = Array.isArray(project.labels)
+            ? project.labels
+                .map((label) => (typeof label === 'string' ? label.trim() : ''))
+                .filter((label): label is string => label.length > 0)
+            : []
+
+          const tags = Array.isArray(project.tags)
+            ? project.tags
+                .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+                .filter((tag): tag is string => tag.length > 0)
+            : []
+
+          const normalized: KanbanProject = {
+            id: project.id,
+            name: project.name,
+            status: project.status,
+            client: project.clients ?? null,
+            assignee: project.assignee_profile ?? null,
+            value_quote: typeof project.value_quote === 'number' ? project.value_quote : null,
+            due_date: project.due_date,
+            labels,
+            tags,
+            created_at: project.created_at
+          }
+
+          projectMap.set(project.id, normalized)
+          orders[project.status] = [...orders[project.status], project.id]
+        }
+
+        setProjects(projectMap)
+        setColumnOrders(orders)
+      }
+
+      setLoading(false)
+    }
+
+    void fetchProjects()
+
+    return () => {
+      isMounted = false
+    }
+  }, [supabase])
+
   const projectList = useMemo(() => Array.from(projects.values()), [projects])
 
   const clientOptions = useMemo(() => {
@@ -256,8 +307,8 @@ export default function KanbanPage() {
     const values = new Set<string>()
     for (const project of projectList) {
       for (const label of project.labels) {
-        if (typeof label === 'string' && label.trim()) {
-          values.add(label.trim())
+        if (label) {
+          values.add(label)
         }
       }
     }
@@ -268,8 +319,8 @@ export default function KanbanPage() {
     const values = new Set<string>()
     for (const project of projectList) {
       for (const tag of project.tags) {
-        if (typeof tag === 'string' && tag.trim()) {
-          values.add(tag.trim())
+        if (tag) {
+          values.add(tag)
         }
       }
     }
@@ -323,7 +374,7 @@ export default function KanbanPage() {
   }, [])
 
   const handleDrop = useCallback(
-    (targetStatus: ColumnStatus, insertBeforeId: string | null) => {
+    async (targetStatus: ColumnStatus, insertBeforeId: string | null) => {
       if (!dragState) {
         setActiveDrop(null)
         return
@@ -339,6 +390,8 @@ export default function KanbanPage() {
         acc[column.status] = [...(columnOrders[column.status] ?? [])]
         return acc
       }, {} as ColumnOrders)
+
+      const previousProjects = new Map(projects)
 
       const nextOrders = PIPELINE_COLUMNS.reduce((acc, column) => {
         acc[column.status] = [...(columnOrders[column.status] ?? [])]
@@ -383,8 +436,33 @@ export default function KanbanPage() {
       setColumnOrders(nextOrders)
       setActiveDrop(null)
       setDragState(null)
+
+      if (!statusChanged) {
+        return
+      }
+
+      if (!supabase) {
+        setUpdateError('Unable to update project status without a Supabase client.')
+        setProjects(previousProjects)
+        setColumnOrders(previousOrders)
+        return
+      }
+
+      const { error: updateStatusError } = await supabase
+        .from('projects')
+        .update({ status: targetStatus })
+        .eq('id', projectId)
+
+      if (updateStatusError) {
+        console.error(updateStatusError)
+        setUpdateError('We could not update the project status. Please try again.')
+        setProjects(previousProjects)
+        setColumnOrders(previousOrders)
+      } else {
+        setUpdateError(null)
+      }
     },
-    [columnOrders, dragState, projects]
+    [columnOrders, dragState, projects, supabase]
   )
 
   const visibleCounts = useMemo(() => {
@@ -411,6 +489,24 @@ export default function KanbanPage() {
           Drag cards across the delivery pipeline to rebalance workloads and keep everyone aligned.
         </p>
       </header>
+
+      {error ? (
+        <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          {error}
+        </div>
+      ) : null}
+
+      {updateError && !error ? (
+        <div className="rounded-2xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+          {updateError}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="rounded-2xl border border-white/10 bg-base-900/40 px-4 py-3 text-sm text-white/60">
+          Loading projects…
+        </div>
+      ) : null}
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
