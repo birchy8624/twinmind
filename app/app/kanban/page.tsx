@@ -1,11 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type DragEvent, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
 import { StatusBadge } from '../_components/status-badge'
-import { createClient } from '@/utils/supabaseBrowser'
-import type { Database } from '@/types/supabase'
 
 const PIPELINE_COLUMNS = [
   { status: 'Backlog', title: 'Backlog' },
@@ -22,16 +20,12 @@ const PIPELINE_COLUMNS = [
 
 type ColumnStatus = (typeof PIPELINE_COLUMNS)[number]['status']
 
-type ProjectRow = Database['public']['Tables']['projects']['Row']
-type ClientRow = Database['public']['Tables']['clients']['Row']
-type ProfileRow = Database['public']['Tables']['profiles']['Row']
-
 type KanbanProject = {
   id: string
   name: string
   status: ColumnStatus
-  client: Pick<ClientRow, 'id' | 'name'> | null
-  assignee: Pick<ProfileRow, 'id' | 'full_name'> | null
+  client: { id: string; name: string } | null
+  assignee: { id: string; full_name: string } | null
   value_quote: number | null
   due_date: string | null
   labels: string[]
@@ -41,12 +35,73 @@ type KanbanProject = {
 
 type ColumnOrders = Record<ColumnStatus, string[]>
 
-type PipelineOrderRow = Database['public']['Tables']['pipeline_order']['Row']
-
 type DragState = {
   projectId: string
   fromStatus: ColumnStatus
 }
+
+const MOCK_PROJECTS: KanbanProject[] = [
+  {
+    id: 'proj-backlog-1',
+    name: 'Marketing Launch Plan',
+    status: 'Backlog',
+    client: { id: 'client-nova', name: 'Nova Systems' },
+    assignee: { id: 'profile-amelia', full_name: 'Amelia Rivers' },
+    value_quote: 42000,
+    due_date: '2024-08-20',
+    labels: ['Strategy'],
+    tags: ['marketing', 'launch'],
+    created_at: '2024-05-10T09:12:00Z'
+  },
+  {
+    id: 'proj-ui-1',
+    name: 'Atlas Portal Redesign',
+    status: 'UI Stage',
+    client: { id: 'client-atlas', name: 'Atlas Ventures' },
+    assignee: { id: 'profile-jordan', full_name: 'Jordan Miles' },
+    value_quote: 58500,
+    due_date: '2024-07-05',
+    labels: ['Design'],
+    tags: ['ui', 'research'],
+    created_at: '2024-04-28T11:45:00Z'
+  },
+  {
+    id: 'proj-build-1',
+    name: 'Aurora Mobile Build',
+    status: 'Build',
+    client: { id: 'client-aurora', name: 'Aurora Labs' },
+    assignee: { id: 'profile-sasha', full_name: 'Sasha Lin' },
+    value_quote: 73500,
+    due_date: '2024-06-30',
+    labels: ['Development'],
+    tags: ['mobile', 'react native'],
+    created_at: '2024-03-15T14:22:00Z'
+  },
+  {
+    id: 'proj-qa-1',
+    name: 'Helios QA Suite',
+    status: 'QA',
+    client: { id: 'client-helios', name: 'Helios Manufacturing' },
+    assignee: { id: 'profile-diego', full_name: 'Diego Ramos' },
+    value_quote: 31200,
+    due_date: '2024-06-18',
+    labels: ['QA'],
+    tags: ['automation'],
+    created_at: '2024-04-02T08:05:00Z'
+  },
+  {
+    id: 'proj-closed-1',
+    name: 'Beacon Analytics Delivery',
+    status: 'Closed',
+    client: { id: 'client-beacon', name: 'Beacon Analytics' },
+    assignee: { id: 'profile-lena', full_name: 'Lena Patel' },
+    value_quote: 81000,
+    due_date: '2024-05-12',
+    labels: ['Delivery'],
+    tags: ['data', 'handover'],
+    created_at: '2024-02-22T16:30:00Z'
+  }
+]
 
 function createEmptyOrders(): ColumnOrders {
   return PIPELINE_COLUMNS.reduce((acc, column) => {
@@ -155,161 +210,27 @@ function DropZone({ isActive, isDragging, onDrop, onDragOver, onDragLeave, child
 }
 
 export default function KanbanPage() {
-  const supabase = useMemo(() => {
-    try {
-      return createClient()
-    } catch (error) {
-      console.error('Failed to create Supabase client', error)
-      return null
+  const [projects, setProjects] = useState<Map<string, KanbanProject>>(() => {
+    const map = new Map<string, KanbanProject>()
+    for (const project of MOCK_PROJECTS) {
+      map.set(project.id, project)
     }
-  }, [])
-
-  const [projects, setProjects] = useState<Map<string, KanbanProject>>(new Map())
-  const [columnOrders, setColumnOrders] = useState<ColumnOrders>(() => createEmptyOrders())
+    return map
+  })
+  const [columnOrders, setColumnOrders] = useState<ColumnOrders>(() => {
+    const orders = createEmptyOrders()
+    for (const project of MOCK_PROJECTS) {
+      orders[project.status] = [...orders[project.status], project.id]
+    }
+    return orders
+  })
   const [searchTerm, setSearchTerm] = useState('')
   const [clientFilter, setClientFilter] = useState<string>('all')
   const [assigneeFilter, setAssigneeFilter] = useState<string>('all')
   const [labelFilter, setLabelFilter] = useState<string>('all')
   const [tagFilter, setTagFilter] = useState<string>('all')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [activeDrop, setActiveDrop] = useState<{ status: ColumnStatus; beforeId: string | null } | null>(null)
-
-  useEffect(() => {
-    if (!supabase) {
-      setError('Supabase client unavailable. Please verify your configuration.')
-      setLoading(false)
-      return
-    }
-
-    let isMounted = true
-
-    const loadData = async () => {
-      setLoading(true)
-      setError(null)
-
-      try {
-        const [{ data: projectsData, error: projectsError }, { data: ordersData, error: orderError }] =
-          await Promise.all([
-            supabase
-              .from('projects')
-              .select(
-                `
-                  id,
-                  name,
-                  status,
-                  value_quote,
-                  due_date,
-                  labels,
-                  tags,
-                  created_at,
-                  clients:client_id ( id, name ),
-                  assignee_profile:assignee_profile_id ( id, full_name )
-                `
-              )
-              .eq('archived', false),
-            supabase.from('pipeline_order').select('pipeline_column, order_ids')
-          ])
-
-        if (projectsError) {
-          throw projectsError
-        }
-
-        if (orderError) {
-          throw orderError
-        }
-
-        const projectList = (projectsData ?? []) as Array<
-          ProjectRow & {
-            clients: Pick<ClientRow, 'id' | 'name'> | null
-            assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
-          }
-        >
-
-        const projectMap = new Map<string, KanbanProject>()
-        for (const project of projectList) {
-          if (!isColumnStatus(project.status)) {
-            continue
-          }
-
-          projectMap.set(project.id, {
-            id: project.id,
-            name: project.name,
-            status: project.status,
-            client: project.clients ?? null,
-            assignee: project.assignee_profile ?? null,
-            value_quote: project.value_quote,
-            due_date: project.due_date,
-            labels: Array.isArray(project.labels) ? project.labels.filter((label): label is string => typeof label === 'string') : [],
-            tags: Array.isArray(project.tags) ? project.tags.filter((tag): tag is string => typeof tag === 'string') : [],
-            created_at: project.created_at
-          })
-        }
-
-        const orders = createEmptyOrders()
-        const pipelineOrderMap = new Map<ColumnStatus, string[]>()
-        for (const orderRow of ordersData ?? []) {
-          const column = orderRow as PipelineOrderRow
-          if (!isColumnStatus(column.pipeline_column)) {
-            continue
-          }
-
-          pipelineOrderMap.set(column.pipeline_column, Array.isArray(column.order_ids) ? column.order_ids : [])
-        }
-
-        for (const column of PIPELINE_COLUMNS) {
-          const candidates = Array.from(projectMap.values()).filter((project) => project.status === column.status)
-          const orderedIds = pipelineOrderMap.get(column.status) ?? []
-          const seen = new Set<string>()
-          const ordered: string[] = []
-
-          for (const id of orderedIds) {
-            if (projectMap.has(id) && !seen.has(id) && projectMap.get(id)?.status === column.status) {
-              ordered.push(id)
-              seen.add(id)
-            }
-          }
-
-          const remaining = candidates
-            .filter((project) => !seen.has(project.id))
-            .sort((a, b) => {
-              const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
-              const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
-              return bTime - aTime
-            })
-            .map((project) => project.id)
-
-          orders[column.status] = [...ordered, ...remaining]
-        }
-
-        if (!isMounted) {
-          return
-        }
-
-        setProjects(projectMap)
-        setColumnOrders(orders)
-      } catch (loadError) {
-        console.error('Failed to load kanban data', loadError)
-        if (isMounted) {
-          setError('We ran into an issue loading the kanban pipeline. Please try again.')
-          setProjects(new Map())
-          setColumnOrders(createEmptyOrders())
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false)
-        }
-      }
-    }
-
-    void loadData()
-
-    return () => {
-      isMounted = false
-    }
-  }, [supabase])
-
   const projectList = useMemo(() => Array.from(projects.values()), [projects])
 
   const clientOptions = useMemo(() => {
@@ -576,18 +497,10 @@ export default function KanbanPage() {
         </div>
       </motion.div>
 
-      {loading ? (
-        <div className="flex justify-center py-24">
-          <span className="text-sm text-white/60">Loading pipeline…</span>
-        </div>
-      ) : error ? (
-        <div className="flex justify-center py-24">
-          <div className="max-w-md rounded-2xl border border-white/10 bg-base-900/40 p-6 text-center text-sm text-white/70">
-            {error}
-          </div>
-        </div>
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-5 2xl:grid-cols-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+      <div
+        className="grid gap-4 xl:grid-cols-5 2xl:grid-cols-5"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
+      >
           {PIPELINE_COLUMNS.map((column, columnIndex) => {
             const projectIds = columnOrders[column.status] ?? []
             const totalProjectsInColumn = projectIds.filter((id) => projects.has(id)).length
@@ -667,8 +580,11 @@ export default function KanbanPage() {
                     }`}
                     draggable
                     onDragStart={(event) => {
-                      event.dataTransfer.setData('text/plain', id)
-                      event.dataTransfer.effectAllowed = 'move'
+                      const dragEvent = event as unknown as DragEvent<HTMLDivElement>
+                      if (dragEvent.dataTransfer) {
+                        dragEvent.dataTransfer.setData('text/plain', id)
+                        dragEvent.dataTransfer.effectAllowed = 'move'
+                      }
                       handleDragStart(id, column.status)
                     }}
                     onDragEnd={handleDragEnd}
@@ -780,31 +696,30 @@ export default function KanbanPage() {
               )
             }
 
-            const visibleCount = visibleCounts.get(column.status) ?? 0
+              const visibleCount = visibleCounts.get(column.status) ?? 0
 
-            return (
-              <motion.div
-                key={column.status}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: columnIndex * 0.04, duration: 0.22, ease: 'easeOut' }}
-                className="flex min-h-[280px] flex-col gap-3 rounded-3xl border border-white/10 bg-base-900/40 p-4 shadow-lg shadow-base-900/30 backdrop-blur"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <h2 className="text-sm font-semibold text-white">{column.title}</h2>
-                    <p className="text-xs text-white/60">{visibleCount} project{visibleCount === 1 ? '' : 's'}</p>
+              return (
+                <motion.div
+                  key={column.status}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: columnIndex * 0.04, duration: 0.22, ease: 'easeOut' }}
+                  className="flex min-h-[280px] flex-col gap-3 rounded-3xl border border-white/10 bg-base-900/40 p-4 shadow-lg shadow-base-900/30 backdrop-blur"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <h2 className="text-sm font-semibold text-white">{column.title}</h2>
+                      <p className="text-xs text-white/60">{visibleCount} project{visibleCount === 1 ? '' : 's'}</p>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                      {totalProjectsInColumn}
+                    </span>
                   </div>
-                  <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/60">
-                    {totalProjectsInColumn}
-                  </span>
-                </div>
-                <div className="space-y-2">{columnElements}</div>
-              </motion.div>
-            )
-          })}
-        </div>
-      )}
+                  <div className="space-y-2">{columnElements}</div>
+                </motion.div>
+              )
+            })}
+      </div>
     </section>
   )
 }
