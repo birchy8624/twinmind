@@ -53,33 +53,6 @@ type BriefFormState = {
   risks: string
 }
 
-const parseBriefAnswersFromJson = (value: unknown): BriefAnswers | null => {
-  if (!value || typeof value !== 'object') {
-    return null
-  }
-
-  const toNullableString = (input: unknown): string | null =>
-    typeof input === 'string' && input.trim().length > 0 ? input : null
-
-  const toStringArray = (input: unknown): string[] => {
-    if (!Array.isArray(input)) return []
-    return input.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-  }
-
-  const candidate = value as Partial<Record<keyof BriefAnswers, unknown>>
-
-  return {
-    goals: toNullableString(candidate.goals) ?? null,
-    personas: toStringArray(candidate.personas),
-    features: toStringArray(candidate.features),
-    integrations: toStringArray(candidate.integrations),
-    timeline: toNullableString(candidate.timeline) ?? null,
-    successMetrics: toNullableString(candidate.successMetrics) ?? null,
-    competitors: toStringArray(candidate.competitors),
-    risks: toNullableString(candidate.risks) ?? null
-  }
-}
-
 const createEmptyBriefFormState = (): BriefFormState => ({
   goals: '',
   personas: '',
@@ -369,17 +342,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         .from('profiles')
         .select('id, full_name')
         .order('full_name', { ascending: true })
-      const briefPromise = supabase
-        .from('briefs')
-        .select('answers')
-        .eq('project_id', params.projectId)
-        .maybeSingle()
-
-      const [projectResult, clientsResult, assigneesResult, briefResult] = await Promise.all([
+      const [projectResult, clientsResult, assigneesResult] = await Promise.all([
         projectPromise,
         clientsPromise,
-        assigneesPromise,
-        briefPromise
+        assigneesPromise
       ])
 
       if (!isMounted) {
@@ -460,14 +426,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         budget: normalizedProject.budget ?? ''
       })
 
-      const { data: briefData, error: briefError } = briefResult
-      if (briefError) {
-        console.error('Failed to load brief answers', briefError)
-      }
-
-      const normalizedBriefAnswers = parseBriefAnswersFromJson(briefData?.answers ?? null)
-      setStoredBriefAnswers(normalizedBriefAnswers)
-      setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
+      setStoredBriefAnswers(null)
+      setBriefFormState(createEmptyBriefFormState())
 
       setLoadingProject(false)
     }
