@@ -187,7 +187,11 @@ export default function KanbanPage() {
       setError(null)
       setUpdateError(null)
 
-      const { data, error: fetchError } = await supabase
+      const pipelineStatusConditions = PIPELINE_COLUMNS.map((column) =>
+        `status.eq."${column.status.replace(/"/g, '\\"')}"`
+      ).join(',')
+
+      let query = supabase
         .from(PROJECTS)
         .select(
           `
@@ -203,11 +207,13 @@ export default function KanbanPage() {
             assignee_profile:assignee_profile_id ( id, full_name )
           `
         )
-        .in(
-          'status',
-          PIPELINE_COLUMNS.map((column) => column.status)
-        )
         .order('created_at', { ascending: false })
+
+      if (pipelineStatusConditions) {
+        query = query.or(pipelineStatusConditions)
+      }
+
+      const { data, error: fetchError } = await query
 
       if (!isMounted) return
 
