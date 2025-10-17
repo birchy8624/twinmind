@@ -511,6 +511,18 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setSaving(true)
       setError(null)
 
+      if (!supabase) {
+        const message = 'We could not connect to the database client. Please refresh and try again.'
+        setError(message)
+        pushToast({
+          title: 'Unable to save project',
+          description: message,
+          variant: 'error'
+        })
+        setSaving(false)
+        return
+      }
+
       const assigneeValue = formState.assigneeId.trim() ? formState.assigneeId : null
 
       const normalizedDueDate = normalizeDateColumnInput(formState.dueDate)
