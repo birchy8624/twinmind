@@ -12,6 +12,7 @@ type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
+type BriefRow = Database['public']['Tables']['briefs']['Row']
 
 type Project = ProjectRow & {
   client: Pick<ClientRow, 'id' | 'name'> | null
@@ -96,6 +97,45 @@ const mapBriefFormStateToAnswers = (state: BriefFormState): BriefAnswers => {
     successMetrics: normalizeString(state.successMetrics),
     competitors: normalizeList(state.competitors),
     risks: normalizeString(state.risks)
+  }
+}
+
+const parseBriefAnswers = (answers: BriefRow['answers']): BriefAnswers | null => {
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+    return null
+  }
+
+  const record = answers as Record<string, unknown>
+
+  const normalizeString = (value: unknown): string | null => {
+    if (typeof value !== 'string') {
+      return null
+    }
+
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  const normalizeStringArray = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      return []
+    }
+
+    return value
+      .flatMap((item) => (typeof item === 'string' ? item : []))
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+  }
+
+  return {
+    goals: normalizeString(record.goals),
+    personas: normalizeStringArray(record.personas),
+    features: normalizeStringArray(record.features),
+    integrations: normalizeStringArray(record.integrations),
+    timeline: normalizeString(record.timeline),
+    successMetrics: normalizeString(record.successMetrics),
+    competitors: normalizeStringArray(record.competitors),
+    risks: normalizeString(record.risks)
   }
 }
 
@@ -342,10 +382,16 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         .from('profiles')
         .select('id, full_name')
         .order('full_name', { ascending: true })
-      const [projectResult, clientsResult, assigneesResult] = await Promise.all([
+      const briefPromise = supabase
+        .from('briefs')
+        .select<Pick<BriefRow, 'answers'>>('answers')
+        .eq('project_id', params.projectId)
+        .maybeSingle()
+      const [projectResult, clientsResult, assigneesResult, briefResult] = await Promise.all([
         projectPromise,
         clientsPromise,
-        assigneesPromise
+        assigneesPromise,
+        briefPromise
       ])
 
       if (!isMounted) {
@@ -354,12 +400,16 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       const { data: clientsData, error: clientsError } = clientsResult
       const { data: assigneesData, error: assigneesError } = assigneesResult
+      const { data: briefData, error: briefError } = briefResult
 
       if (clientsError) {
         console.error('Failed to load clients', clientsError)
       }
       if (assigneesError) {
         console.error('Failed to load profiles', assigneesError)
+      }
+      if (briefError) {
+        console.error('Failed to load brief answers', briefError)
       }
 
       setClients((clientsData ?? []) as Array<Pick<ClientRow, 'id' | 'name'>>)
@@ -426,8 +476,20 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         budget: normalizedProject.budget ?? ''
       })
 
-      setStoredBriefAnswers(null)
-      setBriefFormState(createEmptyBriefFormState())
+      if (!briefData?.answers) {
+        setStoredBriefAnswers(null)
+        setBriefFormState(createEmptyBriefFormState())
+      } else {
+        const parsedBriefAnswers = parseBriefAnswers(briefData.answers)
+
+        if (parsedBriefAnswers) {
+          setStoredBriefAnswers(parsedBriefAnswers)
+          setBriefFormState(mapBriefAnswersToFormState(parsedBriefAnswers))
+        } else {
+          setStoredBriefAnswers(null)
+          setBriefFormState(createEmptyBriefFormState())
+        }
+      }
 
       setLoadingProject(false)
     }
