@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabaseClient'
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
@@ -41,6 +41,14 @@ type BriefAnswers = {
 }
 
 type InvoiceInfo = Pick<InvoiceRow, 'id' | 'amount' | 'currency'>
+
+const PROJECTS = 'projects' as const
+const INVOICES = 'invoices' as const
+
+type ProjectUpdate = Database['public']['Tables']['projects']['Update']
+type ProjectStatus = Database['public']['Enums']['project_status']
+type InvoiceUpdate = Database['public']['Tables']['invoices']['Update']
+type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
 
 type BriefFormState = {
   goals: string
@@ -324,7 +332,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const supabase = useMemo(() => {
     try {
-      return createClient()
+      return createBrowserClient()
     } catch (clientError) {
       console.error(clientError)
       return null
@@ -498,6 +506,16 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       return
     }
 
+    if (!supabase) {
+      setError('Supabase client is not available. Please check your environment configuration.')
+      pushToast({
+        title: 'Unable to save project',
+        description: 'Supabase client is not available. Please refresh and try again.',
+        variant: 'error'
+      })
+      return
+    }
+
     const trimmedName = formState.name.trim()
     const trimmedDescription = formState.description.trim()
     const selectedStatus = formState.status
@@ -538,13 +556,80 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         setTimeout(resolve, 300)
       })
 
+      const projectPatch: ProjectUpdate = {
+        name: trimmedName,
+        description: trimmedDescription,
+        status: selectedStatus as ProjectStatus,
+        client_id: selectedClientId,
+        assignee_profile_id: assigneeValue,
+        due_date: normalizedDueDate,
+        value_quote: parsedBudget ? parsedBudget.amount : null,
+        value_invoiced: parsedBudget ? parsedBudget.amount : null
+      }
+
+      const { error: projectUpdateError } = await supabase
+        .from(PROJECTS)
+        .update(projectPatch)
+        .eq('id', params.projectId)
+
+      if (projectUpdateError) {
+        console.error('Failed to update project in Supabase', projectUpdateError)
+        throw new Error(projectUpdateError.message)
+      }
+
       let nextInvoiceDetails: InvoiceInfo | null = null
 
       if (parsedBudget) {
-        nextInvoiceDetails = {
-          id: invoiceDetails?.id ?? 'invoice-mock-1',
-          amount: parsedBudget.amount,
-          currency: parsedBudget.currency
+        if (invoiceDetails?.id) {
+          const invoiceUpdate: InvoiceUpdate = {
+            amount: parsedBudget.amount,
+            currency: parsedBudget.currency
+          }
+
+          const { data: updatedInvoice, error: invoiceUpdateError } = await supabase
+            .from(INVOICES)
+            .update(invoiceUpdate)
+            .eq('id', invoiceDetails.id)
+            .select('id, amount, currency')
+            .maybeSingle()
+
+          if (invoiceUpdateError) {
+            console.error('Failed to update invoice in Supabase', invoiceUpdateError)
+            throw new Error(invoiceUpdateError.message)
+          }
+
+          nextInvoiceDetails =
+            updatedInvoice ?? {
+              id: invoiceDetails.id,
+              amount: parsedBudget.amount,
+              currency: parsedBudget.currency
+            }
+        } else {
+          const invoiceInsert: InvoiceInsert = {
+            project_id: params.projectId,
+            amount: parsedBudget.amount,
+            currency: parsedBudget.currency
+          }
+
+          const { data: createdInvoice, error: invoiceInsertError } = await supabase
+            .from(INVOICES)
+            .insert(invoiceInsert)
+            .select('id, amount, currency')
+            .single()
+
+          if (invoiceInsertError) {
+            console.error('Failed to create invoice in Supabase', invoiceInsertError)
+            throw new Error(invoiceInsertError.message)
+          }
+
+          nextInvoiceDetails = createdInvoice
+        }
+      } else if (invoiceDetails?.id) {
+        const { error: invoiceDeleteError } = await supabase.from(INVOICES).delete().eq('id', invoiceDetails.id)
+
+        if (invoiceDeleteError) {
+          console.error('Failed to delete invoice in Supabase', invoiceDeleteError)
+          throw new Error(invoiceDeleteError.message)
         }
       }
 
@@ -559,12 +644,13 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setInvoiceDetails(nextInvoiceDetails)
 
       setProject((previous) => {
-        if (!previous) return previous
+        const reference = previous ?? project
+        if (!reference) return previous
         return {
-          ...previous,
+          ...reference,
           name: trimmedName,
           description: trimmedDescription,
-          status: selectedStatus as ProjectRow['status'],
+          status: selectedStatus as ProjectStatus,
           due_date: normalizedDueDate,
           client_id: selectedClientId,
           assignee_profile_id: assigneeValue,
@@ -572,14 +658,15 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           assignee: updatedAssignee,
           budget: formattedBudget,
           value_quote: parsedBudget ? parsedBudget.amount : null,
-          value_invoiced: parsedBudget ? parsedBudget.amount : null
+          value_invoiced: parsedBudget ? parsedBudget.amount : null,
+          updated_at: new Date().toISOString()
         }
       })
 
       setFormState({
         name: trimmedName,
         description: trimmedDescription,
-        status: selectedStatus as ProjectRow['status'],
+        status: selectedStatus as ProjectStatus,
         dueDate: normalizedDueDate ?? '',
         clientId: selectedClientId,
         assigneeId: assigneeValue ?? '',
@@ -749,7 +836,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                   <span className="text-xs uppercase tracking-wide text-white/50">Status</span>
                   <select
                     value={formState.status}
-                    onChange={(event) => handleFieldChange('status', event.target.value as ProjectRow['status'])}
+                    onChange={(event) => handleFieldChange('status', event.target.value as ProjectStatus)}
                     className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
                   >
                     <option value="">Select a status</option>

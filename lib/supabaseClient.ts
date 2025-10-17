@@ -1,4 +1,5 @@
 import { createClient as _createClient } from '@supabase/supabase-js'
+
 import type { Database } from '@/types/supabase'
 
 export const createBrowserClient = () =>
@@ -6,3 +7,5 @@ export const createBrowserClient = () =>
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
+
+export type BrowserSupabaseClient = ReturnType<typeof createBrowserClient>
