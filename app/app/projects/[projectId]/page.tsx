@@ -552,20 +552,20 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                   />
                   <span className="block text-xs text-white/40">Separate each persona with a new line.</span>
                 </label>
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Key features</span>
-                  <textarea
-                    rows={4}
-                    value={briefFormState.features}
-                    onChange={(event) => handleBriefFieldChange('features', event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder={['Real-time dashboards', 'Role-based access', 'AI-assisted insights'].join('\n')}
-                  />
-                  <span className="block text-xs text-white/40">List one feature per line.</span>
-                </label>
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Integrations</span>
-                  <textarea
+              <label className="space-y-2 text-sm text-white/70">
+                <span className="text-xs uppercase tracking-wide text-white/50">Key features</span>
+                <textarea
+                  rows={4}
+                  value={briefFormState.features}
+                  onChange={(event) => handleBriefFieldChange('features', event.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                  placeholder={['Real-time dashboards', 'Role-based access', 'AI-assisted insights'].join('\n')}
+                />
+                <span className="block text-xs text-white/40">List one feature per line.</span>
+              </label>
+              <label className="space-y-2 text-sm text-white/70">
+                <span className="text-xs uppercase tracking-wide text-white/50">Integrations</span>
+                <textarea
                     rows={3}
                     value={briefFormState.integrations}
                     onChange={(event) => handleBriefFieldChange('integrations', event.target.value)}
