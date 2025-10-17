@@ -152,6 +152,7 @@ export type Database = {
       clients: {
         Row: {
           account_status: 'active' | 'inactive' | 'invited' | 'archived'
+          company: string | null
           created_at: string
           id: string
           name: string
@@ -159,6 +160,7 @@ export type Database = {
         }
         Insert: {
           account_status?: 'active' | 'inactive' | 'invited' | 'archived'
+          company?: string | null
           created_at?: string
           id?: string
           name: string
@@ -166,6 +168,7 @@ export type Database = {
         }
         Update: {
           account_status?: 'active' | 'inactive' | 'invited' | 'archived'
+          company?: string | null
           created_at?: string
           id?: string
           name?: string
