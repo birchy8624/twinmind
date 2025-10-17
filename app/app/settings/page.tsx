@@ -2,12 +2,14 @@
 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { motion } from 'framer-motion'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { ConfirmModal } from '../_components/confirm-modal'
 import { useToast } from '../_components/toast-context'
+import type { Database } from '@/types/supabase'
+import { createClient } from '@/utils/supabaseBrowser'
 
 const profileSchema = z.object({
   name: z.string().min(2, 'Name is required'),
@@ -28,14 +30,16 @@ type NotificationFormValues = z.infer<typeof notificationSchema>
 export default function SettingsPage() {
   const { pushToast } = useToast()
   const [resetModalOpen, setResetModalOpen] = useState(false)
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+  const supabase = useMemo(() => createClient(), [])
 
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     mode: 'onBlur',
     defaultValues: {
-      name: 'Evelyn Lopez',
-      title: 'Engagement Lead',
-      email: 'evelyn@twinmind.studio'
+      name: '',
+      title: '',
+      email: ''
     }
   })
 
@@ -49,13 +53,173 @@ export default function SettingsPage() {
     }
   })
 
+  const isSavingProfile = profileForm.formState.isSubmitting
+
+  useEffect(() => {
+    let isMounted = true
+
+    const resolveMetadataName = (metadata: Record<string, unknown> | undefined) => {
+      if (!metadata) {
+        return null
+      }
+
+      const firstName = typeof metadata['first_name'] === 'string' ? metadata['first_name'] : null
+      const lastName = typeof metadata['last_name'] === 'string' ? metadata['last_name'] : null
+      const fullName = typeof metadata['full_name'] === 'string' ? metadata['full_name'] : null
+      const name =
+        firstName && lastName
+          ? `${firstName} ${lastName}`
+          : fullName ?? firstName ?? (typeof metadata['name'] === 'string' ? metadata['name'] : null)
+
+      const trimmed = typeof name === 'string' ? name.trim() : ''
+
+      return trimmed ? trimmed : null
+    }
+
+    const loadProfile = async () => {
+      if (isMounted) {
+        setIsLoadingProfile(true)
+      }
+
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser()
+
+        if (userError) {
+          throw userError
+        }
+
+        if (!user) {
+          throw new Error('No active user session found.')
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('full_name, role, email')
+          .eq('id', user.id)
+          .maybeSingle<Pick<Database['public']['Tables']['profiles']['Row'], 'full_name' | 'role' | 'email'>>()
+
+        if (profileError) {
+          throw profileError
+        }
+
+        const metadataName = resolveMetadataName(user.user_metadata)
+        const metadataRole =
+          typeof user.user_metadata?.['role'] === 'string'
+            ? user.user_metadata['role']
+            : typeof user.user_metadata?.['title'] === 'string'
+              ? user.user_metadata['title']
+              : null
+
+        const name = (profile?.full_name ?? metadataName ?? user.email ?? '').toString().trim()
+        const role = (profile?.role ?? metadataRole ?? '').toString().trim()
+        const email = (profile?.email ?? user.email ?? '').toString().trim()
+
+        if (isMounted) {
+          profileForm.reset({
+            name,
+            title: role,
+            email
+          })
+        }
+      } catch (error) {
+        console.error('Failed to load profile', error)
+
+        if (isMounted) {
+          pushToast({
+            title: 'Unable to load profile',
+            description: 'Please refresh the page or try again shortly.',
+            variant: 'error'
+          })
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingProfile(false)
+        }
+      }
+    }
+
+    void loadProfile()
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange(() => {
+      void loadProfile()
+    })
+
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
+  }, [supabase, profileForm, pushToast])
+
   const handleProfileSubmit = profileForm.handleSubmit(
-    (values) => {
-      pushToast({
-        title: 'Profile updated',
-        description: `${values.name}, your workspace preferences are synced.`,
-        variant: 'success'
-      })
+    async (values) => {
+      const sanitized = {
+        name: values.name.trim(),
+        title: values.title.trim(),
+        email: values.email.trim()
+      }
+
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser()
+
+        if (userError) {
+          throw userError
+        }
+
+        if (!user) {
+          throw new Error('No active user session found.')
+        }
+
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            full_name: sanitized.name,
+            role: sanitized.title as Database['public']['Tables']['profiles']['Update']['role'],
+            email: sanitized.email
+          })
+          .eq('id', user.id)
+
+        if (profileError) {
+          throw profileError
+        }
+
+        const { error: authUpdateError } = await supabase.auth.updateUser({
+          ...(sanitized.email && sanitized.email !== (user.email ?? '').trim()
+            ? { email: sanitized.email }
+            : {}),
+          data: {
+            full_name: sanitized.name,
+            title: sanitized.title
+          }
+        })
+
+        if (authUpdateError) {
+          throw authUpdateError
+        }
+
+        profileForm.reset(sanitized)
+
+        pushToast({
+          title: 'Profile updated',
+          description: 'Your profile information has been saved successfully.',
+          variant: 'success'
+        })
+      } catch (error) {
+        console.error('Failed to update profile', error)
+
+        pushToast({
+          title: 'Unable to save profile',
+          description: error instanceof Error ? error.message : 'Please try again.',
+          variant: 'error'
+        })
+      }
     },
     () =>
       pushToast({
@@ -106,6 +270,7 @@ export default function SettingsPage() {
             <input
               type="text"
               {...profileForm.register('name')}
+              disabled={isLoadingProfile || isSavingProfile}
               className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
             />
             {profileForm.formState.errors.name ? (
@@ -117,6 +282,7 @@ export default function SettingsPage() {
             <input
               type="text"
               {...profileForm.register('title')}
+              disabled={isLoadingProfile || isSavingProfile}
               className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
             />
             {profileForm.formState.errors.title ? (
@@ -128,6 +294,7 @@ export default function SettingsPage() {
             <input
               type="email"
               {...profileForm.register('email')}
+              disabled={isLoadingProfile || isSavingProfile}
               className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
             />
             {profileForm.formState.errors.email ? (
@@ -136,9 +303,10 @@ export default function SettingsPage() {
           </label>
           <button
             type="submit"
+            disabled={isLoadingProfile || isSavingProfile}
             className="mt-2 inline-flex w-full items-center justify-center rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient"
           >
-            Save profile
+            {isSavingProfile ? 'Saving…' : 'Save profile'}
           </button>
         </motion.form>
 
