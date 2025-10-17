@@ -32,6 +32,7 @@ export default function SettingsPage() {
   const [resetModalOpen, setResetModalOpen] = useState(false)
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
   const supabase = useMemo(() => createClient(), [])
+  const profileRoles = ['owner', 'admin', 'client', 'member'] as const
 
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -81,11 +82,11 @@ export default function SettingsPage() {
         setIsLoadingProfile(true)
       }
 
-      try {
-        const {
-          data: { user },
-          error: userError
-        } = await supabase.auth.getUser()
+        try {
+          const {
+            data: { user },
+            error: userError
+          } = await supabase.auth.getUser()
 
         if (userError) {
           throw userError
@@ -177,13 +178,19 @@ export default function SettingsPage() {
           throw new Error('No active user session found.')
         }
 
+        const normalizedRole = profileRoles.find(
+          (role) => role.toLowerCase() === sanitized.title.toLowerCase()
+        )
+
+        const profileUpdates: Database['public']['Tables']['profiles']['Update'] = {
+          full_name: sanitized.name,
+          email: sanitized.email,
+          ...(normalizedRole ? { role: normalizedRole } : {})
+        }
+
         const { error: profileError } = await supabase
           .from('profiles')
-          .update({
-            full_name: sanitized.name,
-            role: sanitized.title as Database['public']['Tables']['profiles']['Update']['role'],
-            email: sanitized.email
-          })
+          .update(profileUpdates)
           .eq('id', user.id)
 
         if (profileError) {
