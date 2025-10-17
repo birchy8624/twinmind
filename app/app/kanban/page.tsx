@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabaseClient'
 import type { Database } from '@/types/supabase'
 
 import { StatusBadge } from '../_components/status-badge'
+import { useToast } from '../_components/toast-context'
 
 const PIPELINE_COLUMNS = [
   { status: 'Backlog', title: 'Backlog' },
@@ -16,11 +17,23 @@ const PIPELINE_COLUMNS = [
   { status: 'Closed', title: 'Closed' }
 ] as const
 
+const PROJECTS = 'projects' as const
+
 type ColumnStatus = (typeof PIPELINE_COLUMNS)[number]['status']
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileLite = Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'full_name'>
+type ProjectUpdate = Database['public']['Tables']['projects']['Update']
+type ProjectStatus = Database['public']['Enums']['project_status']
+
+const statusMap: Record<ColumnStatus, ProjectStatus> = {
+  Backlog: 'Backlog',
+  'Call Arranged': 'Call Arranged',
+  'Brief Gathered': 'Brief Gathered',
+  Build: 'Build',
+  Closed: 'Closed'
+}
 
 type KanbanProject = {
   id: string
@@ -162,35 +175,20 @@ export default function KanbanPage() {
   const [error, setError] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
 
-  const supabase = useMemo(() => {
-    try {
-      return createClient()
-    } catch (clientError) {
-      console.error(clientError)
-      return null
-    }
-  }, [])
+  const { pushToast } = useToast()
+
+  const supabase = useMemo(createBrowserClient, [])
 
   useEffect(() => {
     let isMounted = true
 
     const fetchProjects = async () => {
-      if (!supabase) {
-        if (isMounted) {
-          setError('Supabase client unavailable. Please verify your configuration.')
-          setProjects(new Map())
-          setColumnOrders(createEmptyOrders())
-          setLoading(false)
-        }
-        return
-      }
-
       setLoading(true)
       setError(null)
       setUpdateError(null)
 
       const { data, error: fetchError } = await supabase
-        .from('projects')
+        .from(PROJECTS)
         .select(
           `
             id,
@@ -441,28 +439,29 @@ export default function KanbanPage() {
         return
       }
 
-      if (!supabase) {
-        setUpdateError('Unable to update project status without a Supabase client.')
-        setProjects(previousProjects)
-        setColumnOrders(previousOrders)
-        return
-      }
+      const nextStatus = statusMap[targetStatus]
+      const patch: ProjectUpdate = { status: nextStatus }
 
       const { error: updateStatusError } = await supabase
-        .from('projects')
-        .update({ status: targetStatus })
+        .from(PROJECTS)
+        .update(patch)
         .eq('id', projectId)
 
       if (updateStatusError) {
         console.error(updateStatusError)
         setUpdateError('We could not update the project status. Please try again.')
+        pushToast({
+          title: 'Failed to update project status',
+          description: updateStatusError.message,
+          variant: 'error'
+        })
         setProjects(previousProjects)
         setColumnOrders(previousOrders)
       } else {
         setUpdateError(null)
       }
     },
-    [columnOrders, dragState, projects, supabase]
+    [columnOrders, dragState, projects, supabase, pushToast]
   )
 
   const visibleCounts = useMemo(() => {
