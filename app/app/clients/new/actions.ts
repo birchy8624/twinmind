@@ -113,6 +113,10 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
 
   const clientInsert: Database['public']['Tables']['clients']['Insert'] = {
     name: client.name,
+    email: client.email,
+    company: client.company ?? null,
+    phone: client.phone ?? null,
+    timezone: client.timezone ?? null,
     website: client.website ?? null,
     account_status: 'active'
   }

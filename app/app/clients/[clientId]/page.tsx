@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { StatusBadge } from '../../_components/status-badge'
+import { ClientDetailsForm } from './client-details-form'
 import { createServerClient } from '@/utils/supabaseServer'
 
 export const revalidate = 0
@@ -58,6 +59,10 @@ type ClientDetails = {
   id: string
   name: string
   website: string | null
+  email: string | null
+  company: string | null
+  phone: string | null
+  timezone: string | null
   notes: string | null
   account_status: string | null
   created_at: string
@@ -133,6 +138,10 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
         id,
         name,
         website,
+        email,
+        company,
+        phone,
+        timezone,
         notes,
         account_status,
         created_at,
@@ -256,44 +265,79 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
 
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-white/10 bg-base-900/40 p-6 lg:col-span-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">Client details</h2>
-          <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="space-y-6">
             <div>
-              <dt className="text-xs uppercase tracking-wide text-white/40">Status</dt>
-              <dd className="mt-1 text-sm text-white/80">{formattedStatus}</dd>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">Client details</h2>
+              <p className="mt-1 text-xs text-white/50">
+                Keep the primary contact information current for this relationship.
+              </p>
             </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-white/40">Website</dt>
-              <dd className="mt-1 text-sm text-white/80">
-                {normalizedWebsite ? (
-                  <a
-                    href={normalizedWebsite.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sky-300 transition hover:text-sky-200"
-                  >
-                    {normalizedWebsite.hostname}
-                  </a>
-                ) : (
-                  '—'
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-white/40">Created</dt>
-              <dd className="mt-1 text-sm text-white/80">{formatDateTime(client.created_at)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-white/40">Last updated</dt>
-              <dd className="mt-1 text-sm text-white/80">{formatDateTime(client.updated_at)}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-xs uppercase tracking-wide text-white/40">Notes</dt>
-              <dd className="mt-1 text-sm text-white/80 whitespace-pre-line">
-                {client.notes?.trim() ? client.notes : '—'}
-              </dd>
-            </div>
-          </dl>
+            <ClientDetailsForm
+              clientId={client.id}
+              initialName={client.name}
+              initialCompany={client.company}
+              initialPhone={client.phone}
+              initialTimezone={client.timezone}
+              initialWebsite={client.website}
+              initialEmail={client.email}
+            />
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-white/40">Status</dt>
+                <dd className="mt-1 text-sm text-white/80">{formattedStatus}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-white/40">Email</dt>
+                <dd className="mt-1 text-sm text-white/80">
+                  {client.email ? (
+                    <Link
+                      href={`mailto:${client.email}`}
+                      className="text-sky-300 transition hover:text-sky-200"
+                    >
+                      {client.email}
+                    </Link>
+                  ) : (
+                    '—'
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-white/40">Website</dt>
+                <dd className="mt-1 text-sm text-white/80">
+                  {normalizedWebsite ? (
+                    <a
+                      href={normalizedWebsite.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sky-300 transition hover:text-sky-200"
+                    >
+                      {normalizedWebsite.hostname}
+                    </a>
+                  ) : (
+                    '—'
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-white/40">Timezone</dt>
+                <dd className="mt-1 text-sm text-white/80">{client.timezone || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-white/40">Created</dt>
+                <dd className="mt-1 text-sm text-white/80">{formatDateTime(client.created_at)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-white/40">Last updated</dt>
+                <dd className="mt-1 text-sm text-white/80">{formatDateTime(client.updated_at)}</dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-xs uppercase tracking-wide text-white/40">Notes</dt>
+                <dd className="mt-1 text-sm text-white/80 whitespace-pre-line">
+                  {client.notes?.trim() ? client.notes : '—'}
+                </dd>
+              </div>
+            </dl>
+          </div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-base-900/40 p-6">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">At a glance</h2>

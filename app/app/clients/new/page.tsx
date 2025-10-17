@@ -17,20 +17,8 @@ import { z } from 'zod'
 import { createClientProject, type WizardPayload } from './actions'
 
 import { useToast } from '../../_components/toast-context'
-
-const timezones = [
-  'UTC',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'Europe/London',
-  'Europe/Berlin',
-  'Europe/Paris',
-  'Asia/Singapore',
-  'Asia/Tokyo',
-  'Australia/Sydney'
-]
+import { TIMEZONES } from '@/utils/timezones'
+import { isValidUrl, normalizeUrl } from '@/utils/url'
 
 const urlValidator = z
   .string()
@@ -475,7 +463,7 @@ function ClientBasics() {
         <InputField id="company" label="Company" placeholder="Skynet Industries" />
         <InputField id="website" label="Website" placeholder="https://skynet.io" />
         <InputField id="phone" label="Phone" placeholder="+1 415 555 0100" />
-        <SelectField id="timezone" label="Timezone" options={timezones} />
+        <SelectField id="timezone" label="Timezone" options={TIMEZONES} />
         <InputField id="budget" label="Budget estimate" placeholder="$25,000" />
         <div className="md:col-span-2">
           <CheckboxField
@@ -885,19 +873,6 @@ function InviteToggle() {
   )
 }
 
-function normalizeUrl(value?: string): string | undefined {
-  if (!value) {
-    return undefined
-  }
-
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return undefined
-  }
-
-  return trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`
-}
-
 function parseCurrency(value?: string): number | undefined {
   if (!value) {
     return undefined
@@ -914,18 +889,4 @@ function parseCurrency(value?: string): number | undefined {
   }
 
   return amount
-}
-
-function isValidUrl(value: string) {
-  try {
-    const url = new URL(value)
-    return Boolean(url.protocol && url.host)
-  } catch (error) {
-    try {
-      const url = new URL(`https://${value}`)
-      return Boolean(url.host)
-    } catch (nestedError) {
-      return false
-    }
-  }
 }

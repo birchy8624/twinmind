@@ -152,23 +152,41 @@ export type Database = {
       clients: {
         Row: {
           account_status: 'active' | 'inactive' | 'invited' | 'archived'
+          company: string | null
           created_at: string
+          email: string | null
           id: string
           name: string
+          notes: string | null
+          phone: string | null
+          timezone: string | null
+          updated_at: string
           website: string | null
         }
         Insert: {
           account_status?: 'active' | 'inactive' | 'invited' | 'archived'
+          company?: string | null
           created_at?: string
+          email?: string | null
           id?: string
           name: string
+          notes?: string | null
+          phone?: string | null
+          timezone?: string | null
+          updated_at?: string
           website?: string | null
         }
         Update: {
           account_status?: 'active' | 'inactive' | 'invited' | 'archived'
+          company?: string | null
           created_at?: string
+          email?: string | null
           id?: string
           name?: string
+          notes?: string | null
+          phone?: string | null
+          timezone?: string | null
+          updated_at?: string
           website?: string | null
         }
         Relationships: []
