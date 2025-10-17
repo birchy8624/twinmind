@@ -222,6 +222,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
               status,
               description,
               due_date,
+              budget,
               created_at,
               clients:client_id ( id, name ),
               assignee_profile:assignee_profile_id ( id, full_name )
