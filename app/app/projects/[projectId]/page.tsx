@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabaseClient'
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
@@ -41,6 +41,14 @@ type BriefAnswers = {
 }
 
 type InvoiceInfo = Pick<InvoiceRow, 'id' | 'amount' | 'currency'>
+
+const PROJECTS = 'projects' as const
+const INVOICES = 'invoices' as const
+
+type ProjectUpdate = Database['public']['Tables']['projects']['Update']
+type ProjectStatus = Database['public']['Enums']['project_status']
+type InvoiceUpdate = Database['public']['Tables']['invoices']['Update']
+type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
 
 type BriefFormState = {
   goals: string
@@ -324,7 +332,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const supabase = useMemo(() => {
     try {
-      return createClient()
+      return createBrowserClient()
     } catch (clientError) {
       console.error(clientError)
       return null
@@ -548,18 +556,20 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         setTimeout(resolve, 300)
       })
 
+      const projectPatch: ProjectUpdate = {
+        name: trimmedName,
+        description: trimmedDescription,
+        status: selectedStatus as ProjectStatus,
+        client_id: selectedClientId,
+        assignee_profile_id: assigneeValue,
+        due_date: normalizedDueDate,
+        value_quote: parsedBudget ? parsedBudget.amount : null,
+        value_invoiced: parsedBudget ? parsedBudget.amount : null
+      }
+
       const { error: projectUpdateError } = await supabase
-        .from('projects')
-        .update({
-          name: trimmedName,
-          description: trimmedDescription,
-          status: selectedStatus as ProjectRow['status'],
-          client_id: selectedClientId,
-          assignee_profile_id: assigneeValue,
-          due_date: normalizedDueDate,
-          value_quote: parsedBudget ? parsedBudget.amount : null,
-          value_invoiced: parsedBudget ? parsedBudget.amount : null
-        })
+        .from(PROJECTS)
+        .update(projectPatch)
         .eq('id', params.projectId)
 
       if (projectUpdateError) {
@@ -571,12 +581,14 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       if (parsedBudget) {
         if (invoiceDetails?.id) {
+          const invoiceUpdate: InvoiceUpdate = {
+            amount: parsedBudget.amount,
+            currency: parsedBudget.currency
+          }
+
           const { data: updatedInvoice, error: invoiceUpdateError } = await supabase
-            .from('invoices')
-            .update({
-              amount: parsedBudget.amount,
-              currency: parsedBudget.currency
-            })
+            .from(INVOICES)
+            .update(invoiceUpdate)
             .eq('id', invoiceDetails.id)
             .select('id, amount, currency')
             .maybeSingle()
@@ -593,13 +605,15 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
               currency: parsedBudget.currency
             }
         } else {
+          const invoiceInsert: InvoiceInsert = {
+            project_id: params.projectId,
+            amount: parsedBudget.amount,
+            currency: parsedBudget.currency
+          }
+
           const { data: createdInvoice, error: invoiceInsertError } = await supabase
-            .from('invoices')
-            .insert({
-              project_id: params.projectId,
-              amount: parsedBudget.amount,
-              currency: parsedBudget.currency
-            })
+            .from(INVOICES)
+            .insert(invoiceInsert)
             .select('id, amount, currency')
             .single()
 
@@ -611,7 +625,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           nextInvoiceDetails = createdInvoice
         }
       } else if (invoiceDetails?.id) {
-        const { error: invoiceDeleteError } = await supabase.from('invoices').delete().eq('id', invoiceDetails.id)
+        const { error: invoiceDeleteError } = await supabase.from(INVOICES).delete().eq('id', invoiceDetails.id)
 
         if (invoiceDeleteError) {
           console.error('Failed to delete invoice in Supabase', invoiceDeleteError)
@@ -636,7 +650,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           ...reference,
           name: trimmedName,
           description: trimmedDescription,
-          status: selectedStatus as ProjectRow['status'],
+          status: selectedStatus as ProjectStatus,
           due_date: normalizedDueDate,
           client_id: selectedClientId,
           assignee_profile_id: assigneeValue,
@@ -652,7 +666,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setFormState({
         name: trimmedName,
         description: trimmedDescription,
-        status: selectedStatus as ProjectRow['status'],
+        status: selectedStatus as ProjectStatus,
         dueDate: normalizedDueDate ?? '',
         clientId: selectedClientId,
         assigneeId: assigneeValue ?? '',
@@ -822,7 +836,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                   <span className="text-xs uppercase tracking-wide text-white/50">Status</span>
                   <select
                     value={formState.status}
-                    onChange={(event) => handleFieldChange('status', event.target.value as ProjectRow['status'])}
+                    onChange={(event) => handleFieldChange('status', event.target.value as ProjectStatus)}
                     className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
                   >
                     <option value="">Select a status</option>
