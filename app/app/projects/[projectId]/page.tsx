@@ -12,6 +12,7 @@ type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
+type BriefRow = Database['public']['Tables']['briefs']['Row']
 
 type Project = ProjectRow & {
   client: Pick<ClientRow, 'id' | 'name'> | null
@@ -96,6 +97,57 @@ const mapBriefFormStateToAnswers = (state: BriefFormState): BriefAnswers => {
     successMetrics: normalizeString(state.successMetrics),
     competitors: normalizeList(state.competitors),
     risks: normalizeString(state.risks)
+  }
+}
+
+const parseBriefAnswers = (value: BriefRow['answers']): BriefAnswers | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  const record = value as Record<string, unknown>
+
+  const parseNullableString = (input: unknown): string | null => {
+    if (typeof input !== 'string') {
+      return null
+    }
+
+    const trimmed = input.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  const parseStringList = (input: unknown): string[] => {
+    const parseEntry = (entry: unknown): string[] => {
+      if (typeof entry !== 'string') {
+        return []
+      }
+
+      return entry
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+    }
+
+    if (Array.isArray(input)) {
+      return input.flatMap(parseEntry)
+    }
+
+    if (input === null || input === undefined) {
+      return []
+    }
+
+    return parseEntry(input)
+  }
+
+  return {
+    goals: parseNullableString(record.goals),
+    personas: parseStringList(record.personas),
+    features: parseStringList(record.features),
+    integrations: parseStringList(record.integrations),
+    timeline: parseNullableString(record.timeline),
+    successMetrics: parseNullableString(record.successMetrics),
+    competitors: parseStringList(record.competitors),
+    risks: parseNullableString(record.risks)
   }
 }
 
@@ -342,10 +394,17 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         .from('profiles')
         .select('id, full_name')
         .order('full_name', { ascending: true })
-      const [projectResult, clientsResult, assigneesResult] = await Promise.all([
+      const briefPromise = supabase
+        .from('briefs')
+        .select('answers')
+        .eq('project_id', params.projectId)
+        .maybeSingle()
+
+      const [projectResult, clientsResult, assigneesResult, briefResult] = await Promise.all([
         projectPromise,
         clientsPromise,
-        assigneesPromise
+        assigneesPromise,
+        briefPromise
       ])
 
       if (!isMounted) {
@@ -367,6 +426,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setLoadingOptions(false)
 
       const { data: projectData, error: projectError } = projectResult
+      const { data: briefData, error: briefError } = briefResult
 
       if (projectError) {
         console.error('Failed to load project', projectError)
@@ -389,6 +449,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         setError('We could not find this project.')
         setLoadingProject(false)
         return
+      }
+
+      if (briefError) {
+        console.error('Failed to load brief answers', briefError)
       }
 
       type ProjectQuery = ProjectRow & {
@@ -426,8 +490,15 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         budget: normalizedProject.budget ?? ''
       })
 
-      setStoredBriefAnswers(null)
-      setBriefFormState(createEmptyBriefFormState())
+      const parsedBriefAnswers = briefData ? parseBriefAnswers(briefData.answers) : null
+
+      if (parsedBriefAnswers) {
+        setStoredBriefAnswers(parsedBriefAnswers)
+        setBriefFormState(mapBriefAnswersToFormState(parsedBriefAnswers))
+      } else {
+        setStoredBriefAnswers(null)
+        setBriefFormState(createEmptyBriefFormState())
+      }
 
       setLoadingProject(false)
     }
