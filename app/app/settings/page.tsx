@@ -8,12 +8,14 @@ import { z } from 'zod'
 
 import { ConfirmModal } from '../_components/confirm-modal'
 import { useToast } from '../_components/toast-context'
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabaseClient'
 import type { Database } from '@/types/supabase'
 
 const profileSchema = z.object({
   name: z.string().min(2, 'Name is required'),
-  title: z.string().min(2, 'Title is required'),
+  role: z.enum(['owner', 'client'], {
+    errorMap: () => ({ message: 'Select a workspace role' })
+  }),
   email: z.string().email('Enter a valid email')
 })
 
@@ -27,10 +29,20 @@ const notificationSchema = z.object({
 
 type NotificationFormValues = z.infer<typeof notificationSchema>
 
-type ProfileRow = Pick<
-  Database['public']['Tables']['profiles']['Row'],
-  'id' | 'full_name' | 'role' | 'email'
->
+type ProfileInsert = Database['public']['Tables']['profiles']['Insert']
+type RoleEnum = Database['public']['Enums']['role']
+
+const PROFILES = 'profiles' as const
+const DEFAULT_ROLE: RoleEnum = 'client'
+
+const ROLE_LABELS: Record<RoleEnum, string> = {
+  owner: 'Owner',
+  client: 'Client'
+}
+const ROLE_OPTIONS: Array<{ value: RoleEnum; label: string }> = [
+  { value: 'owner', label: ROLE_LABELS.owner },
+  { value: 'client', label: ROLE_LABELS.client }
+]
 
 const resolveMetadataName = (metadata: Record<string, unknown> | undefined) => {
   if (!metadata) {
@@ -50,26 +62,38 @@ const resolveMetadataName = (metadata: Record<string, unknown> | undefined) => {
   return trimmed ? trimmed : null
 }
 
-const resolveMetadataTitle = (metadata: Record<string, unknown> | undefined) => {
+const resolveMetadataRole = (metadata: Record<string, unknown> | undefined): RoleEnum | null => {
   if (!metadata) {
     return null
   }
 
-  const keysToCheck = ['title', 'role', 'position']
+  const keysToCheck = ['role', 'title', 'position']
 
   for (const key of keysToCheck) {
     const value = metadata[key]
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim()
+    if (typeof value !== 'string') {
+      continue
+    }
+
+    const normalized = value.trim().toLowerCase()
+
+    if (normalized === 'owner') {
+      return 'owner'
+    }
+
+    if (normalized === 'client') {
+      return 'client'
     }
   }
 
   return null
 }
 
+const toRoleLabel = (role: RoleEnum) => ROLE_LABELS[role]
+
 export default function SettingsPage() {
   const { pushToast } = useToast()
-  const supabase = useMemo(() => createClient(), [])
+  const supabase = useMemo(createBrowserClient, [])
   const [resetModalOpen, setResetModalOpen] = useState(false)
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null)
@@ -79,7 +103,7 @@ export default function SettingsPage() {
     mode: 'onBlur',
     defaultValues: {
       name: '',
-      title: '',
+      role: DEFAULT_ROLE,
       email: ''
     }
   })
@@ -110,20 +134,20 @@ export default function SettingsPage() {
         }
 
         const metadataName = resolveMetadataName(user.user_metadata)
-        const metadataTitle = resolveMetadataTitle(user.user_metadata)
+        const metadataRole = resolveMetadataRole(user.user_metadata)
 
         const { data: profile, error: profileError } = await supabase
-          .from('profiles')
+          .from(PROFILES)
           .select('id, full_name, role, email')
           .eq('id', user.id)
-          .maybeSingle<ProfileRow>()
+          .maybeSingle()
 
         if (profileError) {
           throw profileError
         }
 
         const resolvedName = profile?.full_name?.trim() || metadataName || user.email || ''
-        const resolvedTitle = profile?.role?.trim() || metadataTitle || ''
+        const resolvedRole = profile?.role ?? metadataRole ?? DEFAULT_ROLE
         const resolvedEmail = profile?.email?.trim() || user.email || ''
 
         if (isMounted) {
@@ -131,7 +155,7 @@ export default function SettingsPage() {
           profileForm.reset(
             {
               name: resolvedName,
-              title: resolvedTitle,
+              role: resolvedRole,
               email: resolvedEmail
             },
             { keepDirty: false }
@@ -186,22 +210,22 @@ export default function SettingsPage() {
       }
 
       const trimmedName = values.name.trim()
-      const trimmedTitle = values.title.trim()
       const trimmedEmail = values.email.trim()
+      const role = values.role
 
       try {
+        const payload: ProfileInsert = {
+          id: userId,
+          full_name: trimmedName,
+          role,
+          email: trimmedEmail,
+          updated_at: new Date().toISOString()
+        }
+
         const { error } = await supabase
-          .from('profiles')
-          .upsert(
-            {
-              id: userId,
-              full_name: trimmedName,
-              role: trimmedTitle,
-              email: trimmedEmail,
-              updated_at: new Date().toISOString()
-            },
-            { onConflict: 'id' }
-          )
+          .from(PROFILES)
+          .upsert(payload)
+          .eq('id', userId)
 
         if (error) {
           throw error
@@ -210,7 +234,7 @@ export default function SettingsPage() {
         profileForm.reset(
           {
             name: trimmedName,
-            title: trimmedTitle,
+            role,
             email: trimmedEmail
           },
           { keepDirty: false }
@@ -218,7 +242,7 @@ export default function SettingsPage() {
 
         pushToast({
           title: 'Profile updated',
-          description: `${trimmedName}, your workspace preferences are synced.`,
+          description: `${trimmedName}, your workspace preferences are synced as ${toRoleLabel(role)}.`,
           variant: 'success'
         })
       } catch (error) {
@@ -287,15 +311,20 @@ export default function SettingsPage() {
             ) : null}
           </label>
           <label className="space-y-2 text-sm">
-            <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Role / title</span>
-            <input
-              type="text"
-              {...profileForm.register('title')}
+            <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Workspace role</span>
+            <select
+              {...profileForm.register('role')}
               disabled={isLoadingProfile || profileForm.formState.isSubmitting}
-              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
-            />
-            {profileForm.formState.errors.title ? (
-              <span className="text-xs font-medium text-rose-300">{profileForm.formState.errors.title.message}</span>
+              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {profileForm.formState.errors.role ? (
+              <span className="text-xs font-medium text-rose-300">{profileForm.formState.errors.role.message}</span>
             ) : null}
           </label>
           <label className="space-y-2 text-sm">

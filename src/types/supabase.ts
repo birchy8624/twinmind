@@ -416,7 +416,7 @@ export type Database = {
           gdpr_consent: boolean | null
           id: string
           phone: string | null
-          role: string
+          role: Database['public']['Enums']['role']
           timezone: string | null
           updated_at: string | null
         }
@@ -428,7 +428,7 @@ export type Database = {
           gdpr_consent?: boolean | null
           id: string
           phone?: string | null
-          role: string
+          role: Database['public']['Enums']['role']
           timezone?: string | null
           updated_at?: string | null
         }
@@ -440,7 +440,7 @@ export type Database = {
           gdpr_consent?: boolean | null
           id?: string
           phone?: string | null
-          role?: string
+          role?: Database['public']['Enums']['role']
           timezone?: string | null
           updated_at?: string | null
         }
@@ -569,6 +569,7 @@ export type Database = {
       priority_enum: 'low' | 'medium' | 'high'
       project_status: 'Backlog' | 'In Progress' | 'Completed' | 'Archived'
       visibility_enum: 'both' | 'client' | 'internal'
+      role: 'owner' | 'client'
     }
     CompositeTypes: {
       [_ in never]: never
