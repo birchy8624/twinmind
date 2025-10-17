@@ -27,10 +27,10 @@ const relativeTimeDivisions: { amount: number; unit: Intl.RelativeTimeFormatUnit
   { amount: Number.POSITIVE_INFINITY, unit: 'year' }
 ]
 
-function formatRelativeTimeFromNow(value: string | null) {
-  if (!value) return 'Unknown'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unknown'
+function formatRelativeTimeFromNow(iso?: string | null) {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
 
   let duration = (date.getTime() - Date.now()) / 1000
 
@@ -41,7 +41,7 @@ function formatRelativeTimeFromNow(value: string | null) {
     duration /= division.amount
   }
 
-  return 'Unknown'
+  return '—'
 }
 
 function formatStatus(status: Client['account_status']) {
@@ -207,8 +207,6 @@ export default function ClientsPage() {
             <tbody className="divide-y divide-white/5">
               <AnimatePresence initial={false}>
                 {pageClients.map((client) => {
-                  const createdAt = client.created_at ? new Date(client.created_at) : null
-
                   return (
                     <motion.tr
                       key={client.id}
@@ -227,9 +225,13 @@ export default function ClientsPage() {
                     </td>
                     <td className="px-5 py-4 text-sm">{client.website ? client.website.replace(/^https?:\/\//, '') : '—'}</td>
                     <td className="px-5 py-4 text-sm">
-                      <span title={createdAt ? createdAt.toLocaleString() : undefined}>
-                        {formatRelativeTimeFromNow(client.created_at)}
-                      </span>
+                      {client.created_at ? (
+                        <span title={new Date(client.created_at).toLocaleString()}>
+                          {formatRelativeTimeFromNow(client.created_at)}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="px-5 py-4 text-right text-sm">
                       <Link
