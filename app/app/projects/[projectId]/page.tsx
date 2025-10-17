@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
@@ -299,7 +300,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const { pushToast } = useToast()
 
-  const supabase = useMemo(() => {
+  const supabase = useMemo<SupabaseClient<Database> | null>(() => {
     try {
       return createClient()
     } catch (clientError) {
