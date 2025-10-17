@@ -210,6 +210,94 @@ export type Database = {
           }
         ]
       }
+      pipeline_order: {
+        Row: {
+          id: string
+          pipeline_column:
+            | 'Backlog'
+            | 'Call Arranged'
+            | 'Brief Gathered'
+            | 'UI Stage'
+            | 'DB Stage'
+            | 'Auth Stage'
+            | 'Build'
+            | 'QA'
+            | 'Handover'
+            | 'Closed'
+          sort: string[] | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          pipeline_column:
+            | 'Backlog'
+            | 'Call Arranged'
+            | 'Brief Gathered'
+            | 'UI Stage'
+            | 'DB Stage'
+            | 'Auth Stage'
+            | 'Build'
+            | 'QA'
+            | 'Handover'
+            | 'Closed'
+          sort?: string[] | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          pipeline_column?:
+            | 'Backlog'
+            | 'Call Arranged'
+            | 'Brief Gathered'
+            | 'UI Stage'
+            | 'DB Stage'
+            | 'Auth Stage'
+            | 'Build'
+            | 'QA'
+            | 'Handover'
+            | 'Closed'
+          sort?: string[] | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      audit_log: {
+        Row: {
+          action: string
+          actor_profile_id: string | null
+          created_at: string | null
+          entity_id: string
+          entity_type: string
+          id: string
+          meta: Json | null
+        }
+        Insert: {
+          action: string
+          actor_profile_id?: string | null
+          created_at?: string | null
+          entity_id: string
+          entity_type: string
+          id?: string
+          meta?: Json | null
+        }
+        Update: {
+          action?: string
+          actor_profile_id?: string | null
+          created_at?: string | null
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          meta?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'audit_log_actor_profile_id_fkey'
+            columns: ['actor_profile_id']
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       profiles: {
         Row: {
           company: string | null
@@ -251,34 +339,88 @@ export type Database = {
       }
       projects: {
         Row: {
+          archived: boolean
           assignee_profile_id: string | null
           client_id: string
           created_at: string
-          description: string
+          description: string | null
           due_date: string | null
           id: string
+          labels: string[] | null
           name: string
-          status: 'Brief Gathered' | 'In Progress' | 'Completed' | 'Archived'
+          priority: string | null
+          status:
+            | 'Backlog'
+            | 'Call Arranged'
+            | 'Brief Gathered'
+            | 'UI Stage'
+            | 'DB Stage'
+            | 'Auth Stage'
+            | 'Build'
+            | 'QA'
+            | 'Handover'
+            | 'Closed'
+          tags: string[] | null
+          updated_at: string
+          value_invoiced: number | null
+          value_paid: number | null
+          value_quote: number | null
         }
         Insert: {
+          archived?: boolean
           assignee_profile_id?: string | null
           client_id: string
           created_at?: string
-          description: string
+          description?: string | null
           due_date?: string | null
           id?: string
+          labels?: string[] | null
           name: string
-          status?: 'Brief Gathered' | 'In Progress' | 'Completed' | 'Archived'
+          priority?: string | null
+          status?:
+            | 'Backlog'
+            | 'Call Arranged'
+            | 'Brief Gathered'
+            | 'UI Stage'
+            | 'DB Stage'
+            | 'Auth Stage'
+            | 'Build'
+            | 'QA'
+            | 'Handover'
+            | 'Closed'
+          tags?: string[] | null
+          updated_at?: string
+          value_invoiced?: number | null
+          value_paid?: number | null
+          value_quote?: number | null
         }
         Update: {
+          archived?: boolean
           assignee_profile_id?: string | null
           client_id?: string
           created_at?: string
-          description?: string
+          description?: string | null
           due_date?: string | null
           id?: string
+          labels?: string[] | null
           name?: string
-          status?: 'Brief Gathered' | 'In Progress' | 'Completed' | 'Archived'
+          priority?: string | null
+          status?:
+            | 'Backlog'
+            | 'Call Arranged'
+            | 'Brief Gathered'
+            | 'UI Stage'
+            | 'DB Stage'
+            | 'Auth Stage'
+            | 'Build'
+            | 'QA'
+            | 'Handover'
+            | 'Closed'
+          tags?: string[] | null
+          updated_at?: string
+          value_invoiced?: number | null
+          value_paid?: number | null
+          value_quote?: number | null
         }
         Relationships: [
           {

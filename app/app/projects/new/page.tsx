@@ -391,7 +391,7 @@ function ProjectDetailsStep({ clients, loading, error }: ProjectDetailsStepProps
       <div className="space-y-1">
         <h3 className="text-base font-semibold text-white">Project details</h3>
         <p className="text-sm text-white/60">
-          We will create the project with status <span className="font-medium">“Brief Gathered”</span> and assign it to the selected client.
+          We will create the project with status <span className="font-medium">“Backlog”</span> and assign it to the selected client.
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">

@@ -19,7 +19,19 @@ type Project = ProjectRow & {
 }
 
 const PAGE_SIZE = 8
-const statusFilters = ['All statuses', 'Brief Gathered', 'In Progress', 'Completed', 'Archived']
+const statusFilters = [
+  'All statuses',
+  'Backlog',
+  'Call Arranged',
+  'Brief Gathered',
+  'UI Stage',
+  'DB Stage',
+  'Auth Stage',
+  'Build',
+  'QA',
+  'Handover',
+  'Closed'
+]
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
@@ -156,12 +168,15 @@ export default function ProjectsPage() {
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.toLowerCase()
     return projects.filter((project) => {
+      const descriptionText = project.description ? project.description.toLowerCase() : ''
+      const clientName = project.client?.name ? project.client.name.toLowerCase() : ''
+      const assigneeName = project.assignee?.full_name ? project.assignee.full_name.toLowerCase() : ''
       const matchesQuery =
         !normalizedQuery ||
         project.name.toLowerCase().includes(normalizedQuery) ||
-        project.description.toLowerCase().includes(normalizedQuery) ||
-        project.client?.name.toLowerCase().includes(normalizedQuery) ||
-        project.assignee?.full_name?.toLowerCase().includes(normalizedQuery)
+        descriptionText.includes(normalizedQuery) ||
+        clientName.includes(normalizedQuery) ||
+        assigneeName.includes(normalizedQuery)
       const matchesStatus =
         statusFilter === 'All statuses' || formatStatus(project.status) === statusFilter
       return matchesQuery && matchesStatus
@@ -268,7 +283,7 @@ export default function ProjectsPage() {
                     <td className="px-5 py-4 text-sm font-medium text-white">
                       {project.name}
                       <p className="text-xs text-white/50 line-clamp-2">
-                        {project.description}
+                        {project.description ?? 'No description available'}
                       </p>
                     </td>
                     <td className="px-5 py-4 text-sm">{project.client?.name ?? 'Unknown client'}</td>
