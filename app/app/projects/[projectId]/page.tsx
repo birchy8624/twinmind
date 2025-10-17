@@ -214,7 +214,19 @@ function normalizeBriefAnswers(value: unknown): BriefAnswers | null {
   }
 }
 
-const statusOptions: ProjectRow['status'][] = ['Backlog', 'In Progress', 'Completed', 'Archived']
+const statusOptions: ProjectRow['status'][] = [
+  'Backlog',
+  'Call Arranged',
+  'Brief Gathered',
+  'UI Stage',
+  'DB Stage',
+  'Auth Stage',
+  'Build',
+  'QA',
+  'Handover',
+  'Closed',
+  'Archived'
+]
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
