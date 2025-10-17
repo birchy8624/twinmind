@@ -4,8 +4,15 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
 import { StatusBadge } from '../../_components/status-badge'
+import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabaseClient'
+
+const PROJECTS_TABLE = 'projects' as const
+const BRIEFS_TABLE = 'briefs' as const
+const CLIENTS_TABLE = 'clients' as const
+const PROFILES_TABLE = 'profiles' as const
+const INVOICES_TABLE = 'invoices' as const
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
@@ -40,6 +47,11 @@ type BriefAnswers = {
   risks: string | null
 }
 
+type InvoiceInfo = Pick<InvoiceRow, 'id' | 'amount' | 'currency'>
+type ProjectUpdate = Database['public']['Tables']['projects']['Update']
+type InvoiceUpdate = Database['public']['Tables']['invoices']['Update']
+type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
+
 type BriefFormState = {
   goals: string
   personas: string
@@ -72,6 +84,110 @@ const mapBriefAnswersToFormState = (answers: BriefAnswers | null): BriefFormStat
   competitors: answers ? answers.competitors.join('\n') : '',
   risks: answers?.risks ?? ''
 })
+
+const mapBriefFormStateToAnswers = (state: BriefFormState): BriefAnswers => {
+  const normalizeList = (input: string): string[] =>
+    input
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+
+  const normalizeString = (value: string): string | null => {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  return {
+    goals: normalizeString(state.goals),
+    personas: normalizeList(state.personas),
+    features: normalizeList(state.features),
+    integrations: normalizeList(state.integrations),
+    timeline: normalizeString(state.timeline),
+    successMetrics: normalizeString(state.successMetrics),
+    competitors: normalizeList(state.competitors),
+    risks: normalizeString(state.risks)
+  }
+}
+
+const hasBriefContent = (answers: BriefAnswers): boolean =>
+  Boolean(
+    (answers.goals && answers.goals.trim().length > 0) ||
+      answers.personas.length > 0 ||
+      answers.features.length > 0 ||
+      answers.integrations.length > 0 ||
+      (answers.timeline && answers.timeline.trim().length > 0) ||
+      (answers.successMetrics && answers.successMetrics.trim().length > 0) ||
+      answers.competitors.length > 0 ||
+      (answers.risks && answers.risks.trim().length > 0)
+  )
+
+type ParsedBudget = { amount: number; currency: string }
+
+const detectCurrencyCode = (value: string, fallback?: string): string => {
+  const matchers: Array<{ pattern: RegExp; code: string }> = [
+    { pattern: /A\$|AUD/i, code: 'AUD' },
+    { pattern: /C\$|CAD/i, code: 'CAD' },
+    { pattern: /€|EUR/i, code: 'EUR' },
+    { pattern: /£|GBP/i, code: 'GBP' },
+    { pattern: /¥|JPY/i, code: 'JPY' },
+    { pattern: /₹|INR/i, code: 'INR' },
+    { pattern: /₽|RUB/i, code: 'RUB' },
+    { pattern: /₩|KRW/i, code: 'KRW' },
+    { pattern: /₺|TRY/i, code: 'TRY' },
+    { pattern: /₦|NGN/i, code: 'NGN' },
+    { pattern: /₱|PHP/i, code: 'PHP' },
+    { pattern: /\$|USD/i, code: 'USD' }
+  ]
+
+  for (const candidate of matchers) {
+    if (candidate.pattern.test(value)) {
+      return candidate.code
+    }
+  }
+
+  const codeMatch = value.match(/\b([A-Z]{3})\b/)
+  if (codeMatch) {
+    return codeMatch[1]
+  }
+
+  return fallback ?? 'EUR'
+}
+
+const parseBudgetInput = (value: string, fallbackCurrency?: string): ParsedBudget | null => {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const numericPortion = trimmed.replace(/[^0-9.,-]/g, '')
+  if (!numericPortion) {
+    return null
+  }
+
+  const lastComma = numericPortion.lastIndexOf(',')
+  const lastDot = numericPortion.lastIndexOf('.')
+
+  let normalizedNumber = numericPortion
+
+  if (lastComma !== -1 && lastDot !== -1) {
+    if (lastComma > lastDot) {
+      normalizedNumber = numericPortion.replace(/\./g, '').replace(',', '.')
+    } else {
+      normalizedNumber = numericPortion.replace(/,/g, '')
+    }
+  } else if (lastComma !== -1) {
+    normalizedNumber = numericPortion.replace(',', '.')
+  }
+
+  const amount = Number(normalizedNumber)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null
+  }
+
+  const currency = detectCurrencyCode(trimmed, fallbackCurrency)
+
+  return { amount, currency }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -172,6 +288,17 @@ function formatDateInput(value: string | null) {
   return date.toISOString().slice(0, 10)
 }
 
+const normalizeDateColumnInput = (value: string): string | null => {
+  if (!value.trim()) return null
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  return parsed.toISOString().slice(0, 10)
+}
+
 interface ProjectOverviewPageProps {
   params: {
     projectId: string
@@ -187,34 +314,24 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [briefFormState, setBriefFormState] = useState<BriefFormState>(() => createEmptyBriefFormState())
   const [error, setError] = useState<string | null>(null)
+  const [invoiceDetails, setInvoiceDetails] = useState<InvoiceInfo | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  const supabase = useMemo(() => {
-    try {
-      return createClient()
-    } catch (clientError) {
-      console.error(clientError)
-      return null
-    }
-  }, [])
+  const { pushToast } = useToast()
+
+  const supabase = useMemo(createBrowserClient, [])
 
   useEffect(() => {
     let isMounted = true
 
     const fetchData = async () => {
-      if (!supabase) {
-        setError('Supabase client unavailable. Please verify your configuration.')
-        setLoadingProject(false)
-        setLoadingOptions(false)
-        return
-      }
-
       setLoadingProject(true)
       setLoadingOptions(true)
       setError(null)
 
       const [projectResponse, clientsResponse, assigneesResponse, briefResponse, invoiceResponse] = await Promise.all([
         supabase
-          .from('projects')
+          .from(PROJECTS_TABLE)
           .select(
             `
               id,
@@ -230,21 +347,21 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           .eq('id', params.projectId)
           .maybeSingle(),
         supabase
-          .from('clients')
+          .from(CLIENTS_TABLE)
           .select('id, name')
           .order('name', { ascending: true }),
         supabase
-          .from('profiles')
+          .from(PROFILES_TABLE)
           .select('id, full_name')
           .order('full_name', { ascending: true }),
         supabase
-          .from('briefs')
+          .from(BRIEFS_TABLE)
           .select('answers')
           .eq('project_id', params.projectId)
           .maybeSingle(),
         supabase
-          .from('invoices')
-          .select('amount, currency, issued_at, created_at')
+          .from(INVOICES_TABLE)
+          .select('id, amount, currency, issued_at, created_at')
           .eq('project_id', params.projectId)
           .order('issued_at', { ascending: false })
           .order('created_at', { ascending: false })
@@ -269,9 +386,13 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       if (invoiceResponse.error) {
         console.error(invoiceResponse.error)
+        setInvoiceDetails(null)
       } else if (invoiceResponse.data) {
-        const invoiceData = invoiceResponse.data as Pick<InvoiceRow, 'amount' | 'currency'>
+        const invoiceData = invoiceResponse.data as InvoiceInfo
         projectBudget = formatBudgetFromInvoice(invoiceData.amount, invoiceData.currency)
+        setInvoiceDetails(invoiceData)
+      } else {
+        setInvoiceDetails(null)
       }
 
       if (clientsResponse.error) {
@@ -354,6 +475,193 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
     }))
   }
 
+  const handleSaveChanges = async () => {
+    if (!formState) {
+      return
+    }
+
+    const trimmedName = formState.name.trim()
+    const trimmedDescription = formState.description.trim()
+    const selectedStatus = formState.status
+    const selectedClientId = formState.clientId.trim()
+
+    if (!trimmedName || !trimmedDescription || !selectedStatus || !selectedClientId) {
+      pushToast({
+        title: 'Check required fields',
+        description: 'Project name, client, status, and description must be provided.',
+        variant: 'error'
+      })
+      return
+    }
+
+    const trimmedBudgetInput = formState.budget.trim()
+    const parsedBudget =
+      trimmedBudgetInput.length > 0 ? parseBudgetInput(trimmedBudgetInput, invoiceDetails?.currency) : null
+
+    if (trimmedBudgetInput.length > 0 && !parsedBudget) {
+      pushToast({
+        title: 'Invalid budget amount',
+        description: 'Enter a numeric amount such as €25,000 or 25000 USD.',
+        variant: 'error'
+      })
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const assigneeValue = formState.assigneeId.trim() ? formState.assigneeId : null
+
+      const normalizedDueDate = normalizeDateColumnInput(formState.dueDate)
+
+      const projectUpdate: ProjectUpdate = {
+        assignee_profile_id: assigneeValue,
+        client_id: selectedClientId,
+        description: trimmedDescription,
+        due_date: normalizedDueDate,
+        name: trimmedName,
+        status: selectedStatus as ProjectUpdate['status']
+      }
+
+      const { error: projectError } = await supabase
+        .from(PROJECTS_TABLE)
+        .update(projectUpdate)
+        .eq('id', params.projectId)
+
+      if (projectError) {
+        throw new Error(projectError.message)
+      }
+
+      const briefAnswers = mapBriefFormStateToAnswers(briefFormState)
+
+      const briefUpsert: Database['public']['Tables']['briefs']['Insert'] = {
+        project_id: params.projectId,
+        answers: briefAnswers,
+        completed: hasBriefContent(briefAnswers)
+      }
+
+      const { error: briefError } = await supabase
+        .from(BRIEFS_TABLE)
+        .upsert(briefUpsert, { onConflict: 'project_id' })
+
+      if (briefError) {
+        throw new Error(briefError.message)
+      }
+
+      let nextInvoiceDetails: InvoiceInfo | null = null
+
+      if (parsedBudget) {
+        if (invoiceDetails?.id) {
+          const invoiceUpdate: InvoiceUpdate = {
+            amount: parsedBudget.amount,
+            currency: parsedBudget.currency
+          }
+
+          const { data: updatedInvoice, error: updateInvoiceError } = await supabase
+            .from(INVOICES_TABLE)
+            .update(invoiceUpdate)
+            .eq('id', invoiceDetails.id)
+            .select('id, amount, currency')
+            .single()
+
+          if (updateInvoiceError) {
+            throw new Error(updateInvoiceError.message)
+          }
+
+          nextInvoiceDetails = updatedInvoice as InvoiceInfo
+        } else {
+          const invoiceInsert: InvoiceInsert = {
+            amount: parsedBudget.amount,
+            currency: parsedBudget.currency,
+            issued_at: new Date().toISOString(),
+            project_id: params.projectId,
+            status: 'Quote'
+          }
+
+          const { data: insertedInvoice, error: insertInvoiceError } = await supabase
+            .from(INVOICES_TABLE)
+            .insert(invoiceInsert)
+            .select('id, amount, currency')
+            .single()
+
+          if (insertInvoiceError) {
+            throw new Error(insertInvoiceError.message)
+          }
+
+          nextInvoiceDetails = insertedInvoice as InvoiceInfo
+        }
+      } else if (invoiceDetails?.id) {
+        const { error: deleteInvoiceError } = await supabase
+          .from(INVOICES_TABLE)
+          .delete()
+          .eq('id', invoiceDetails.id)
+
+        if (deleteInvoiceError) {
+          throw new Error(deleteInvoiceError.message)
+        }
+      }
+
+      const updatedClient = clients.find((client) => client.id === selectedClientId) ?? null
+      const updatedAssignee = assigneeValue
+        ? assignees.find((assignee) => assignee.id === assigneeValue) ?? null
+        : null
+      const formattedBudget = nextInvoiceDetails
+        ? formatBudgetFromInvoice(nextInvoiceDetails.amount, nextInvoiceDetails.currency)
+        : null
+
+      setInvoiceDetails(nextInvoiceDetails)
+
+      setProject((previous) => {
+        if (!previous) return previous
+        return {
+          ...previous,
+          name: trimmedName,
+          description: trimmedDescription,
+          status: selectedStatus as ProjectRow['status'],
+          due_date: normalizedDueDate,
+          client_id: selectedClientId,
+          assignee_profile_id: assigneeValue,
+          client: updatedClient,
+          assignee: updatedAssignee,
+          budget: formattedBudget
+        }
+      })
+
+      setFormState({
+        name: trimmedName,
+        description: trimmedDescription,
+        status: selectedStatus as ProjectRow['status'],
+        dueDate: normalizedDueDate ?? '',
+        clientId: selectedClientId,
+        assigneeId: assigneeValue ?? '',
+        budget: formattedBudget ?? ''
+      })
+
+      setBriefFormState(mapBriefAnswersToFormState(briefAnswers))
+
+      pushToast({
+        title: 'Project updated',
+        description: `${trimmedName} is now up to date.`,
+        variant: 'success'
+      })
+    } catch (cause) {
+      console.error('Failed to save project changes', cause)
+      const message =
+        cause instanceof Error && cause.message
+          ? cause.message
+          : 'We could not save your changes. Please try again.'
+      setError('We hit an issue saving your changes. Please try again.')
+      pushToast({
+        title: 'Unable to save project',
+        description: message,
+        variant: 'error'
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const isLoading = loadingProject
 
   const readableProjectName = formState?.name || project?.name || 'Project overview'
@@ -389,7 +697,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold text-white">{readableProjectName}</h1>
             <p className="text-sm text-white/70">
-              Review your project information and prepare edits. Saving is coming soon.
+              Review your project information and keep every detail current for your team and clients.
             </p>
           </div>
         </div>
@@ -397,12 +705,13 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           {project ? <StatusBadge status={readableStatus} /> : null}
           <button
             type="button"
-            disabled
-            className="inline-flex items-center justify-center rounded-md border border-white/10 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white/60 opacity-60"
+            onClick={handleSaveChanges}
+            disabled={saving || !formState}
+            className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition btn-gradient disabled:cursor-not-allowed disabled:opacity-60"
+            aria-busy={saving}
           >
-            Save changes
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
-          <p className="text-[11px] uppercase tracking-[0.25em] text-white/40">Coming soon</p>
         </div>
       </div>
 
