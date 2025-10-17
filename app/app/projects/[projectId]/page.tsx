@@ -50,6 +50,9 @@ type BriefAnswers = {
 }
 
 type InvoiceInfo = Pick<InvoiceRow, 'id' | 'amount' | 'currency'>
+type ProjectUpdate = Database['public']['Tables']['projects']['Update']
+type InvoiceUpdate = Database['public']['Tables']['invoices']['Update']
+type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
 
 type BriefFormState = {
   goals: string
@@ -287,6 +290,17 @@ function formatDateInput(value: string | null) {
   return date.toISOString().slice(0, 10)
 }
 
+const normalizeDateColumnInput = (value: string): string | null => {
+  if (!value.trim()) return null
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  return parsed.toISOString().slice(0, 10)
+}
+
 interface ProjectOverviewPageProps {
   params: {
     projectId: string
@@ -522,21 +536,22 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setSaving(true)
       setError(null)
 
-      const dueDateValue = formState.dueDate.trim() ? formState.dueDate : null
       const assigneeValue = formState.assigneeId.trim() ? formState.assigneeId : null
 
-      const projectUpdate: Database['public']['Tables']['projects']['Update'] = {
-        name: trimmedName,
-        description: trimmedDescription,
-        status: selectedStatus as ProjectRow['status'],
-        due_date: dueDateValue,
+      const normalizedDueDate = normalizeDateColumnInput(formState.dueDate)
+
+      const projectUpdate: ProjectUpdate = {
+        assignee_profile_id: assigneeValue,
         client_id: selectedClientId,
-        assignee_profile_id: assigneeValue ?? null
+        description: trimmedDescription,
+        due_date: normalizedDueDate,
+        name: trimmedName,
+        status: selectedStatus as ProjectUpdate['status']
       }
 
       const { error: projectError } = await supabase
         .from(PROJECTS_TABLE)
-        .update<Database['public']['Tables']['projects']['Update']>(projectUpdate)
+        .update(projectUpdate)
         .eq('id', params.projectId)
 
       if (projectError) {
@@ -563,9 +578,14 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       if (parsedBudget) {
         if (invoiceDetails?.id) {
+          const invoiceUpdate: InvoiceUpdate = {
+            amount: parsedBudget.amount,
+            currency: parsedBudget.currency
+          }
+
           const { data: updatedInvoice, error: updateInvoiceError } = await supabase
             .from(INVOICES_TABLE)
-            .update({ amount: parsedBudget.amount, currency: parsedBudget.currency })
+            .update(invoiceUpdate)
             .eq('id', invoiceDetails.id)
             .select('id, amount, currency')
             .single()
@@ -576,15 +596,17 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
           nextInvoiceDetails = updatedInvoice as InvoiceInfo
         } else {
+          const invoiceInsert: InvoiceInsert = {
+            amount: parsedBudget.amount,
+            currency: parsedBudget.currency,
+            issued_at: new Date().toISOString(),
+            project_id: params.projectId,
+            status: 'Quote'
+          }
+
           const { data: insertedInvoice, error: insertInvoiceError } = await supabase
             .from(INVOICES_TABLE)
-            .insert({
-              project_id: params.projectId,
-              status: 'Quote',
-              amount: parsedBudget.amount,
-              currency: parsedBudget.currency,
-              issued_at: new Date().toISOString()
-            })
+            .insert(invoiceInsert)
             .select('id, amount, currency')
             .single()
 
@@ -622,9 +644,9 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           name: trimmedName,
           description: trimmedDescription,
           status: selectedStatus as ProjectRow['status'],
-          due_date: dueDateValue,
+          due_date: normalizedDueDate,
           client_id: selectedClientId,
-          assignee_profile_id: assigneeValue ?? null,
+          assignee_profile_id: assigneeValue,
           client: updatedClient,
           assignee: updatedAssignee,
           budget: formattedBudget
@@ -635,7 +657,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         name: trimmedName,
         description: trimmedDescription,
         status: selectedStatus as ProjectRow['status'],
-        dueDate: dueDateValue ?? '',
+        dueDate: normalizedDueDate ?? '',
         clientId: selectedClientId,
         assigneeId: assigneeValue ?? '',
         budget: formattedBudget ?? ''
