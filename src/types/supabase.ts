@@ -256,7 +256,6 @@ export type Database = {
           created_at: string
           description: string
           due_date: string | null
-          budget: string | null
           id: string
           name: string
           status: 'Brief Gathered' | 'In Progress' | 'Completed' | 'Archived'
@@ -267,7 +266,6 @@ export type Database = {
           created_at?: string
           description: string
           due_date?: string | null
-          budget?: string | null
           id?: string
           name: string
           status?: 'Brief Gathered' | 'In Progress' | 'Completed' | 'Archived'
@@ -278,7 +276,6 @@ export type Database = {
           created_at?: string
           description?: string
           due_date?: string | null
-          budget?: string | null
           id?: string
           name?: string
           status?: 'Brief Gathered' | 'In Progress' | 'Completed' | 'Archived'
