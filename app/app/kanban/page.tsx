@@ -9,12 +9,7 @@ const PIPELINE_COLUMNS = [
   { status: 'Backlog', title: 'Backlog' },
   { status: 'Call Arranged', title: 'Call Arranged' },
   { status: 'Brief Gathered', title: 'Brief Gathered' },
-  { status: 'UI Stage', title: 'UI Stage' },
-  { status: 'DB Stage', title: 'DB Stage' },
-  { status: 'Auth Stage', title: 'Auth Stage' },
   { status: 'Build', title: 'Build' },
-  { status: 'QA', title: 'QA' },
-  { status: 'Handover', title: 'Handover' },
   { status: 'Closed', title: 'Closed' }
 ] as const
 
@@ -56,7 +51,7 @@ const MOCK_PROJECTS: KanbanProject[] = [
   {
     id: 'proj-ui-1',
     name: 'Atlas Portal Redesign',
-    status: 'UI Stage',
+    status: 'Brief Gathered',
     client: { id: 'client-atlas', name: 'Atlas Ventures' },
     assignee: { id: 'profile-jordan', full_name: 'Jordan Miles' },
     value_quote: 58500,
@@ -80,7 +75,7 @@ const MOCK_PROJECTS: KanbanProject[] = [
   {
     id: 'proj-qa-1',
     name: 'Helios QA Suite',
-    status: 'QA',
+    status: 'Build',
     client: { id: 'client-helios', name: 'Helios Manufacturing' },
     assignee: { id: 'profile-diego', full_name: 'Diego Ramos' },
     value_quote: 31200,
