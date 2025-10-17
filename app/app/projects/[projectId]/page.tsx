@@ -10,6 +10,7 @@ import { createClient } from '@/utils/supabaseBrowser'
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
+type BriefRow = Database['public']['Tables']['briefs']['Row']
 
 type Project = ProjectRow & {
   client: Pick<ClientRow, 'id' | 'name'> | null
@@ -23,6 +24,42 @@ type EditableProject = {
   dueDate: string
   clientId: string
   assigneeId: string
+}
+
+type BriefAnswers = {
+  goals: string | null
+  personas: string[]
+  features: string[]
+  integrations: string[]
+  timeline: string | null
+  successMetrics: string | null
+  competitors: string[]
+  risks: string | null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeBriefAnswers(value: unknown): BriefAnswers | null {
+  if (!isRecord(value)) return null
+
+  const extractString = (input: unknown): string | null => (typeof input === 'string' && input.trim() ? input : null)
+  const extractStringArray = (input: unknown): string[] =>
+    Array.isArray(input)
+      ? input.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : []
+
+  return {
+    goals: extractString(value.goals),
+    personas: extractStringArray(value.personas),
+    features: extractStringArray(value.features),
+    integrations: extractStringArray(value.integrations),
+    timeline: extractString(value.timeline),
+    successMetrics: extractString(value.successMetrics),
+    competitors: extractStringArray(value.competitors),
+    risks: extractString(value.risks)
+  }
 }
 
 const statusOptions: ProjectRow['status'][] = ['Brief Gathered', 'In Progress', 'Completed', 'Archived']
@@ -89,6 +126,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const [assignees, setAssignees] = useState<Array<Pick<ProfileRow, 'id' | 'full_name'>>>([])
   const [loadingProject, setLoadingProject] = useState(true)
   const [loadingOptions, setLoadingOptions] = useState(true)
+  const [briefAnswers, setBriefAnswers] = useState<BriefAnswers | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const supabase = useMemo(() => {
@@ -115,7 +153,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setLoadingOptions(true)
       setError(null)
 
-      const [projectResponse, clientsResponse, assigneesResponse] = await Promise.all([
+      const [projectResponse, clientsResponse, assigneesResponse, briefResponse] = await Promise.all([
         supabase
           .from('projects')
           .select(
@@ -139,12 +177,25 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         supabase
           .from('profiles')
           .select('id, full_name')
-          .order('full_name', { ascending: true })
+          .order('full_name', { ascending: true }),
+        supabase
+          .from('briefs')
+          .select('answers')
+          .eq('project_id', params.projectId)
+          .maybeSingle()
       ])
 
       if (!isMounted) return
 
       setLoadingOptions(false)
+
+      if (briefResponse.error) {
+        console.error(briefResponse.error)
+        setBriefAnswers(null)
+      } else {
+        const briefData = briefResponse.data as Pick<BriefRow, 'answers'> | null
+        setBriefAnswers(normalizeBriefAnswers(briefData?.answers ?? null))
+      }
 
       if (clientsResponse.error) {
         console.error(clientsResponse.error)
@@ -164,6 +215,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         console.error(projectResponse.error)
         setProject(null)
         setFormState(null)
+        setBriefAnswers(null)
         setError('We ran into an issue loading this project. Please try again.')
         return
       }
@@ -171,6 +223,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       if (!projectResponse.data) {
         setProject(null)
         setFormState(null)
+        setBriefAnswers(null)
         setError('We could not find this project. It may have been removed.')
         return
       }
@@ -279,7 +332,9 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
               <header className="mb-6 space-y-1">
                 <p className="text-xs uppercase tracking-[0.3em] text-white/40">Project basics</p>
                 <h2 className="text-lg font-semibold text-white">Core details</h2>
-                <p className="text-sm text-white/60">Update the client, owner, status, and due dates for this project.</p>
+                <p className="text-sm text-white/60">
+                  Update the client, owner, status, description, and due dates for this project.
+                </p>
               </header>
               <div className="grid gap-5 md:grid-cols-2">
                 <label className="space-y-2 text-sm text-white/70">
@@ -354,22 +409,103 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                     className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
                   />
                 </label>
+                <label className="space-y-2 text-sm text-white/70 md:col-span-2">
+                  <span className="text-xs uppercase tracking-wide text-white/50">Project description</span>
+                  <textarea
+                    rows={6}
+                    value={formState.description}
+                    onChange={(event) => handleFieldChange('description', event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                    placeholder="Describe the mission, scope, and any decisions that shape the work."
+                  />
+                </label>
               </div>
             </section>
 
             <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
               <header className="mb-4 space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Narrative</p>
-                <h2 className="text-lg font-semibold text-white">Project description</h2>
-                <p className="text-sm text-white/60">Capture the context, goals, and guardrails your team should know.</p>
+                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Discovery</p>
+                <h2 className="text-lg font-semibold text-white">The Brief</h2>
+                <p className="text-sm text-white/60">Review the answers captured when this project was kicked off.</p>
               </header>
-              <textarea
-                rows={8}
-                value={formState.description}
-                onChange={(event) => handleFieldChange('description', event.target.value)}
-                className="h-48 w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                placeholder="Describe the mission, scope, and any decisions that shape the work."
-              />
+              {briefAnswers ? (
+                <dl className="space-y-5 text-sm text-white/70">
+                  <div className="space-y-1">
+                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Goals</dt>
+                    <dd className="whitespace-pre-line text-white/80">{briefAnswers.goals ?? 'Not provided'}</dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Personas</dt>
+                    <dd className="text-white/80">
+                      {briefAnswers.personas.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-5">
+                          {briefAnswers.personas.map((persona) => (
+                            <li key={persona}>{persona}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        'Not provided'
+                      )}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Key features</dt>
+                    <dd className="text-white/80">
+                      {briefAnswers.features.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-5">
+                          {briefAnswers.features.map((feature) => (
+                            <li key={feature}>{feature}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        'Not provided'
+                      )}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Integrations</dt>
+                    <dd className="text-white/80">
+                      {briefAnswers.integrations.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-5">
+                          {briefAnswers.integrations.map((integration) => (
+                            <li key={integration}>{integration}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        'Not provided'
+                      )}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Timeline</dt>
+                    <dd className="text-white/80">{briefAnswers.timeline ?? 'Not provided'}</dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Success metrics</dt>
+                    <dd className="text-white/80">{briefAnswers.successMetrics ?? 'Not provided'}</dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Competitors</dt>
+                    <dd className="text-white/80">
+                      {briefAnswers.competitors.length > 0 ? (
+                        <ul className="list-disc space-y-1 pl-5">
+                          {briefAnswers.competitors.map((competitor) => (
+                            <li key={competitor}>{competitor}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        'Not provided'
+                      )}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-xs uppercase tracking-[0.2em] text-white/40">Risks</dt>
+                    <dd className="whitespace-pre-line text-white/80">{briefAnswers.risks ?? 'Not provided'}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <p className="text-sm text-white/60">We don&apos;t have a brief on file for this project yet.</p>
+              )}
             </section>
           </div>
 
