@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
-import { createBrowserClient } from '@/lib/supabaseClient'
+import { createClient } from '@/utils/supabaseBrowser'
 
 const PROJECTS_TABLE = 'projects' as const
 const BRIEFS_TABLE = 'briefs' as const
@@ -319,12 +319,26 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const { pushToast } = useToast()
 
-  const supabase = useMemo(createBrowserClient, [])
+  const supabase = useMemo(() => {
+    try {
+      return createClient()
+    } catch (clientError) {
+      console.error(clientError)
+      return null
+    }
+  }, [])
 
   useEffect(() => {
     let isMounted = true
 
     const fetchData = async () => {
+      if (!supabase) {
+        setLoadingProject(false)
+        setLoadingOptions(false)
+        setError('Supabase client unavailable. Please verify your configuration.')
+        return
+      }
+
       setLoadingProject(true)
       setLoadingOptions(true)
       setError(null)
