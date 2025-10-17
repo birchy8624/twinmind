@@ -230,7 +230,7 @@ export default function ClientsPage() {
                     </td>
                     <td className="px-5 py-4 text-right text-sm">
                       <Link
-                        href={`/app/clients/${encodeURIComponent(client.name.toLowerCase().replace(/\s+/g, '-'))}`}
+                        href={`/app/clients/${client.id}`}
                         className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/20 hover:text-white"
                       >
                         Open
