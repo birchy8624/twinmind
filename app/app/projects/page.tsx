@@ -4,11 +4,7 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { ConfirmModal } from '../_components/confirm-modal'
-import { FileUploader, type UploadedFile } from '../_components/file-uploader'
-import { ProjectWizard } from '../_components/project-wizard'
 import { StatusBadge } from '../_components/status-badge'
-import { useToast } from '../_components/toast-context'
 
 const projects = [
   {
@@ -65,12 +61,9 @@ const PAGE_SIZE = 4
 const statusFilters = ['All statuses', 'Discovery', 'In Delivery', 'In Review', 'Blocked']
 
 export default function ProjectsPage() {
-  const { pushToast } = useToast()
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
   const [page, setPage] = useState(1)
-  const [storedFiles, setStoredFiles] = useState<UploadedFile[]>([])
-  const [fileToDelete, setFileToDelete] = useState<UploadedFile | null>(null)
 
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.toLowerCase()
@@ -90,24 +83,13 @@ export default function ProjectsPage() {
   const pageStart = (currentPage - 1) * PAGE_SIZE
   const pageProjects = filteredProjects.slice(pageStart, pageStart + PAGE_SIZE)
 
-  const handleDeleteFile = () => {
-    if (!fileToDelete) return
-    setStoredFiles((current) => current.filter((file) => file.path !== fileToDelete.path))
-    pushToast({
-      title: 'File removed',
-      description: `${fileToDelete.name} is no longer visible to the team.`,
-      variant: 'info'
-    })
-    setFileToDelete(null)
-  }
-
   return (
     <section className="space-y-8">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-3xl font-semibold text-white">Projects</h1>
           <p className="mt-2 max-w-2xl text-sm text-white/65">
-            Monitor health across delivery, surface blocked work, and spin up new engagements with the guided wizard.
+            Monitor project health across clients and quickly surface work that needs attention.
           </p>
         </div>
         <Link
@@ -246,66 +228,6 @@ export default function ProjectsPage() {
         </div>
       </motion.div>
 
-      <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-        <motion.div
-          layout
-          className="min-h-[28rem] rounded-3xl border border-white/10 bg-base-900/40 p-1 shadow-lg shadow-base-900/30 backdrop-blur"
-        >
-          <ProjectWizard />
-        </motion.div>
-        <motion.div
-          layout
-          className="rounded-3xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur"
-        >
-          <FileUploader onUploadComplete={(file) => setStoredFiles((current) => [file, ...current])} />
-          <div className="mt-6 space-y-3">
-            <div className="flex items-center justify-between text-xs text-white/50">
-              <span>Stored paths (mock DB)</span>
-              <span className="font-semibold text-white/70">{storedFiles.length}</span>
-            </div>
-            <div className="space-y-2">
-              <AnimatePresence initial={false}>
-                {storedFiles.map((file) => (
-                  <motion.div
-                    key={file.path}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-base-900/60 px-4 py-3 text-xs text-white/70"
-                  >
-                    <div className="truncate">
-                      <p className="truncate font-semibold text-white">{file.name}</p>
-                      <p className="truncate text-[11px] text-white/40">{file.path}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setFileToDelete(file)}
-                      className="rounded-full border border-rose-400/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-200 transition hover:border-rose-300 hover:text-rose-100"
-                    >
-                      Delete
-                    </button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-              {storedFiles.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-white/10 bg-base-900/40 px-4 py-6 text-center text-xs text-white/40">
-                  Upload a file to see the stored path preview.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </motion.div>
-      </div>
-
-      <ConfirmModal
-        open={Boolean(fileToDelete)}
-        title="Delete file?"
-        description="This will remove the asset from the shared drive record."
-        confirmLabel="Delete file"
-        onConfirm={handleDeleteFile}
-        onCancel={() => setFileToDelete(null)}
-      />
     </section>
   )
 }
