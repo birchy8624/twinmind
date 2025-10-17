@@ -203,10 +203,6 @@ export default function KanbanPage() {
             assignee_profile:assignee_profile_id ( id, full_name )
           `
         )
-        .in(
-          'status',
-          PIPELINE_COLUMNS.map((column) => column.status)
-        )
         .order('created_at', { ascending: false })
 
       if (!isMounted) return
