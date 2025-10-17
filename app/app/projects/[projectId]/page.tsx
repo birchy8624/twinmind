@@ -257,6 +257,20 @@ function formatDisplayDate(value: string | null) {
   })
 }
 
+function formatTimestamp(value: string | null) {
+  if (!value) return 'Unknown'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+
+  return date.toLocaleString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+}
+
 function formatBudgetFromInvoice(amount: InvoiceRow['amount'] | null | undefined, currency: InvoiceRow['currency'] | null | undefined) {
   if (amount === null || amount === undefined) {
     return null
@@ -673,15 +687,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       : project?.budget && project.budget.trim().length > 0
         ? project.budget
         : 'Not set'
-  const readableCreatedAt = project
-    ? new Date(project.created_at).toLocaleString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit'
-      })
-    : 'Unknown'
+  const readableCreatedAt = formatTimestamp(project?.created_at ?? null)
   const readableCountdown = project ? formatRelativeTimeFromNow(project.due_date) : 'Unknown'
 
   return (
