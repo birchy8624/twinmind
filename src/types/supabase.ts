@@ -567,7 +567,18 @@ export type Database = {
       account_status: 'active' | 'inactive' | 'invited' | 'archived'
       invoice_status: 'Quote' | 'Draft' | 'Sent' | 'Paid' | 'Cancelled'
       priority_enum: 'low' | 'medium' | 'high'
-      project_status: 'Backlog' | 'In Progress' | 'Completed' | 'Archived'
+      project_status:
+        | 'Backlog'
+        | 'Call Arranged'
+        | 'Brief Gathered'
+        | 'UI Stage'
+        | 'DB Stage'
+        | 'Auth Stage'
+        | 'Build'
+        | 'QA'
+        | 'Handover'
+        | 'Closed'
+        | 'Archived'
       visibility_enum: 'both' | 'client' | 'internal'
     }
     CompositeTypes: {
