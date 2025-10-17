@@ -20,14 +20,14 @@ type ColumnStatus = (typeof PIPELINE_COLUMNS)[number]['status']
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
-type ProfileRow = Database['public']['Tables']['profiles']['Row']
+type ProfileLite = Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'full_name'>
 
 type KanbanProject = {
   id: string
   name: string
   status: ColumnStatus
   client: { id: string; name: string } | null
-  assignee: { id: string; full_name: string } | null
+  assignee: ProfileLite | null
   value_quote: number | null
   due_date: string | null
   labels: string[]
@@ -221,7 +221,7 @@ export default function KanbanPage() {
       } else {
         type ProjectQuery = ProjectRow & {
           clients: Pick<ClientRow, 'id' | 'name'> | null
-          assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
+          assignee_profile: ProfileLite | null
         }
 
         const typedProjects = (data ?? []) as ProjectQuery[]
