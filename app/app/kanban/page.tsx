@@ -199,7 +199,9 @@ function KanbanCard({
         if (!draggingAllowed) {
           return
         }
-        event.dataTransfer.effectAllowed = 'move'
+        if ('dataTransfer' in event && event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move'
+        }
         onDragStart(project.id, columnId)
       }}
       onDragEnd={() => {
