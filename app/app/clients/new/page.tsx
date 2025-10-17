@@ -494,7 +494,7 @@ function ProjectDetails() {
       <div className="space-y-1">
         <h3 className="text-base font-semibold text-white">Project details</h3>
         <p className="text-sm text-white/60">
-          A project will be created with status <span className="font-medium">“Brief Gathered”</span>{' '}
+          A project will be created with status <span className="font-medium">“Backlog”</span>{' '}
           when you submit this wizard.
         </p>
       </div>
@@ -628,7 +628,7 @@ function ReviewStep() {
             <h4 className="text-sm font-semibold text-white">Automations</h4>
             <ul className="mt-2 space-y-2 text-sm text-white/65">
               <li>• Create client profile with the provided contact details.</li>
-              <li>• Spin up a project marked <span className="font-medium">“Brief Gathered”.</span></li>
+              <li>• Spin up a project marked <span className="font-medium">“Backlog”.</span></li>
               <li>• Store the discovery brief responses as structured JSON.</li>
               <li>
                 • Create an invoice row with status <span className="font-medium">“Quote”.</span>{' '}

@@ -206,38 +206,42 @@ export default function ClientsPage() {
             </thead>
             <tbody className="divide-y divide-white/5">
               <AnimatePresence initial={false}>
-                {pageClients.map((client) => (
-                  <motion.tr
-                    key={client.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className="bg-base-900/40 transition hover:bg-base-900/60 hover:shadow-[0_0_30px_rgba(59,130,246,0.25)]"
-                  >
-                    <td className="px-5 py-4 text-sm font-medium text-white">
-                      <div>{client.name}</div>
-                      <div className="text-xs text-white/50">{client.website || 'No website yet'}</div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <StatusBadge status={formatStatus(client.account_status)} />
-                    </td>
-                    <td className="px-5 py-4 text-sm">{client.website ? client.website.replace(/^https?:\/\//, '') : '—'}</td>
-                    <td className="px-5 py-4 text-sm">
-                      <span title={new Date(client.created_at).toLocaleString()}>
-                        {formatRelativeTimeFromNow(client.created_at)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-right text-sm">
-                      <Link
-                        href={`/app/clients/${client.id}`}
-                        className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/20 hover:text-white"
-                      >
-                        Open
-                      </Link>
-                    </td>
-                  </motion.tr>
-                ))}
+                {pageClients.map((client) => {
+                  const createdAt = client.created_at ? new Date(client.created_at) : null
+
+                  return (
+                    <motion.tr
+                      key={client.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="bg-base-900/40 transition hover:bg-base-900/60 hover:shadow-[0_0_30px_rgba(59,130,246,0.25)]"
+                    >
+                      <td className="px-5 py-4 text-sm font-medium text-white">
+                        <div>{client.name}</div>
+                        <div className="text-xs text-white/50">{client.website || 'No website yet'}</div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <StatusBadge status={formatStatus(client.account_status)} />
+                      </td>
+                      <td className="px-5 py-4 text-sm">{client.website ? client.website.replace(/^https?:\/\//, '') : '—'}</td>
+                      <td className="px-5 py-4 text-sm">
+                        <span title={createdAt ? createdAt.toLocaleString() : undefined}>
+                          {formatRelativeTimeFromNow(client.created_at)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-right text-sm">
+                        <Link
+                          href={`/app/clients/${client.id}`}
+                          className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/20 hover:text-white"
+                        >
+                          Open
+                        </Link>
+                      </td>
+                    </motion.tr>
+                  )
+                })}
               </AnimatePresence>
               {loading ? (
                 <tr>

@@ -92,7 +92,7 @@ export async function createProject(input: unknown): Promise<ActionResult> {
     client_id: clientId,
     name,
     description,
-    status: 'Brief Gathered',
+    status: 'Backlog',
     due_date: dueDate ?? null,
     assignee_profile_id: ownerUser.id
   }
