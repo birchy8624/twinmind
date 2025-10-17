@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNo
 import { motion } from 'framer-motion'
 
 import { StatusBadge } from '../_components/status-badge'
-import { useToast } from '../_components/toast-context'
 import { createClient } from '@/utils/supabaseBrowser'
 import type { Database } from '@/types/supabase'
 
@@ -156,7 +155,6 @@ function DropZone({ isActive, isDragging, onDrop, onDragOver, onDragLeave, child
 }
 
 export default function KanbanPage() {
-  const { pushToast } = useToast()
   const supabase = useMemo(() => {
     try {
       return createClient()
@@ -177,8 +175,6 @@ export default function KanbanPage() {
   const [error, setError] = useState<string | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [activeDrop, setActiveDrop] = useState<{ status: ColumnStatus; beforeId: string | null } | null>(null)
-  const [mutatingProjectId, setMutatingProjectId] = useState<string | null>(null)
-  const [currentProfileId, setCurrentProfileId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!supabase) {
@@ -194,7 +190,7 @@ export default function KanbanPage() {
       setError(null)
 
       try {
-        const [{ data: projectsData, error: projectsError }, { data: ordersData, error: orderError }, userResponse] =
+        const [{ data: projectsData, error: projectsError }, { data: ordersData, error: orderError }] =
           await Promise.all([
             supabase
               .from('projects')
@@ -213,8 +209,7 @@ export default function KanbanPage() {
                 `
               )
               .eq('archived', false),
-            supabase.from('pipeline_order').select('pipeline_column, order_ids'),
-            supabase.auth.getUser()
+            supabase.from('pipeline_order').select('pipeline_column, order_ids')
           ])
 
         if (projectsError) {
@@ -223,15 +218,6 @@ export default function KanbanPage() {
 
         if (orderError) {
           throw orderError
-        }
-
-        const { data: userData, error: userError } = userResponse ?? {}
-        if (userError) {
-          console.error('Failed to resolve current user', userError)
-        }
-
-        if (isMounted) {
-          setCurrentProfileId(userData?.user?.id ?? null)
         }
 
         const projectList = (projectsData ?? []) as Array<
@@ -421,8 +407,8 @@ export default function KanbanPage() {
   }, [])
 
   const handleDrop = useCallback(
-    async (targetStatus: ColumnStatus, insertBeforeId: string | null) => {
-      if (!dragState || !supabase || mutatingProjectId) {
+    (targetStatus: ColumnStatus, insertBeforeId: string | null) => {
+      if (!dragState) {
         setActiveDrop(null)
         return
       }
@@ -471,7 +457,6 @@ export default function KanbanPage() {
         return
       }
 
-      const previousProjects = new Map(projects)
       const updatedProjects = new Map(projects)
       const project = updatedProjects.get(projectId)
       if (project) {
@@ -482,71 +467,8 @@ export default function KanbanPage() {
       setColumnOrders(nextOrders)
       setActiveDrop(null)
       setDragState(null)
-      setMutatingProjectId(projectId)
-
-      try {
-        if (statusChanged) {
-          const { error: statusError } = await supabase
-            .from('projects')
-            .update({ status: targetStatus })
-            .eq('id', projectId)
-
-          if (statusError) {
-            throw statusError
-          }
-        }
-
-        const upserts = Array.from(affectedStatuses).map((status) => ({
-          pipeline_column: status,
-          order_ids: nextOrders[status] ?? []
-        }))
-
-        const { error: orderError } = await supabase
-          .from('pipeline_order')
-          .upsert(upserts, { onConflict: 'pipeline_column' })
-
-        if (orderError) {
-          throw orderError
-        }
-
-        const metaPayload = {
-          from_status: fromStatus,
-          to_status: targetStatus,
-          insert_before: insertBeforeId,
-          status_changed: statusChanged,
-          pipeline_snapshot: Array.from(affectedStatuses).reduce<Record<string, string[]>>((acc, status) => {
-            acc[status] = nextOrders[status] ?? []
-            return acc
-          }, {})
-        }
-
-        const auditPayload: Database['public']['Tables']['audit_log']['Insert'] = {
-          action: 'kanban_move',
-          entity_type: 'project',
-          entity_id: projectId,
-          actor_profile_id: currentProfileId,
-          meta: metaPayload
-        }
-
-        const { error: auditError } = await supabase.from('audit_log').insert([auditPayload])
-
-        if (auditError) {
-          throw auditError
-        }
-      } catch (mutationError) {
-        console.error('Failed to update kanban state', mutationError)
-        setProjects(previousProjects)
-        setColumnOrders(previousOrders)
-        pushToast({
-          title: 'Unable to update pipeline',
-          description: mutationError instanceof Error ? mutationError.message : 'Please try again.',
-          variant: 'error'
-        })
-      } finally {
-        setMutatingProjectId(null)
-      }
     },
-    [columnOrders, currentProfileId, dragState, mutatingProjectId, projects, pushToast, supabase]
+    [columnOrders, dragState, projects]
   )
 
   const visibleCounts = useMemo(() => {
@@ -741,7 +663,7 @@ export default function KanbanPage() {
                     layout
                     layoutId={id}
                     className={`space-y-3 rounded-2xl border border-white/10 bg-base-900/60 p-4 shadow-sm transition ${
-                      mutatingProjectId === id ? 'opacity-80' : 'opacity-100'
+                      'opacity-100'
                     }`}
                     draggable
                     onDragStart={(event) => {
