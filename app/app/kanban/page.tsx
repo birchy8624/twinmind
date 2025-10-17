@@ -19,6 +19,30 @@ const PIPELINE_COLUMNS = [
 
 const PROJECTS = 'projects' as const
 
+const KANBAN_DEBUG_ENABLED = process.env.NEXT_PUBLIC_DEBUG === '1'
+
+type PostgrestDebugMetadata = {
+  url?: string
+  headers?: Record<string, string>
+}
+
+function extractPostgrestDebugMetadata(builder: unknown): PostgrestDebugMetadata {
+  if (!builder || typeof builder !== 'object') {
+    return {}
+  }
+
+  const potentialUrl = (builder as { url?: unknown }).url
+  const url = potentialUrl instanceof URL ? potentialUrl.toString() : undefined
+
+  const headers = (builder as { headers?: unknown }).headers
+  const normalizedHeaders =
+    headers && typeof headers === 'object'
+      ? (headers as Record<string, string>)
+      : undefined
+
+  return { url, headers: normalizedHeaders }
+}
+
 type ColumnStatus = (typeof PIPELINE_COLUMNS)[number]['status']
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
@@ -187,7 +211,11 @@ export default function KanbanPage() {
       setError(null)
       setUpdateError(null)
 
-      const { data, error: fetchError } = await supabase
+      const pipelineStatusConditions = PIPELINE_COLUMNS.map((column) =>
+        `status.eq."${column.status.replace(/"/g, '\\"')}"`
+      ).join(',')
+
+      let query = supabase
         .from(PROJECTS)
         .select(
           `
@@ -203,16 +231,78 @@ export default function KanbanPage() {
             assignee_profile:assignee_profile_id ( id, full_name )
           `
         )
-        .in(
-          'status',
-          PIPELINE_COLUMNS.map((column) => column.status)
-        )
         .order('created_at', { ascending: false })
+
+      if (pipelineStatusConditions) {
+        query = query.or(pipelineStatusConditions)
+      }
+
+      const postgrestDebugMetadata = KANBAN_DEBUG_ENABLED
+        ? extractPostgrestDebugMetadata(query)
+        : undefined
+
+      let sessionUserId: string | null = null
+      let sessionLookupError: unknown = null
+
+      if (KANBAN_DEBUG_ENABLED) {
+        try {
+          const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+          sessionLookupError = sessionError ?? null
+          sessionUserId = sessionData?.session?.user?.id ?? null
+        } catch (error) {
+          sessionLookupError = error
+        }
+      }
+
+      const { data, error: fetchError } = await query
+
+      if (KANBAN_DEBUG_ENABLED) {
+        const projectUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+        let projectRef: string | null = null
+        let projectUrlParseError: unknown = null
+
+        if (projectUrl) {
+          try {
+            const host = new URL(projectUrl).hostname
+            projectRef = host.split('.')[0] ?? null
+          } catch (error) {
+            projectUrlParseError = error
+          }
+        }
+
+        console.groupCollapsed('[Kanban Debug] fetchProjects')
+        console.debug('Supabase project', {
+          url: projectUrl ?? null,
+          projectRef,
+          parseError: projectUrlParseError
+        })
+
+        if (sessionLookupError) {
+          console.debug('Auth identity lookup error', sessionLookupError)
+        }
+
+        console.debug('Auth identity', {
+          userId: sessionUserId
+        })
+
+        console.debug('PostgREST request', {
+          url: postgrestDebugMetadata?.url ?? null,
+          headers: postgrestDebugMetadata?.headers ?? null
+        })
+
+        if (fetchError) {
+          console.error('Supabase/PostgREST error', fetchError)
+        }
+
+        console.groupEnd()
+      }
 
       if (!isMounted) return
 
       if (fetchError) {
-        console.error(fetchError)
+        if (!KANBAN_DEBUG_ENABLED) {
+          console.error(fetchError)
+        }
         setError('We ran into an issue loading projects. Please try again.')
         setProjects(new Map())
         setColumnOrders(createEmptyOrders())
