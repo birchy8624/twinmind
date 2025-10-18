@@ -10,6 +10,10 @@ export default function SignInForm() {
   const supabase = useMemo(createBrowserClient, [])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [isResetMode, setIsResetMode] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null)
+  const [resetLoading, setResetLoading] = useState(false)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -59,6 +63,87 @@ export default function SignInForm() {
     }
   }
 
+  const handleResetSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const email = String(formData.get('reset-email') ?? '').trim()
+
+    if (!email) {
+      setResetError('Please enter the email address associated with your account.')
+      setResetSuccess(null)
+      return
+    }
+
+    try {
+      setResetLoading(true)
+      setResetError(null)
+      setResetSuccess(null)
+
+      const { error: resetPasswordError } = await supabase.auth.resetPasswordForEmail(email)
+
+      if (resetPasswordError) {
+        setResetError(resetPasswordError.message)
+        return
+      }
+
+      event.currentTarget.reset()
+      setResetSuccess('Check your email for a link to reset your password.')
+    } catch (cause) {
+      console.error('Failed to send password reset email', cause)
+      setResetError('Something went wrong while requesting a password reset. Please try again.')
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
+  if (isResetMode) {
+    return (
+      <form className="space-y-5" onSubmit={handleResetSubmit}>
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold text-white">Reset your password</h2>
+          <p className="text-sm text-white/70">
+            Enter the email address associated with your TwinMinds Studio account and we will send you a password reset link.
+          </p>
+        </div>
+        <div>
+          <label htmlFor="reset-email" className="block text-sm text-white/80">
+            Email address
+          </label>
+          <input
+            id="reset-email"
+            name="reset-email"
+            type="email"
+            autoComplete="email"
+            required
+            className="mt-2 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base text-white ring-1 ring-white/10 outline-none transition focus:ring-2 focus:ring-limeglow-500/40"
+            placeholder="you@company.com"
+            disabled={resetLoading}
+          />
+        </div>
+        {resetError ? (
+          <p className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{resetError}</p>
+        ) : null}
+        {resetSuccess ? (
+          <p className="rounded-xl border border-limeglow-500/40 bg-limeglow-500/10 px-4 py-3 text-sm text-limeglow-100">{resetSuccess}</p>
+        ) : null}
+        <button type="submit" className="btn btn-primary w-full" disabled={resetLoading}>
+          {resetLoading ? 'Sending reset link…' : 'Send reset link'}
+        </button>
+        <button
+          type="button"
+          className="w-full text-sm font-medium text-limeglow-400 transition hover:text-limeglow-300"
+          onClick={() => {
+            setIsResetMode(false)
+            setResetError(null)
+            setResetSuccess(null)
+          }}
+        >
+          Back to sign in
+        </button>
+      </form>
+    )
+  }
+
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
       <div>
@@ -81,9 +166,17 @@ export default function SignInForm() {
           <label htmlFor="password" className="block text-sm text-white/80">
             Password
           </label>
-          <a href="https://supabase.com/auth/reset-password-for-email" className="text-xs font-medium text-limeglow-400 hover:text-limeglow-300">
+          <button
+            type="button"
+            className="text-xs font-medium text-limeglow-400 transition hover:text-limeglow-300"
+            onClick={() => {
+              setIsResetMode(true)
+              setResetError(null)
+              setResetSuccess(null)
+            }}
+          >
             Forgot password?
-          </a>
+          </button>
         </div>
         <input
           id="password"
