@@ -43,7 +43,7 @@ export async function createContact(input: unknown): Promise<CreateContactResult
 
   const { data: clientRow, error: clientError } = await supabase
     .from('clients')
-    .select('id,gdpr_consent')
+    .select('id')
     .eq('id', clientId)
     .single()
 
@@ -72,8 +72,7 @@ export async function createContact(input: unknown): Promise<CreateContactResult
     email,
     phone: phone ? phone : null,
     title: title ? title : null,
-    is_primary: isPrimary,
-    gdpr_consent: clientRow.gdpr_consent ?? null
+    is_primary: isPrimary
   }
 
   const { data: contactRow, error: contactError } = await admin
