@@ -1,42 +1,137 @@
-import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import type { User } from '@supabase/supabase-js'
 
-export default function UserManagementPage() {
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { createServerSupabase } from '@/lib/supabase/server'
+import type { Database } from '@/types/supabase'
+
+import UserManagementClient, {
+  type WorkspaceUserRecord,
+  type WorkspaceUserStatus
+} from './UserManagementClient'
+
+type RoleEnum = Database['public']['Enums']['role']
+
+type ProfileRow = Database['public']['Tables']['profiles']['Row']
+type ProfilePreview = Pick<ProfileRow, 'id' | 'full_name' | 'role' | 'email' | 'company'>
+
+type MetadataRecord = Record<string, unknown> | undefined
+
+const resolveMetadataName = (metadata: MetadataRecord) => {
+  if (!metadata) {
+    return null
+  }
+
+  const candidates: unknown[] = [
+    metadata['full_name'],
+    metadata['name'],
+    metadata['first_name'],
+    metadata['last_name']
+  ]
+
+  const resolved = candidates
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter(Boolean)
+
+  if (resolved.length === 0) {
+    return null
+  }
+
+  if (resolved[0] && resolved[1] && !resolved[0]?.includes(' ')) {
+    return `${resolved[0]} ${resolved[1]}`.trim()
+  }
+
+  return resolved[0]
+}
+
+const resolveMetadataRole = (metadata: MetadataRecord): RoleEnum | null => {
+  if (!metadata) {
+    return null
+  }
+
+  const keys = ['role', 'title', 'position']
+
+  for (const key of keys) {
+    const value = metadata[key]
+    if (typeof value !== 'string') {
+      continue
+    }
+
+    const normalized = value.trim().toLowerCase()
+
+    if (normalized === 'owner' || normalized === 'client') {
+      return normalized as RoleEnum
+    }
+  }
+
+  return null
+}
+
+const toWorkspaceStatus = (user: User): WorkspaceUserStatus => {
+  if (user.confirmed_at || user.last_sign_in_at) {
+    return 'active'
+  }
+
+  return 'invited'
+}
+
+const toWorkspaceRecord = (user: User, profile: ProfilePreview | undefined): WorkspaceUserRecord => {
+  const metadataName = resolveMetadataName(user.user_metadata)
+  const metadataRole = resolveMetadataRole(user.user_metadata)
+
+  const fullName = profile?.full_name?.trim() || metadataName || user.email || 'Workspace member'
+  const role = profile?.role ?? metadataRole ?? 'client'
+
+  return {
+    id: user.id,
+    email: user.email ?? 'Unknown email',
+    fullName,
+    company: profile?.company ?? null,
+    role,
+    createdAt: user.created_at,
+    lastSignInAt: user.last_sign_in_at ?? null,
+    status: toWorkspaceStatus(user)
+  }
+}
+
+export default async function UserManagementPage() {
+  const supabase = createServerSupabase()
+  const {
+    data: { user: currentUser }
+  } = await supabase.auth.getUser()
+
+  if (!currentUser) {
+    redirect('/sign_in')
+  }
+
+  const admin = supabaseAdmin()
+
+  const [{ data: userData, error: usersError }, { data: profileRows, error: profilesError }] = await Promise.all([
+    admin.auth.admin.listUsers({ perPage: 200 }),
+    admin.from('profiles').select('id, full_name, role, email, company')
+  ])
+
+  if (usersError) {
+    console.error('Failed to load Supabase users:', usersError)
+  }
+
+  if (profilesError) {
+    console.error('Failed to load workspace profiles:', profilesError)
+  }
+
+  const profileMap = new Map<string, ProfilePreview>()
+
+  profileRows?.forEach((row) => {
+    profileMap.set(row.id, row)
+  })
+
+  const authUsers = userData?.users ?? []
+
+  const workspaceUsers = authUsers
+    .map((user) => toWorkspaceRecord(user, profileMap.get(user.id)))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName))
+
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-white/10 bg-base-900/60 p-8 shadow-lg shadow-black/20">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-white/40">Workspace controls</p>
-            <h1 className="mt-2 text-2xl font-semibold text-white">User management</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70">
-              Invite teammates, assign roles, and keep access aligned with your studio&apos;s workflow. This overview page will grow
-              with additional capabilities soon, but for now you can head to settings to update profile details.
-            </p>
-          </div>
-          <Link
-            href="/app/settings"
-            className="inline-flex items-center justify-center rounded-full border border-white/10 bg-base-900/80 px-5 py-2 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:text-white"
-          >
-            Open settings
-          </Link>
-        </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {[
-          { title: 'Invitations', description: 'Track pending invites and resend or revoke access when needed.' },
-          { title: 'Roles', description: 'Define workspace responsibilities with owner and client-level permissions.' },
-          { title: 'Security', description: 'Review authentication settings and session security policies.' }
-        ].map((item) => (
-          <article
-            key={item.title}
-            className="rounded-2xl border border-white/10 bg-base-900/40 p-6 transition hover:border-white/20 hover:bg-base-900/60"
-          >
-            <h2 className="text-lg font-semibold text-white">{item.title}</h2>
-            <p className="mt-2 text-sm text-white/60">{item.description}</p>
-          </article>
-        ))}
-      </section>
-    </div>
+    <UserManagementClient currentUserId={currentUser.id} initialUsers={workspaceUsers} />
   )
 }
