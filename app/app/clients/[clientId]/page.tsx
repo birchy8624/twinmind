@@ -604,9 +604,17 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">People</h2>
-          <span className="text-sm text-white/60">{combinedRows.length} total</span>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-white">People</h2>
+            <span className="text-sm text-white/60">{combinedRows.length} total</span>
+          </div>
+          <Link
+            href={`/app/clients/${client.id}/contacts/new`}
+            className="inline-flex items-center justify-center rounded-full border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:border-white/30 hover:text-white"
+          >
+            Add contact
+          </Link>
         </div>
         <div className="overflow-hidden rounded-2xl border border-white/10">
           {combinedRows.length > 0 ? (
