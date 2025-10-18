@@ -1,0 +1,195 @@
+'use client'
+
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+
+import { createBrowserClient } from '@/lib/supabase/browser'
+import type { Database } from '@/types/supabase'
+
+type ProfileRow = Database['public']['Tables']['profiles']['Row']
+type ClientMemberRow = Database['public']['Tables']['client_members']['Row']
+type ProfileRole = Database['public']['Enums']['role']
+
+const PROFILES = 'profiles' as const
+const CLIENT_MEMBERS = 'client_members' as const
+
+type ActiveProfileDetails = {
+  id: string
+  role: ProfileRole | null
+  fullName: string | null
+  email: string | null
+  displayName: string
+}
+
+type ActiveProfileContextValue = {
+  loading: boolean
+  profile: ActiveProfileDetails | null
+  clientIds: string[]
+}
+
+const ActiveProfileContext = createContext<ActiveProfileContextValue | null>(null)
+
+type ActiveProfileProviderProps = {
+  children: ReactNode
+}
+
+const candidateRoleMetadataKeys = ['role', 'title', 'position'] as const
+
+const resolveMetadataRole = (metadata: Record<string, unknown> | undefined): ProfileRole | null => {
+  if (!metadata) {
+    return null
+  }
+
+  for (const key of candidateRoleMetadataKeys) {
+    const value = metadata[key]
+    if (typeof value !== 'string') {
+      continue
+    }
+
+    const normalized = value.trim().toLowerCase()
+
+    if (normalized === 'owner' || normalized === 'client') {
+      return normalized as ProfileRole
+    }
+  }
+
+  return null
+}
+
+const resolveMetadataName = (metadata: Record<string, unknown> | undefined): string | null => {
+  if (!metadata) {
+    return null
+  }
+
+  const firstName = typeof metadata['first_name'] === 'string' ? metadata['first_name'] : null
+  const lastName = typeof metadata['last_name'] === 'string' ? metadata['last_name'] : null
+  const fullName = typeof metadata['full_name'] === 'string' ? metadata['full_name'] : null
+
+  const composed =
+    firstName && lastName
+      ? `${firstName} ${lastName}`
+      : fullName ?? firstName ?? (typeof metadata['name'] === 'string' ? metadata['name'] : null)
+
+  const trimmed = typeof composed === 'string' ? composed.trim() : ''
+
+  return trimmed ? trimmed : null
+}
+
+export function ActiveProfileProvider({ children }: ActiveProfileProviderProps) {
+  const supabase = useMemo(createBrowserClient, [])
+  const [state, setState] = useState<ActiveProfileContextValue>({
+    loading: true,
+    profile: null,
+    clientIds: []
+  })
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadProfile = async () => {
+      if (isMounted) {
+        setState((previous) => ({ ...previous, loading: true }))
+      }
+
+      try {
+        const {
+          data: { user },
+          error: userError
+        } = await supabase.auth.getUser()
+
+        if (userError) {
+          throw userError
+        }
+
+        if (!user) {
+          if (isMounted) {
+            setState({ loading: false, profile: null, clientIds: [] })
+          }
+          return
+        }
+
+        const metadataRole = resolveMetadataRole(user.user_metadata)
+        const metadataName = resolveMetadataName(user.user_metadata)
+
+        const { data: profileRow, error: profileError } = await supabase
+          .from(PROFILES)
+          .select('id, full_name, email, role')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (profileError) {
+          throw profileError
+        }
+
+        const typedProfile = (profileRow ?? null) as Pick<ProfileRow, 'id' | 'full_name' | 'email' | 'role'> | null
+
+        const profileFullName = typedProfile?.full_name?.trim() || ''
+        const profileEmail = typedProfile?.email?.trim() || (typeof user.email === 'string' ? user.email.trim() : '')
+        const resolvedRole = typedProfile?.role ?? metadataRole ?? null
+        const resolvedFullName = profileFullName || metadataName || null
+        const resolvedDisplayName = resolvedFullName ?? profileEmail ?? 'Account'
+
+        let clientIds: string[] = []
+
+        if (resolvedRole === 'client') {
+          const { data: membershipRows, error: membershipError } = await supabase
+            .from(CLIENT_MEMBERS)
+            .select('client_id')
+            .eq('profile_id', user.id)
+
+          if (membershipError) {
+            throw membershipError
+          }
+
+          const typedMemberships = (membershipRows ?? []) as Array<Pick<ClientMemberRow, 'client_id'>>
+          clientIds = typedMemberships
+            .map((membership) => membership.client_id)
+            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        }
+
+        if (isMounted) {
+          setState({
+            loading: false,
+            clientIds,
+            profile: {
+              id: user.id,
+              role: resolvedRole,
+              fullName: resolvedFullName,
+              email: profileEmail || null,
+              displayName: resolvedDisplayName
+            }
+          })
+        }
+      } catch (error) {
+        console.error('Failed to load active profile', error)
+        if (isMounted) {
+          setState({ loading: false, profile: null, clientIds: [] })
+        }
+      }
+    }
+
+    void loadProfile()
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange(() => {
+      void loadProfile()
+    })
+
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
+  }, [supabase])
+
+  return <ActiveProfileContext.Provider value={state}>{children}</ActiveProfileContext.Provider>
+}
+
+export function useActiveProfile(): ActiveProfileContextValue {
+  const context = useContext(ActiveProfileContext)
+
+  if (!context) {
+    throw new Error('useActiveProfile must be used within an ActiveProfileProvider')
+  }
+
+  return context
+}

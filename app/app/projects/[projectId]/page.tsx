@@ -6,6 +6,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 
 import type { FileObject } from '@supabase/storage-js'
 
+import { useActiveProfile } from '../../_components/active-profile-context'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
@@ -501,6 +502,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const { pushToast } = useToast()
 
   const supabase = useMemo(createBrowserClient, [])
+  const { profile: activeProfile, clientIds, loading: profileLoading } = useActiveProfile()
+  const isClientViewer = activeProfile?.role === 'client'
   const isMountedRef = useRef(true)
 
   useEffect(() => {
@@ -510,12 +513,31 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   }, [])
 
   const fetchProjectData = useCallback(async () => {
+    if (profileLoading) {
+      return
+    }
+
     setLoadingProject(true)
     setLoadingOptions(true)
     setError(null)
 
+    if (isClientViewer && clientIds.length === 0) {
+      setProject(null)
+      setFormState(null)
+      setStoredBriefAnswers(null)
+      setBriefFormState(createEmptyBriefFormState())
+      setInvoices([])
+      setInvoiceDetails(null)
+      setClients([])
+      setAssignees([])
+      setError('You do not have access to this project.')
+      setLoadingProject(false)
+      setLoadingOptions(false)
+      return
+    }
+
     try {
-      const projectPromise = supabase
+      let projectQuery = supabase
         .from(PROJECTS)
         .select(
           `
@@ -540,7 +562,12 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           `
         )
         .eq('id', params.projectId)
-        .maybeSingle()
+
+      if (isClientViewer) {
+        projectQuery = projectQuery.in('client_id', clientIds)
+      }
+
+      const projectPromise = projectQuery.maybeSingle()
 
       const clientsPromise = supabase.from(CLIENTS).select('id, name').order('name', { ascending: true })
       const assigneesPromise = supabase
@@ -685,9 +712,13 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setLoadingOptions(false)
       setLoadingProject(false)
     }
-  }, [params.projectId, supabase])
+  }, [clientIds, isClientViewer, params.projectId, profileLoading, supabase])
 
   const fetchProjectComments = useCallback(async () => {
+    if (profileLoading || (isClientViewer && clientIds.length === 0)) {
+      return
+    }
+
     setLoadingComments(true)
 
     const { data, error } = await supabase
@@ -729,9 +760,13 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
     setComments(typedComments)
     setLoadingComments(false)
-  }, [params.projectId, supabase])
+  }, [clientIds, isClientViewer, params.projectId, profileLoading, supabase])
 
   const fetchProjectFiles = useCallback(async () => {
+    if (profileLoading || (isClientViewer && clientIds.length === 0)) {
+      return
+    }
+
     setLoadingFiles(true)
 
     const { data, error } = await supabase.storage
@@ -780,7 +815,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
     setFiles(typedFiles)
     setLoadingFiles(false)
-  }, [params.projectId, pushToast, supabase])
+  }, [clientIds, isClientViewer, params.projectId, profileLoading, pushToast, supabase])
 
   useEffect(() => {
     void fetchProjectData()
