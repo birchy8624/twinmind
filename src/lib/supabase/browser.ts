@@ -25,6 +25,18 @@ export function createBrowserClient() {
         return
       }
 
+      if (event === 'PASSWORD_RECOVERY') {
+        if (typeof window !== 'undefined') {
+          const targetPath = '/auth/reset-password'
+
+          if (!window.location.pathname.startsWith(targetPath)) {
+            window.location.assign(targetPath)
+          }
+        }
+
+        return
+      }
+
       if (event === 'SIGNED_OUT') {
         void fetch('/api/auth/callback', {
           method: 'POST',

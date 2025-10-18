@@ -80,7 +80,14 @@ export default function SignInForm() {
       setResetError(null)
       setResetSuccess(null)
 
-      const { error: resetPasswordError } = await supabase.auth.resetPasswordForEmail(email)
+      const origin =
+        (typeof window !== 'undefined' && window.location.origin) || process.env.NEXT_PUBLIC_SITE_URL || ''
+      const normalizedOrigin = origin.replace(/\/$/, '')
+      const redirectOptions = normalizedOrigin
+        ? { redirectTo: `${normalizedOrigin}/auth/reset-password` }
+        : undefined
+
+      const { error: resetPasswordError } = await supabase.auth.resetPasswordForEmail(email, redirectOptions)
 
       if (resetPasswordError) {
         setResetError(resetPasswordError.message)
