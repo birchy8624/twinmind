@@ -102,43 +102,32 @@ export default function ProjectsPage() {
       setLoading(true)
       setError(null)
 
-      if (isClient && clientIds.length === 0) {
-        if (isMounted) {
+      try {
+        const { data, error: fetchError } = await supabase
+          .from(PROJECTS)
+          .select(
+            `
+              id,
+              name,
+              status,
+              description,
+              due_date,
+              created_at,
+              clients:client_id ( id, name ),
+              assignee_profile:assignee_profile_id ( id, full_name )
+            `
+          )
+          .order('created_at', { ascending: false })
+
+        if (!isMounted) return
+
+        if (fetchError) {
+          console.error(fetchError)
+          setError('We ran into an issue loading projects. Please try again.')
           setProjects([])
-          setLoading(false)
+          return
         }
-        return
-      }
 
-      let queryBuilder = supabase
-        .from(PROJECTS)
-        .select(
-          `
-            id,
-            name,
-            status,
-            description,
-            due_date,
-            created_at,
-            clients:client_id ( id, name ),
-            assignee_profile:assignee_profile_id ( id, full_name )
-          `
-        )
-        .order('created_at', { ascending: false })
-
-      if (isClient) {
-        queryBuilder = queryBuilder.in('client_id', clientIds)
-      }
-
-      const { data, error: fetchError } = await queryBuilder
-
-      if (!isMounted) return
-
-      if (fetchError) {
-        console.error(fetchError)
-        setError('We ran into an issue loading projects. Please try again.')
-        setProjects([])
-      } else {
         type ProjectQuery = ProjectRow & {
           clients: Pick<ClientRow, 'id' | 'name'> | null
           assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
@@ -154,9 +143,17 @@ export default function ProjectsPage() {
         )
 
         setProjects(normalizedProjects)
-      }
+      } catch (unknownError) {
+        if (!isMounted) return
 
-      setLoading(false)
+        console.error(unknownError)
+        setError('We ran into an issue loading projects. Please try again.')
+        setProjects([])
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
     }
 
     void fetchProjects()

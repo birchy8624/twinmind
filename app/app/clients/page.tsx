@@ -76,18 +76,21 @@ export default function ClientsPage() {
       setLoading(true)
       setError(null)
 
-      const { data, error: fetchError } = await supabase
-        .from(CLIENTS)
-        .select('id, name, website, account_status, created_at, notes, updated_at')
-        .order('created_at', { ascending: false })
+      try {
+        const { data, error: fetchError } = await supabase
+          .from(CLIENTS)
+          .select('id, name, website, account_status, created_at, notes, updated_at')
+          .order('created_at', { ascending: false })
 
-      if (!isMounted) return
+        if (!isMounted) return
 
-      if (fetchError) {
-        console.error(fetchError)
-        setError('We ran into an issue loading clients. Please try again.')
-        setClients([])
-      } else {
+        if (fetchError) {
+          console.error(fetchError)
+          setError('We ran into an issue loading clients. Please try again.')
+          setClients([])
+          return
+        }
+
         const selected = (data ?? []) as ClientSelection[]
         const rows: Client[] = selected.map((row) => ({
           id: row.id,
@@ -99,9 +102,17 @@ export default function ClientsPage() {
           updated_at: row.updated_at ?? null
         }))
         setClients(rows)
-      }
+      } catch (unknownError) {
+        if (!isMounted) return
 
-      setLoading(false)
+        console.error(unknownError)
+        setError('We ran into an issue loading clients. Please try again.')
+        setClients([])
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
     }
 
     void fetchClients()
