@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 
 import { ToastProvider } from './_components/toast-context'
 import { WorkspaceAccountMenu } from './_components/workspace-account-menu'
+import { WorkspaceSearch } from './_components/workspace-search'
 
 const navigation = [
   { href: '/app/dashboard', label: 'Dashboard', hint: 'Studio overview' },
@@ -130,16 +131,11 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
                   <p className="text-xs uppercase tracking-[0.2em] text-white/40">Currently viewing</p>
                   <p className="text-lg font-semibold text-white">{activeLabel}</p>
                 </div>
-                <div className="ml-auto hidden w-full max-w-md items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 text-sm text-white/60 shadow-sm shadow-base-900/30 focus-within:border-white/30 focus-within:text-white/80 md:flex">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4 w-4">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z" />
-                  </svg>
-                  <input
-                    type="search"
-                    placeholder="Search clients, projects, or assets"
-                    className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/40 focus:outline-none"
-                  />
-                </div>
+                <WorkspaceSearch
+                  wrapperClassName="ml-auto hidden w-full max-w-md md:block"
+                  inputContainerClassName="md:flex"
+                  placeholder="Search clients, projects, or assets"
+                />
                 <button
                   type="button"
                   className="hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-base-900/60 text-white/70 transition hover:border-white/20 hover:text-white md:inline-flex"
@@ -152,16 +148,7 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
                 <WorkspaceAccountMenu />
               </div>
               <div className="mt-4 flex flex-col gap-3 md:hidden">
-                <div className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 text-sm text-white/60 shadow-sm focus-within:border-white/30 focus-within:text-white/80">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4 w-4">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z" />
-                  </svg>
-                  <input
-                    type="search"
-                    placeholder="Search workspace"
-                    className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/40 focus:outline-none"
-                  />
-                </div>
+                <WorkspaceSearch wrapperClassName="w-full" placeholder="Search workspace" />
                 <div className="flex items-center justify-between text-xs text-white/50">
                   <span>Team workspace</span>
                   <span className="font-medium text-white/70">TwinMind Studio</span>
