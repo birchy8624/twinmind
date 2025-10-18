@@ -33,13 +33,14 @@ export default function Navbar(){
     >
       <div className="container flex h-16 items-center justify-between gap-3 sm:gap-6">
         <Link href="/" className="flex items-center gap-3 font-semibold tracking-tight text-white">
-          <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-base-800/80 ring-1 ring-white/10">
-            <Image src="/favicon.svg" alt="TwinMinds logo" width={32} height={32} priority />
-          </span>
-          <span className="flex flex-col leading-tight">
-            <span className="text-sm uppercase tracking-[0.35em] text-limeglow-400 sm:text-xs sm:tracking-[0.4em]">TwinMinds</span>
-            <span className="text-lg">Studio</span>
-          </span>
+          <Image
+            src="/logo.svg"
+            alt="TwinMinds logo"
+            width={1154}
+            height={273}
+            priority
+            className="h-8 w-auto sm:h-9"
+          />
         </Link>
         <div className="hidden items-center gap-6 md:flex lg:gap-8">
           {links.map(l => (
