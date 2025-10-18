@@ -205,7 +205,7 @@ export async function sendWorkspacePasswordReset(input: unknown): Promise<Action
     process.env.NEXT_PUBLIC_SITE_URL ||
     (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : 'http://localhost:3000')
 
-  const redirectTo = new URL('/sign_in', siteUrl).toString()
+  const redirectTo = new URL('/reset-password', siteUrl).toString()
 
   try {
     const response = await fetch(`${supabaseUrl}/auth/v1/recover`, {

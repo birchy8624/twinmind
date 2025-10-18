@@ -80,7 +80,15 @@ export default function SignInForm() {
       setResetError(null)
       setResetSuccess(null)
 
-      const { error: resetPasswordError } = await supabase.auth.resetPasswordForEmail(email)
+      const redirectTo =
+        typeof window !== 'undefined'
+          ? new URL('/reset-password', window.location.origin).toString()
+          : undefined
+
+      const { error: resetPasswordError } = await supabase.auth.resetPasswordForEmail(
+        email,
+        redirectTo ? { redirectTo } : undefined,
+      )
 
       if (resetPasswordError) {
         setResetError(resetPasswordError.message)
