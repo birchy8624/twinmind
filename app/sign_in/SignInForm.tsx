@@ -65,7 +65,8 @@ export default function SignInForm() {
 
   const handleResetSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const formData = new FormData(event.currentTarget)
+    const form = event.currentTarget
+    const formData = new FormData(form)
     const email = String(formData.get('reset-email') ?? '').trim()
 
     if (!email) {
@@ -86,7 +87,7 @@ export default function SignInForm() {
         return
       }
 
-      event.currentTarget.reset()
+      form.reset()
       setResetSuccess('Check your email for a link to reset your password.')
     } catch (cause) {
       console.error('Failed to send password reset email', cause)
