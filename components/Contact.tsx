@@ -67,18 +67,18 @@ export default function Contact(){
       </div>
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <div className="card relative flex flex-col gap-6 overflow-hidden p-10 text-center lg:text-left">
+        <div className="card relative flex flex-col gap-6 overflow-hidden p-8 text-center sm:p-10 lg:text-left">
           <div className="absolute inset-x-0 top-0 -z-10 h-20 bg-gradient-to-b from-limeglow-500/15 to-transparent" />
-          <span className="text-sm uppercase tracking-[0.4em] text-limeglow-500/70">Let’s collaborate</span>
+          <span className="text-xs uppercase tracking-[0.28em] text-limeglow-500/70 sm:text-sm sm:tracking-[0.4em]">Let’s collaborate</span>
           <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-white">Bring your idea to life</h2>
-          <p className="text-white/75 leading-relaxed">
+          <p className="text-base leading-relaxed text-white/80 sm:text-[1.05rem]">
             Tell us what you’re building and we’ll design the path to ship. Discovery workshops, roadmap, and first build in partnership.
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {highlights.map((item) => (
               <div key={item.label} className="rounded-2xl bg-base-900/80 px-4 py-3 text-center shadow-inner shadow-black/20 ring-1 ring-white/10">
-                <div className="text-lg font-semibold text-white">{item.value}</div>
-                <div className="mt-1 text-[0.65rem] uppercase tracking-[0.28em] text-white/55">{item.label}</div>
+                <div className="text-base font-semibold text-white sm:text-lg">{item.value}</div>
+                <div className="mt-1 text-[0.7rem] uppercase tracking-[0.24em] text-white/55 sm:text-[0.65rem]">{item.label}</div>
               </div>
             ))}
           </div>
@@ -88,23 +88,23 @@ export default function Contact(){
           </div>
         </div>
 
-        <form onSubmit={onSubmit} className="card space-y-4 p-8">
+        <form onSubmit={onSubmit} className="card space-y-4 p-6 sm:p-8">
           <input type="checkbox" name="botcheck" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
           <div>
             <label className="block text-sm text-white/80">Name</label>
-            <input name="name" required className="mt-1 w-full bg-base-700/60 rounded-xl px-4 py-3 ring-1 ring-white/10 focus:ring-limeglow-500/40 outline-none" />
+            <input name="name" required className="mt-1 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base ring-1 ring-white/10 outline-none focus:ring-limeglow-500/40" />
           </div>
           <div>
             <label className="block text-sm text-white/80">Email</label>
-            <input type="email" name="email" required className="mt-1 w-full bg-base-700/60 rounded-xl px-4 py-3 ring-1 ring-white/10 focus:ring-limeglow-500/40 outline-none" />
+            <input type="email" name="email" required className="mt-1 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base ring-1 ring-white/10 outline-none focus:ring-limeglow-500/40" />
           </div>
           <div>
             <label className="block text-sm text-white/80">Project Idea</label>
-            <textarea name="message" rows={4} className="mt-1 w-full bg-base-700/60 rounded-xl px-4 py-3 ring-1 ring-white/10 focus:ring-limeglow-500/40 outline-none" />
+            <textarea name="message" rows={4} className="mt-1 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base ring-1 ring-white/10 outline-none focus:ring-limeglow-500/40" />
           </div>
           <div>
             <label className="block text-sm text-white/80">Budget Range</label>
-            <select name="budget" className="mt-1 w-full bg-base-700/60 rounded-xl px-4 py-3 ring-1 ring-white/10 focus:ring-limeglow-500/40 outline-none">
+            <select name="budget" className="mt-1 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base ring-1 ring-white/10 outline-none focus:ring-limeglow-500/40">
               <option>€2,500–€5,000</option>
               <option>€5,000–€10,000</option>
               <option> €10,000</option>
