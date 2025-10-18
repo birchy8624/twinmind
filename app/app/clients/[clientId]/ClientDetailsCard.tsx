@@ -1,6 +1,7 @@
 'use client'
 
 import { zodResolver } from '@hookform/resolvers/zod'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -55,7 +56,7 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
   const { pushToast } = useToast()
 
   const [currentClient, setCurrentClient] = useState(client)
-  const [isEditing, setIsEditing] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const defaultStatus: AccountStatusOption = (currentClient.account_status as AccountStatusOption) ?? 'active'
@@ -129,7 +130,7 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
     })
 
     setIsSubmitting(false)
-    setIsEditing(false)
+    setIsModalOpen(false)
     reset({
       name: updatedClient.name ?? '',
       account_status: updatedClient.account_status ?? 'active',
@@ -145,7 +146,7 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
       website: currentClient.website ?? '',
       notes: currentClient.notes ?? ''
     }, { keepDirty: false })
-    setIsEditing(true)
+    setIsModalOpen(true)
   }
 
   const handleCancelEditing = () => {
@@ -155,145 +156,173 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
       website: currentClient.website ?? '',
       notes: currentClient.notes ?? ''
     }, { keepDirty: false })
-    setIsEditing(false)
+    setIsModalOpen(false)
   }
 
   return (
     <div className="rounded-2xl border border-white/10 bg-base-900/40 p-6">
       <div className="flex items-start justify-between gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">Client details</h2>
-        {isEditing ? null : (
-          <button
-            type="button"
-            onClick={handleStartEditing}
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white"
-          >
-            Edit
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleStartEditing}
+          className="inline-flex items-center justify-center rounded-full border border-white/10 p-2 text-white/70 transition hover:border-white/30 hover:text-white"
+          aria-label="Edit client details"
+        >
+          <EditIcon className="h-4 w-4" />
+        </button>
       </div>
 
-      {isEditing ? (
-        <form onSubmit={onSubmit} className="mt-4 space-y-4">
-          <label className="space-y-2 text-sm">
-            <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Client name</span>
-            <input
-              type="text"
-              {...register('name')}
-              disabled={isSubmitting}
-              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
-            />
-            {formState.errors.name ? (
-              <span className="text-xs font-medium text-rose-300">{formState.errors.name.message}</span>
-            ) : null}
-          </label>
+      <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-white/40">Name</dt>
+          <dd className="mt-1 text-sm text-white/80">{currentClient.name}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-white/40">Status</dt>
+          <dd className="mt-1 text-sm text-white/80">{formattedStatus}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-white/40">Website</dt>
+          <dd className="mt-1 text-sm text-white/80">
+            {normalizedWebsite ? (
+              <a
+                href={normalizedWebsite.href}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sky-300 transition hover:text-sky-200"
+              >
+                {normalizedWebsite.hostname}
+              </a>
+            ) : (
+              '—'
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-white/40">Created</dt>
+          <dd className="mt-1 text-sm text-white/80">{createdLabel}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-white/40">Last updated</dt>
+          <dd className="mt-1 text-sm text-white/80">{updatedLabel}</dd>
+        </div>
+        <div className="sm:col-span-2">
+          <dt className="text-xs uppercase tracking-wide text-white/40">Notes</dt>
+          <dd className="mt-1 whitespace-pre-line text-sm text-white/80">
+            {currentClient.notes?.trim() ? currentClient.notes : '—'}
+          </dd>
+        </div>
+      </dl>
 
-          <label className="space-y-2 text-sm">
-            <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Status</span>
-            <select
-              {...register('account_status')}
-              disabled={isSubmitting}
-              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
+      <AnimatePresence>
+        {isModalOpen ? (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="w-full max-w-lg rounded-2xl border border-white/10 bg-base-900/90 p-6 shadow-xl backdrop-blur"
             >
-              {ACCOUNT_STATUS_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {ACCOUNT_STATUS_LABELS[option]}
-                </option>
-              ))}
-            </select>
-            {formState.errors.account_status ? (
-              <span className="text-xs font-medium text-rose-300">{formState.errors.account_status.message}</span>
-            ) : null}
-          </label>
+              <form onSubmit={onSubmit} className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold text-white">Edit client details</h3>
+                  <button
+                    type="button"
+                    onClick={handleCancelEditing}
+                    className="rounded-full border border-white/10 p-1 text-white/60 transition hover:border-white/30 hover:text-white"
+                    aria-label="Close"
+                  >
+                    <CloseIcon className="h-4 w-4" />
+                  </button>
+                </div>
 
-          <label className="space-y-2 text-sm">
-            <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Website</span>
-            <input
-              type="url"
-              {...register('website')}
-              disabled={isSubmitting}
-              placeholder="https://example.com"
-              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
-            />
-            {formState.errors.website ? (
-              <span className="text-xs font-medium text-rose-300">{formState.errors.website.message}</span>
-            ) : null}
-          </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Client name</span>
+                  <input
+                    type="text"
+                    {...register('name')}
+                    disabled={isSubmitting}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
+                  />
+                  {formState.errors.name ? (
+                    <span className="text-xs font-medium text-rose-300">{formState.errors.name.message}</span>
+                  ) : null}
+                </label>
 
-          <label className="space-y-2 text-sm">
-            <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Notes</span>
-            <textarea
-              {...register('notes')}
-              disabled={isSubmitting}
-              rows={4}
-              className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
-            />
-            {formState.errors.notes ? (
-              <span className="text-xs font-medium text-rose-300">{formState.errors.notes.message}</span>
-            ) : null}
-          </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Status</span>
+                  <select
+                    {...register('account_status')}
+                    disabled={isSubmitting}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {ACCOUNT_STATUS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {ACCOUNT_STATUS_LABELS[option]}
+                      </option>
+                    ))}
+                  </select>
+                  {formState.errors.account_status ? (
+                    <span className="text-xs font-medium text-rose-300">{formState.errors.account_status.message}</span>
+                  ) : null}
+                </label>
 
-          <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={handleCancelEditing}
-              disabled={isSubmitting}
-              className="inline-flex items-center justify-center rounded-full border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {isSubmitting ? 'Saving…' : 'Save changes'}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-white/40">Name</dt>
-            <dd className="mt-1 text-sm text-white/80">{currentClient.name}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-white/40">Status</dt>
-            <dd className="mt-1 text-sm text-white/80">{formattedStatus}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-white/40">Website</dt>
-            <dd className="mt-1 text-sm text-white/80">
-              {normalizedWebsite ? (
-                <a
-                  href={normalizedWebsite.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sky-300 transition hover:text-sky-200"
-                >
-                  {normalizedWebsite.hostname}
-                </a>
-              ) : (
-                '—'
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-white/40">Created</dt>
-            <dd className="mt-1 text-sm text-white/80">{createdLabel}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-white/40">Last updated</dt>
-            <dd className="mt-1 text-sm text-white/80">{updatedLabel}</dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-xs uppercase tracking-wide text-white/40">Notes</dt>
-            <dd className="mt-1 whitespace-pre-line text-sm text-white/80">
-              {currentClient.notes?.trim() ? currentClient.notes : '—'}
-            </dd>
-          </div>
-        </dl>
-      )}
+                <label className="space-y-2 text-sm">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Website</span>
+                  <input
+                    type="url"
+                    {...register('website')}
+                    disabled={isSubmitting}
+                    placeholder="https://example.com"
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
+                  />
+                  {formState.errors.website ? (
+                    <span className="text-xs font-medium text-rose-300">{formState.errors.website.message}</span>
+                  ) : null}
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Notes</span>
+                  <textarea
+                    {...register('notes')}
+                    disabled={isSubmitting}
+                    rows={4}
+                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:cursor-not-allowed disabled:opacity-70"
+                  />
+                  {formState.errors.notes ? (
+                    <span className="text-xs font-medium text-rose-300">{formState.errors.notes.message}</span>
+                  ) : null}
+                </label>
+
+                <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={handleCancelEditing}
+                    disabled={isSubmitting}
+                    className="inline-flex items-center justify-center rounded-full border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {isSubmitting ? 'Saving…' : 'Save changes'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   )
 }
@@ -361,4 +390,55 @@ function isValidUrl(value: string) {
       return false
     }
   }
+}
+
+type IconProps = {
+  className?: string
+}
+
+function EditIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        d="M3.75 13.875 2.5 17.5l3.625-1.25L16.25 6.125a1.767 1.767 0 0 0 0-2.5l-.875-.875a1.767 1.767 0 0 0-2.5 0L3.75 13.875Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11.25 4.625 15.375 8.75"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function CloseIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        d="m5.5 5.5 9 9m0-9-9 9"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
 }
