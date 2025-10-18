@@ -26,7 +26,10 @@ export default function SignInForm() {
       setLoading(true)
       setError(null)
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const {
+        data: { session },
+        error: signInError
+      } = await supabase.auth.signInWithPassword({
         email,
         password
       })
@@ -34,6 +37,15 @@ export default function SignInForm() {
       if (signInError) {
         setError(signInError.message)
         return
+      }
+
+      if (session) {
+        await fetch('/api/auth/callback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ event: 'SIGNED_IN', session })
+        })
       }
 
       router.replace('/app/dashboard')
