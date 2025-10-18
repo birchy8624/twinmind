@@ -9,10 +9,10 @@ html, body {
   font-feature-settings: 'ss01' on, 'liga' on;
 }
 
-.container { @apply mx-auto px-4 sm:px-6 lg:px-8; }
+.container { @apply mx-auto px-5 sm:px-6 lg:px-8; }
 
 .btn {
-  @apply inline-flex items-center justify-center rounded-2xl px-5 py-3 font-medium transition-transform duration-200;
+  @apply inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-medium transition-transform duration-200 sm:text-base;
 }
 
 .btn-primary {
@@ -24,9 +24,9 @@ html, body {
 }
 
 .card {
-  @apply rounded-3xl bg-base-800/35 backdrop-blur-sm ring-1 ring-white/10 p-6 shadow-[0_24px_60px_-40px_rgba(0,0,0,0.8)] transition-all duration-300;
+  @apply rounded-3xl bg-base-800/35 backdrop-blur-sm ring-1 ring-white/10 p-6 sm:p-8 shadow-[0_24px_60px_-40px_rgba(0,0,0,0.8)] transition-all duration-300;
 }
 
 .section {
-  @apply py-20;
+  @apply py-16 sm:py-24;
 }

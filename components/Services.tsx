@@ -49,9 +49,9 @@ export default function Services(){
       </div>
 
       <div className="flex flex-col items-center md:items-start">
-        <span className="text-sm uppercase tracking-[0.4em] text-limeglow-500/70">What we ship</span>
+        <span className="text-xs uppercase tracking-[0.28em] text-limeglow-500/70 sm:text-sm sm:tracking-[0.4em]">What we ship</span>
         <h2 className="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight text-center md:text-left">Services</h2>
-        <p className="text-white/70 mt-3 max-w-2xl text-center md:text-left">
+        <p className="mt-3 max-w-2xl text-center text-base text-white/75 md:text-left md:text-lg">
           We build and hand over production‑ready software you can run and grow.
         </p>
       </div>
@@ -67,7 +67,7 @@ export default function Services(){
             </div>
             <div className="flex flex-col gap-3">
               <h3 className="text-xl font-semibold text-white">{s.title}</h3>
-              <p className="text-white/75 leading-relaxed">{s.desc}</p>
+              <p className="text-base leading-relaxed text-white/80 sm:text-[1.05rem]">{s.desc}</p>
             </div>
             <div className="mt-auto flex items-center gap-2 text-sm font-medium text-limeglow-500">
               Learn more

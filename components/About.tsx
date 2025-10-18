@@ -55,9 +55,9 @@ export default function About(){
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl text-center lg:text-left">
-          <span className="text-sm uppercase tracking-[0.4em] text-limeglow-500/70">Our DNA</span>
+          <span className="text-xs uppercase tracking-[0.28em] text-limeglow-500/70 sm:text-sm sm:tracking-[0.4em]">Our DNA</span>
           <h2 className="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight">About TwinMinds</h2>
-          <p className="mt-4 text-white/75">
+          <p className="mt-4 text-base text-white/80 sm:text-lg">
             We’re a studio founded by a product leader who’s shipped countless products. By blending human intuition with AI-native tooling, we move fast without ever compromising quality. From the first workshop to product launch, we build, ship, and hand over so you can grow it from there.
 
 
@@ -66,8 +66,8 @@ export default function About(){
         <div className="grid grid-cols-1 gap-3 rounded-3xl bg-base-800/50 p-4 text-center ring-1 ring-white/10 backdrop-blur sm:grid-cols-3 sm:text-left">
           {stats.map((stat) => (
             <div key={stat.label} className="flex flex-col items-center gap-1 text-center sm:items-start sm:text-left">
-              <div className="text-xl font-semibold text-white">{stat.value}</div>
-              <div className="text-[0.68rem] uppercase tracking-[0.24em] text-white/55 leading-snug">{stat.label}</div>
+              <div className="text-lg font-semibold text-white sm:text-xl">{stat.value}</div>
+              <div className="text-[0.7rem] uppercase tracking-[0.2em] leading-snug text-white/60 sm:text-[0.68rem] sm:tracking-[0.24em]">{stat.label}</div>
             </div>
           ))}
         </div>
@@ -83,8 +83,8 @@ export default function About(){
               {item.icon}
             </div>
             <div className="flex flex-col gap-3">
-              <h3 className="text-lg font-semibold text-white">{item.title}</h3>
-              <p className="text-white/75 leading-relaxed">{item.desc}</p>
+              <h3 className="text-lg font-semibold text-white sm:text-xl">{item.title}</h3>
+              <p className="text-base leading-relaxed text-white/80 sm:text-[1.05rem]">{item.desc}</p>
             </div>
             <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-20 bg-gradient-to-b from-limeglow-500/10 to-transparent" />
           </div>
