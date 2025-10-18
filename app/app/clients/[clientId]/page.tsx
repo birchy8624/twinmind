@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { StatusBadge } from '../../_components/status-badge'
+import { ClientDetailsCard } from './ClientDetailsCard'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
 
@@ -38,6 +39,7 @@ type ClientContact = {
   title: string | null
   is_primary: boolean | null
   created_at: string
+  timezone: string | null
 }
 
 type ClientInvite = {
@@ -65,7 +67,7 @@ type ClientDetails = {
   name: string
   website: string | null
   notes: string | null
-  account_status: string | null
+  account_status: Database['public']['Enums']['account_status'] | null
   created_at: string | null
   updated_at: string | null
   client_members: ClientMember[]
@@ -80,7 +82,13 @@ type ClientDetailsQuery = ClientRow & {
       profile: ProfileSummary | null
     }
   > | null
-  contacts: ClientContact[] | null
+  contacts:
+    | Array<
+        (ClientContact & {
+          profile: { timezone: string | null } | null
+        })
+      >
+    | null
   invites: Array<
     ClientInvite & {
       profile: ProfileSummary | null
@@ -133,17 +141,6 @@ function getContactName(contact: ClientContact) {
   return parts.join(' ')
 }
 
-function normalizeWebsite(value: string | null) {
-  if (!value) return null
-
-  try {
-    return new URL(value.startsWith('http') ? value : `https://${value}`)
-  } catch (error) {
-    console.error('Failed to normalize website URL', error)
-    return null
-  }
-}
-
 function isClientDetailsRow(value: unknown): value is ClientDetailsQuery {
   return (
     typeof value === 'object' &&
@@ -186,7 +183,10 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
           phone,
           title,
           is_primary,
-          created_at
+          created_at,
+          profile:profiles!contacts_profile_id_fkey (
+            timezone
+          )
         ),
         invites:invites (
           id,
@@ -252,7 +252,8 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
       phone: contact.phone ?? null,
       title: contact.title ?? null,
       is_primary: contact.is_primary ?? null,
-      created_at: contact.created_at
+      created_at: contact.created_at,
+      timezone: contact.profile?.timezone ?? null
     })),
     invites: (clientRow.invites ?? []).map((invite) => ({
       id: invite.id,
@@ -278,7 +279,6 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
     }))
   }
 
-  const normalizedWebsite = normalizeWebsite(client.website)
   const formattedStatus = formatStatus(client.account_status)
 
   const sortedProjects = [...(client.projects ?? [])].sort((a, b) =>
@@ -343,46 +343,17 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
       </div>
 
       <section className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-white/10 bg-base-900/40 p-6 lg:col-span-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">Client details</h2>
-          <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-white/40">Status</dt>
-              <dd className="mt-1 text-sm text-white/80">{formattedStatus}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-white/40">Website</dt>
-              <dd className="mt-1 text-sm text-white/80">
-                {normalizedWebsite ? (
-                  <a
-                    href={normalizedWebsite.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sky-300 transition hover:text-sky-200"
-                  >
-                    {normalizedWebsite.hostname}
-                  </a>
-                ) : (
-                  '—'
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-white/40">Created</dt>
-              <dd className="mt-1 text-sm text-white/80">{formatDateTime(client.created_at)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-white/40">Last updated</dt>
-              <dd className="mt-1 text-sm text-white/80">{formatDateTime(client.updated_at)}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-xs uppercase tracking-wide text-white/40">Notes</dt>
-              <dd className="mt-1 text-sm text-white/80 whitespace-pre-line">
-                {client.notes?.trim() ? client.notes : '—'}
-              </dd>
-            </div>
-          </dl>
-        </div>
+        <ClientDetailsCard
+          client={{
+            id: client.id,
+            name: client.name,
+            website: client.website,
+            notes: client.notes,
+            account_status: client.account_status,
+            created_at: client.created_at,
+            updated_at: client.updated_at
+          }}
+        />
         <div className="rounded-2xl border border-white/10 bg-base-900/40 p-6">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">At a glance</h2>
           <ul className="mt-4 space-y-3 text-sm text-white/75">
@@ -462,6 +433,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
                     <th className="px-5 py-3 font-medium">Name</th>
                     <th className="px-5 py-3 font-medium">Email</th>
                     <th className="px-5 py-3 font-medium">Phone</th>
+                    <th className="px-5 py-3 font-medium">Timezone</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -480,6 +452,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
                         </Link>
                       </td>
                       <td className="px-5 py-4">{contact.phone || '—'}</td>
+                      <td className="px-5 py-4">{contact.timezone || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
