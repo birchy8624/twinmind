@@ -66,6 +66,31 @@ type ProjectStatus = Database['public']['Enums']['project_status']
 type InvoiceUpdate = Database['public']['Tables']['invoices']['Update']
 type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
 
+const INVOICE_STAGE_OPTIONS = ['Quote', 'Sent', 'Paid'] as const
+type InvoiceStage = (typeof INVOICE_STAGE_OPTIONS)[number]
+
+const INVOICE_STAGE_BADGE_VARIANTS: Record<InvoiceStage, string> = {
+  Quote: 'border border-white/15 bg-white/5 text-white/70',
+  Sent: 'border border-amber-400/40 bg-amber-500/10 text-amber-200',
+  Paid: 'border border-limeglow-500/40 bg-limeglow-500/10 text-limeglow-100'
+}
+
+const normalizeInvoiceStage = (
+  status: Database['public']['Enums']['invoice_status'] | null | undefined
+): InvoiceStage => {
+  const candidate = status ?? 'Quote'
+  return INVOICE_STAGE_OPTIONS.includes(candidate as InvoiceStage)
+    ? (candidate as InvoiceStage)
+    : 'Quote'
+}
+
+type InvoiceEditorState = {
+  stage: InvoiceStage
+  amount: string
+  currency: string
+  dueDate: string
+}
+
 type BriefFormState = {
   goals: string
   personas: string
@@ -455,6 +480,11 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const [saving, setSaving] = useState(false)
   const [storedBriefAnswers, setStoredBriefAnswers] = useState<BriefAnswers | null>(null)
   const [invoices, setInvoices] = useState<InvoiceInfo[]>([])
+  const [activeInvoice, setActiveInvoice] = useState<InvoiceInfo | null>(null)
+  const [invoiceEditor, setInvoiceEditor] = useState<InvoiceEditorState | null>(null)
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
+  const [savingInvoice, setSavingInvoice] = useState(false)
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null)
   const [comments, setComments] = useState<ProjectComment[]>([])
   const [commentBody, setCommentBody] = useState('')
   const [commentVisibility, setCommentVisibility] = useState<Database['public']['Enums']['visibility_enum']>('both')
@@ -1216,6 +1246,359 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
     })
   }
 
+  const openInvoiceModal = (invoice: InvoiceInfo) => {
+    setActiveInvoice(invoice)
+    setInvoiceEditor({
+      stage: normalizeInvoiceStage(invoice.status),
+      amount: String(invoice.amount),
+      currency: invoice.currency ? invoice.currency.toUpperCase() : '',
+      dueDate: formatDateInput(invoice.due_at)
+    })
+    setInvoiceModalOpen(true)
+  }
+
+  const closeInvoiceModal = () => {
+    setInvoiceModalOpen(false)
+    setActiveInvoice(null)
+    setInvoiceEditor(null)
+  }
+
+  const handleInvoiceEditorChange = <Key extends keyof InvoiceEditorState>(
+    field: Key,
+    value: InvoiceEditorState[Key]
+  ) => {
+    setInvoiceEditor((previous) => {
+      if (!previous) return previous
+      return {
+        ...previous,
+        [field]: value
+      }
+    })
+  }
+
+  const handleInvoiceSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!activeInvoice || !invoiceEditor) {
+      return
+    }
+
+    const trimmedAmount = invoiceEditor.amount.trim()
+    const parsedAmount = parseNumberInput(trimmedAmount)
+
+    if (!trimmedAmount || parsedAmount === null || parsedAmount <= 0) {
+      pushToast({
+        title: 'Invalid invoice amount',
+        description: 'Enter a positive amount such as 12500 or 12,500.50.',
+        variant: 'error'
+      })
+      return
+    }
+
+    const trimmedCurrency = invoiceEditor.currency.trim().toUpperCase()
+    if (!trimmedCurrency || !/^[A-Z]{3}$/.test(trimmedCurrency)) {
+      pushToast({
+        title: 'Invalid currency',
+        description: 'Use a three-letter ISO currency code such as USD or EUR.',
+        variant: 'error'
+      })
+      return
+    }
+
+    const trimmedDueDate = invoiceEditor.dueDate.trim()
+    const normalizedDueDate =
+      trimmedDueDate.length > 0 ? normalizeDateColumnInput(trimmedDueDate) : null
+
+    if (trimmedDueDate.length > 0 && !normalizedDueDate) {
+      pushToast({
+        title: 'Invalid due date',
+        description: 'Choose a valid due date for the invoice or leave the field empty.',
+        variant: 'error'
+      })
+      return
+    }
+
+    try {
+      setSavingInvoice(true)
+
+      const nextPaidAt =
+        invoiceEditor.stage === 'Paid'
+          ? activeInvoice.paid_at ?? new Date().toISOString()
+          : null
+
+      const invoiceUpdate: InvoiceUpdate = {
+        amount: parsedAmount,
+        currency: trimmedCurrency,
+        status: invoiceEditor.stage,
+        due_at: normalizedDueDate,
+        paid_at: nextPaidAt
+      }
+
+      const { data: updatedInvoice, error: invoiceUpdateError } = await supabase
+        .from(INVOICES)
+        .update(invoiceUpdate)
+        .eq('id', activeInvoice.id)
+        .select(
+          'id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at'
+        )
+        .single()
+
+      if (invoiceUpdateError) {
+        throw new Error(invoiceUpdateError.message)
+      }
+
+      if (!updatedInvoice) {
+        throw new Error('Invoice update did not return a record.')
+      }
+
+      const formattedBudget = formatBudgetFromInvoice(updatedInvoice.amount, updatedInvoice.currency)
+
+      setInvoices((previous) =>
+        previous.map((invoice) => (invoice.id === activeInvoice.id ? updatedInvoice : invoice))
+      )
+      setInvoiceDetails((previous) =>
+        previous?.id === activeInvoice.id ? updatedInvoice : previous
+      )
+
+      setProject((previous) => {
+        if (!previous) return previous
+        return {
+          ...previous,
+          budget: formattedBudget
+        }
+      })
+
+      setFormState((previous) => {
+        if (!previous) return previous
+        return {
+          ...previous,
+          budget: formattedBudget ?? ''
+        }
+      })
+
+      closeInvoiceModal()
+
+      pushToast({
+        title: 'Invoice updated',
+        description: 'The invoice details were saved successfully.',
+        variant: 'success'
+      })
+    } catch (cause) {
+      console.error('Failed to update invoice', cause)
+      const message =
+        cause instanceof Error && cause.message
+          ? cause.message
+          : 'We could not update this invoice. Please try again.'
+      pushToast({
+        title: 'Could not update invoice',
+        description: message,
+        variant: 'error'
+      })
+    } finally {
+      setSavingInvoice(false)
+    }
+  }
+
+  const handleDownloadInvoice = (invoice: InvoiceInfo) => {
+    setDownloadingInvoiceId(invoice.id)
+
+    try {
+      if (typeof window === 'undefined') {
+        throw new Error('PDF downloads are only available in the browser.')
+      }
+
+      const formatDateForPdf = (value: string | null): string => {
+        if (!value) return 'Not recorded'
+        const parsed = new Date(value)
+        if (Number.isNaN(parsed.getTime())) {
+          return 'Not recorded'
+        }
+        return parsed.toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric'
+        })
+      }
+
+      const amountLabel =
+        formatBudgetFromInvoice(invoice.amount, invoice.currency) ??
+        `${invoice.amount.toFixed(2)} ${invoice.currency.toUpperCase()}`
+      const stageLabel = normalizeInvoiceStage(invoice.status)
+      const dueLabel = invoice.due_at ? formatDateForPdf(invoice.due_at) : 'No due date set'
+      const issuedLabel = formatDateForPdf(invoice.issued_at ?? invoice.created_at)
+      const paidLabel =
+        invoice.paid_at && stageLabel === 'Paid'
+          ? formatDateForPdf(invoice.paid_at)
+          : 'Not paid yet'
+      const projectName = project?.name ?? 'Untitled project'
+      const clientName = project?.client?.name ?? 'Unassigned client'
+      const generatedLabel = formatDateForPdf(new Date().toISOString())
+      const externalLink = invoice.external_url ?? 'Not provided'
+
+      const toRgb = (value: number) => (value / 255).toFixed(3)
+      const escapePdfText = (value: string) =>
+        value.replace(/\\/g, '\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+      const shorten = (value: string, limit = 70) =>
+        value.length > limit ? `${value.slice(0, limit - 1)}…` : value
+
+      const streamCommands: string[] = []
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(18)} ${toRgb(24)} ${toRgb(32)} rg`)
+      streamCommands.push('0 700 612 110 re f')
+      streamCommands.push('Q')
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(236)} ${toRgb(72)} ${toRgb(153)} rg`)
+      streamCommands.push('72 688 120 6 re f')
+      streamCommands.push('Q')
+      streamCommands.push('BT')
+      streamCommands.push('/F1 28 Tf')
+      streamCommands.push(`${toRgb(255)} ${toRgb(255)} ${toRgb(255)} rg`)
+      streamCommands.push('72 760 Td')
+      streamCommands.push(`(${escapePdfText('Invoice summary')}) Tj`)
+      streamCommands.push('0 -32 Td')
+      streamCommands.push('/F1 14 Tf')
+      streamCommands.push(`${toRgb(209)} ${toRgb(213)} ${toRgb(219)} rg`)
+      streamCommands.push(`(${escapePdfText(`Project: ${projectName}`)}) Tj`)
+      streamCommands.push('0 -20 Td')
+      streamCommands.push(`(${escapePdfText(`Client: ${clientName}`)}) Tj`)
+      streamCommands.push('ET')
+
+      streamCommands.push('BT')
+      streamCommands.push('/F1 20 Tf')
+      streamCommands.push(`${toRgb(30)} ${toRgb(41)} ${toRgb(59)} rg`)
+      streamCommands.push('72 640 Td')
+      streamCommands.push(`(${escapePdfText(`Invoice #${invoice.id.slice(0, 8)}`)}) Tj`)
+      streamCommands.push('0 -28 Td')
+      streamCommands.push('/F1 12 Tf')
+      streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
+
+      const pushLabelValue = (label: string, value: string) => {
+        streamCommands.push(`(${escapePdfText(label)}) Tj`)
+        streamCommands.push('0 -16 Td')
+        streamCommands.push('/F1 16 Tf')
+        streamCommands.push(`${toRgb(15)} ${toRgb(23)} ${toRgb(42)} rg`)
+        streamCommands.push(`(${escapePdfText(value)}) Tj`)
+        streamCommands.push('/F1 12 Tf')
+        streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
+        streamCommands.push('0 -24 Td')
+      }
+
+      pushLabelValue('Stage', stageLabel)
+      pushLabelValue('Amount', amountLabel)
+      pushLabelValue('Issued on', issuedLabel)
+      pushLabelValue('Due date', dueLabel)
+      pushLabelValue('Paid', paidLabel)
+      streamCommands.push('ET')
+
+      streamCommands.push('BT')
+      streamCommands.push('/F1 12 Tf')
+      streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
+      streamCommands.push('350 640 Td')
+      streamCommands.push(`(${escapePdfText('External link')}) Tj`)
+      streamCommands.push('0 -16 Td')
+      streamCommands.push('/F1 14 Tf')
+      streamCommands.push(`${toRgb(15)} ${toRgb(23)} ${toRgb(42)} rg`)
+      streamCommands.push(`(${escapePdfText(shorten(externalLink))}) Tj`)
+      streamCommands.push('0 -24 Td')
+      streamCommands.push('/F1 12 Tf')
+      streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
+      streamCommands.push(`(${escapePdfText('Generated on')}) Tj`)
+      streamCommands.push('0 -16 Td')
+      streamCommands.push('/F1 14 Tf')
+      streamCommands.push(`${toRgb(15)} ${toRgb(23)} ${toRgb(42)} rg`)
+      streamCommands.push(`(${escapePdfText(generatedLabel)}) Tj`)
+      streamCommands.push('ET')
+
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(241)} ${toRgb(245)} ${toRgb(249)} rg`)
+      streamCommands.push('72 360 468 104 re f')
+      streamCommands.push('Q')
+
+      streamCommands.push('BT')
+      streamCommands.push('/F1 12 Tf')
+      streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
+      streamCommands.push('88 430 Td')
+      streamCommands.push(`(${escapePdfText('Notes')}) Tj`)
+      streamCommands.push('0 -18 Td')
+      streamCommands.push('/F1 13 Tf')
+      streamCommands.push(`${toRgb(51)} ${toRgb(65)} ${toRgb(85)} rg`)
+      const noteLines = [
+        'Share this summary with your client to confirm invoice details.',
+        'Add next steps or payment reminders before sending.'
+      ]
+      streamCommands.push(`(${escapePdfText(noteLines[0])}) Tj`)
+      streamCommands.push('0 -18 Td')
+      streamCommands.push(`(${escapePdfText(noteLines[1])}) Tj`)
+      streamCommands.push('ET')
+
+      const streamContent = `${streamCommands.join('\n')}\n`
+      const encoder = new TextEncoder()
+      const streamLength = encoder.encode(streamContent).length
+
+      const objects = [
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+        `<< /Length ${streamLength} >>\nstream\n${streamContent}endstream`,
+        '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+      ]
+
+      const header = '%PDF-1.4\n'
+      const pieces = [header]
+      const offsets: number[] = [0]
+      let lengthSoFar = encoder.encode(header).length
+
+      for (let index = 0; index < objects.length; index += 1) {
+        const objectId = index + 1
+        const objectString = `${objectId} 0 obj\n${objects[index]}\nendobj\n`
+        offsets[objectId] = lengthSoFar
+        pieces.push(objectString)
+        lengthSoFar += encoder.encode(objectString).length
+      }
+
+      const xrefOffset = lengthSoFar
+      let xref = `xref\n0 ${objects.length + 1}\n`
+      xref += '0000000000 65535 f \n'
+      for (let index = 1; index <= objects.length; index += 1) {
+        xref += `${offsets[index].toString().padStart(10, '0')} 00000 n \n`
+      }
+      xref += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+      pieces.push(xref)
+
+      const pdfBytes = encoder.encode(pieces.join(''))
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `invoice-${invoice.id.slice(0, 8)}.pdf`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      window.setTimeout(() => {
+        URL.revokeObjectURL(url)
+      }, 5000)
+
+      pushToast({
+        title: 'Invoice PDF created',
+        description: 'A polished PDF summary has been prepared for your client.',
+        variant: 'success'
+      })
+    } catch (cause) {
+      console.error('Failed to prepare invoice PDF', cause)
+      const message =
+        cause instanceof Error && cause.message
+          ? cause.message
+          : 'We could not prepare the invoice PDF. Please try again.'
+      pushToast({
+        title: 'Download failed',
+        description: message,
+        variant: 'error'
+      })
+    } finally {
+      setDownloadingInvoiceId(null)
+    }
+  }
+
   const handleCommentSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
@@ -1479,9 +1862,186 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   }, [storedBriefAnswers, briefFormState])
 
   const hasBriefSummary = resolvedBriefAnswers ? hasBriefContent(resolvedBriefAnswers) : false
+  const isInvoiceDialogVisible = Boolean(invoiceModalOpen && activeInvoice && invoiceEditor)
 
   return (
-    <div className="space-y-6">
+    <>
+      {isInvoiceDialogVisible && activeInvoice && invoiceEditor ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur"
+          onClick={closeInvoiceModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invoice-dialog-title"
+            aria-describedby="invoice-dialog-description"
+            className="w-full max-w-lg rounded-2xl border border-white/10 bg-base-900/90 p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Invoice</p>
+                <h2 id="invoice-dialog-title" className="text-xl font-semibold text-white">
+                  #{activeInvoice.id.slice(0, 8)}
+                </h2>
+                <p className="text-xs text-white/50">
+                  Created {formatTimestamp(activeInvoice.created_at)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeInvoiceModal}
+                className="rounded-full border border-white/15 p-2 text-white/60 transition hover:border-white/40 hover:text-white"
+              >
+                <span className="sr-only">Close</span>
+                ×
+              </button>
+            </div>
+            <p id="invoice-dialog-description" className="mt-4 text-sm text-white/60">
+              Review invoice details, adjust the billing stage, or export a polished PDF for your client.
+            </p>
+            <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-base-900/60 p-4 text-sm text-white/60">
+              <div className="flex items-center justify-between gap-4">
+                <span>Project</span>
+                <span className="font-semibold text-white/80">
+                  {project?.name ?? 'Untitled project'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span>Client</span>
+                <span className="font-semibold text-white/80">
+                  {project?.client?.name ?? 'Unassigned client'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span>Issued</span>
+                <span className="font-semibold text-white/80">
+                  {formatTimestamp(activeInvoice.issued_at ?? activeInvoice.created_at)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span>Link</span>
+                <span className="font-semibold text-white/80">
+                  {activeInvoice.external_url ? (
+                    <a
+                      href={activeInvoice.external_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-white transition hover:underline"
+                    >
+                      Open invoice
+                    </a>
+                  ) : (
+                    '—'
+                  )}
+                </span>
+              </div>
+            </div>
+            <form className="mt-6 space-y-4" onSubmit={handleInvoiceSubmit}>
+              <div className="grid gap-2">
+                <label
+                  className="text-xs font-semibold uppercase tracking-wide text-white/50"
+                  htmlFor="invoice-stage"
+                >
+                  Stage
+                </label>
+                <select
+                  id="invoice-stage"
+                  value={invoiceEditor.stage}
+                  onChange={(event) =>
+                    handleInvoiceEditorChange('stage', event.target.value as InvoiceStage)
+                  }
+                  className="rounded-xl border border-white/15 bg-base-900/60 px-3 py-2 text-sm text-white transition focus:border-white/40 focus:outline-none"
+                >
+                  {INVOICE_STAGE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid gap-2">
+                <label
+                  className="text-xs font-semibold uppercase tracking-wide text-white/50"
+                  htmlFor="invoice-amount"
+                >
+                  Amount
+                </label>
+                <input
+                  id="invoice-amount"
+                  type="text"
+                  inputMode="decimal"
+                  value={invoiceEditor.amount}
+                  onChange={(event) => handleInvoiceEditorChange('amount', event.target.value)}
+                  className="rounded-xl border border-white/15 bg-base-900/60 px-3 py-2 text-sm text-white transition focus:border-white/40 focus:outline-none"
+                />
+              </div>
+              <div className="grid gap-2">
+                <label
+                  className="text-xs font-semibold uppercase tracking-wide text-white/50"
+                  htmlFor="invoice-currency"
+                >
+                  Currency
+                </label>
+                <input
+                  id="invoice-currency"
+                  type="text"
+                  maxLength={3}
+                  value={invoiceEditor.currency}
+                  onChange={(event) =>
+                    handleInvoiceEditorChange('currency', event.target.value.toUpperCase())
+                  }
+                  className="rounded-xl border border-white/15 bg-base-900/60 px-3 py-2 text-sm uppercase text-white transition focus:border-white/40 focus:outline-none"
+                />
+              </div>
+              <div className="grid gap-2">
+                <label
+                  className="text-xs font-semibold uppercase tracking-wide text-white/50"
+                  htmlFor="invoice-due-date"
+                >
+                  Due date
+                </label>
+                <input
+                  id="invoice-due-date"
+                  type="date"
+                  value={invoiceEditor.dueDate}
+                  onChange={(event) => handleInvoiceEditorChange('dueDate', event.target.value)}
+                  className="rounded-xl border border-white/15 bg-base-900/60 px-3 py-2 text-sm text-white transition focus:border-white/40 focus:outline-none"
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadInvoice(activeInvoice)}
+                  disabled={downloadingInvoiceId === activeInvoice.id}
+                  className="rounded-md border border-white/20 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {downloadingInvoiceId === activeInvoice.id ? 'Preparing PDF…' : 'Download PDF'}
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={closeInvoiceModal}
+                    disabled={savingInvoice}
+                    className="rounded-md px-4 py-2 text-sm font-medium text-white/70 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingInvoice}
+                    className="rounded-md bg-emerald-500/90 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {savingInvoice ? 'Saving…' : 'Save changes'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+      <div className="space-y-6">
       <div className="flex flex-col gap-4 border-b border-white/5 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-3">
           <Link
@@ -2275,6 +2835,9 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                           <th scope="col" className="px-4 py-3 text-left font-semibold">
                             Link
                           </th>
+                          <th scope="col" className="px-4 py-3 text-left font-semibold">
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5">
@@ -2282,12 +2845,17 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                           const formattedAmount =
                             formatBudgetFromInvoice(invoice.amount, invoice.currency) ??
                             formatNumericValue(invoice.amount)
+                          const isDownloading = downloadingInvoiceId === invoice.id
+                          const stageLabel = normalizeInvoiceStage(invoice.status)
+                          const stageClasses = INVOICE_STAGE_BADGE_VARIANTS[stageLabel]
                           return (
                             <tr key={invoice.id}>
                               <td className="px-4 py-3 font-mono text-xs text-white/60">#{invoice.id.slice(0, 8)}</td>
                               <td className="px-4 py-3">
-                                <span className="inline-flex items-center rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70">
-                                  {invoice.status}
+                                <span
+                                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${stageClasses}`}
+                                >
+                                  {stageLabel}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-white/80">{formattedAmount}</td>
@@ -2312,6 +2880,25 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                                   '—'
                                 )}
                               </td>
+                              <td className="px-4 py-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => openInvoiceModal(invoice)}
+                                    className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/80 transition hover:border-white/40 hover:text-white"
+                                  >
+                                    View
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDownloadInvoice(invoice)}
+                                    disabled={isDownloading}
+                                    className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/80 transition hover:border-white/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isDownloading ? 'Preparing…' : 'Download'}
+                                  </button>
+                                </div>
+                              </td>
                             </tr>
                           )
                         })}
@@ -2333,6 +2920,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         </div>
       )}
     </div>
+  </>
   )
 
 }
