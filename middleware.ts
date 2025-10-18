@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
       return null
     }
 
-    const { data: profile, error: profileError } = await supabase
+    const { data: profileRow, error: profileError } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', session.user.id)
@@ -49,7 +49,11 @@ export async function middleware(request: NextRequest) {
       return null
     }
 
-    return profile?.role ?? null
+    type ProfileRow = Database['public']['Tables']['profiles']['Row']
+
+    const typedProfile = (profileRow ?? null) as Pick<ProfileRow, 'role'> | null
+
+    return typedProfile?.role ?? null
   }
 
   const role = session ? await resolveRole() : null
