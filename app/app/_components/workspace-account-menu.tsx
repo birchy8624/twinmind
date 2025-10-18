@@ -6,12 +6,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useToast } from './toast-context'
 import { createBrowserClient } from '@/lib/supabase/browser'
+import type { Database } from '@/types/supabase'
 
 type WorkspaceAccountMenuProps = {
   className?: string
 }
 
 const PROFILES = 'profiles' as const
+type ProfileRow = Database['public']['Tables']['profiles']['Row']
+type ProfileName = Pick<ProfileRow, 'full_name'>
 
 export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
   const router = useRouter()
@@ -77,8 +80,9 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
           throw profileError
         }
 
+        const profileRecord = profile as ProfileName | null
         const profileFullName =
-          typeof profile?.full_name === 'string' ? profile.full_name.trim() : ''
+          typeof profileRecord?.full_name === 'string' ? profileRecord.full_name.trim() : ''
         const userEmail = typeof user.email === 'string' ? user.email.trim() : ''
 
         const resolvedName = profileFullName || metadataName || userEmail || null

@@ -10,6 +10,7 @@ import type { Database } from '@/types/supabase'
 import { StatusBadge } from '../_components/status-badge'
 
 type Client = Database['public']['Tables']['clients']['Row']
+type ClientSelection = Pick<Client, 'id' | 'name' | 'website' | 'account_status' | 'created_at' | 'notes' | 'updated_at'>
 
 const PAGE_SIZE = 8
 const CLIENTS = 'clients' as const
@@ -84,7 +85,8 @@ export default function ClientsPage() {
         setError('We ran into an issue loading clients. Please try again.')
         setClients([])
       } else {
-        const rows: Client[] = (data ?? []).map((row) => ({
+        const selected = (data ?? []) as ClientSelection[]
+        const rows: Client[] = selected.map((row) => ({
           id: row.id,
           name: row.name,
           website: row.website ?? null,
