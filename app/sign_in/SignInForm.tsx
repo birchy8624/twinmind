@@ -48,6 +48,7 @@ export default function SignInForm() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
+          keepalive: true,
           body: JSON.stringify({ event: 'SIGNED_IN', session })
         })
       }
