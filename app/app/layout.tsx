@@ -17,8 +17,6 @@ const navigation = [
   { href: '/app/settings', label: 'Settings', hint: 'Workspace preferences' }
 ] satisfies ReadonlyArray<{ href: Route; label: string; hint: string }>
 
-const quickFilters = ['All work', 'Live builds', 'Discovery', 'Ready for review']
-
 type AppShellLayoutProps = {
   children: ReactNode
 }
@@ -96,20 +94,6 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
                 <path d="M721.766 207.549C728.294 210.201 732.44 214.956 735.584 221.142C736.59 230.774 736.138 239.072 730.057 246.968C725.601 250.953 722.182 252.721 716.239 253C709.002 252.592 704.161 250.178 699.226 244.929C694.234 237.655 694.689 229.627 695.512 221.142C697.844 216.384 697.844 216.384 701.039 212.986C702.493 211.388 702.493 211.388 703.976 209.758C709.85 206.491 715.169 206.671 721.766 207.549Z" fill="black" />
                 <path d="M661.311 156.954C664.545 159.127 664.545 159.127 666.618 162.303C667.397 167.698 667.091 170.692 664.711 175.594C660.364 179.121 657.617 179.053 652.185 178.979C648.703 178.203 647.517 177.201 645.392 174.34C644.433 170.347 643.787 167.629 644.065 163.641C648.954 155.653 652.4 154.94 661.311 156.954Z" fill="#9FA1A0" />
               </svg>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-base-900/60 p-4">
-              <p className="text-xs text-white/50">Quick filters</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {quickFilters.map((filter) => (
-                  <button
-                    key={filter}
-                    type="button"
-                    className="rounded-full bg-white/5 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-white/60 transition hover:bg-white/10 hover:text-white"
-                  >
-                    {filter}
-                  </button>
-                ))}
-              </div>
             </div>
             {NavLinks}
             <div className="mt-auto pt-8">
