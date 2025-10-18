@@ -40,9 +40,8 @@ const urlValidator = z
   })
 
 const onboardingSchema = z.object({
-  clientName: z.string().trim().min(2, 'Client name is required'),
+  clientName: z.string().trim().min(2, 'Company name is required'),
   clientEmail: z.string().trim().email('Enter a valid email address'),
-  company: z.string().trim().min(2, 'Company is required'),
   website: urlValidator,
   phone: z
     .string()
@@ -121,7 +120,6 @@ const steps: StepConfig[] = [
     fields: [
       'clientName',
       'clientEmail',
-      'company',
       'website',
       'phone',
       'timezone',
@@ -160,7 +158,6 @@ const steps: StepConfig[] = [
 const defaultValues: OnboardingForm = {
   clientName: '',
   clientEmail: '',
-  company: '',
   website: '',
   phone: '',
   timezone: '',
@@ -193,7 +190,6 @@ function formValuesToPayload(values: OnboardingForm): WizardPayload {
     client: {
       name: values.clientName,
       email: values.clientEmail,
-      company: values.company || undefined,
       website: website,
       phone: values.phone || undefined,
       timezone: values.timezone || undefined,
@@ -470,9 +466,8 @@ function ClientBasics() {
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <InputField id="clientName" label="Client name" placeholder="Sarah Connor" />
+        <InputField id="clientName" label="Company name" placeholder="e.g. Amazon" />
         <InputField id="clientEmail" label="Email" placeholder="sarah@skynet.io" type="email" />
-        <InputField id="company" label="Company" placeholder="Skynet Industries" />
         <InputField id="website" label="Website" placeholder="https://skynet.io" />
         <InputField id="phone" label="Phone" placeholder="+1 415 555 0100" />
         <SelectField id="timezone" label="Timezone" options={timezones} />
@@ -588,9 +583,8 @@ function ReviewStep() {
         <SummaryCard
           title="Client"
           items={[
-            ['Name', values.clientName || '—'],
+            ['Company name', values.clientName || '—'],
             ['Email', values.clientEmail || '—'],
-            ['Company', values.company || '—'],
             ['Website', values.website || '—'],
             ['Phone', values.phone || '—'],
             ['Timezone', values.timezone || '—'],
