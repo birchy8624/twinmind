@@ -1,7 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
+
+import type { FileObject } from '@supabase/storage-js'
 
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
@@ -27,6 +30,11 @@ type EditableProject = {
   clientId: string
   assigneeId: string
   budget: string
+  valueQuote: string
+  valueInvoiced: string
+  valuePaid: string
+  labels: string
+  tags: string
 }
 
 type BriefAnswers = {
@@ -40,12 +48,18 @@ type BriefAnswers = {
   risks: string | null
 }
 
-type InvoiceInfo = Pick<InvoiceRow, 'id' | 'amount' | 'currency'>
+type InvoiceInfo = Pick<
+  InvoiceRow,
+  'id' | 'amount' | 'currency' | 'status' | 'issued_at' | 'due_at' | 'external_url' | 'paid_at' | 'created_at' | 'updated_at'
+>
 
 const PROJECTS = 'projects' as const
 const INVOICES = 'invoices' as const
 const CLIENTS = 'clients' as const
 const PROFILES = 'profiles' as const
+const COMMENTS = 'comments' as const
+const BRIEFS = 'briefs' as const
+const STORAGE_BUCKET = 'project-files' as const
 
 type ProjectUpdate = Database['public']['Tables']['projects']['Update']
 type ProjectStatus = Database['public']['Enums']['project_status']
@@ -62,6 +76,33 @@ type BriefFormState = {
   competitors: string
   risks: string
 }
+
+type ProjectComment = {
+  id: string
+  body: string
+  created_at: string | null
+  visibility: Database['public']['Enums']['visibility_enum']
+  author: Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null
+}
+
+type ProjectFileObject = {
+  path: string
+  name: string
+  id: string | null
+  created_at: string | null
+  updated_at: string | null
+  last_accessed_at: string | null
+  size: number | null
+}
+
+type RecentActivityItem = {
+  id: string
+  label: string
+  description: string
+  timestamp: string | null
+}
+
+type TabKey = 'overview' | 'brief' | 'files' | 'comments' | 'billing'
 
 const createEmptyBriefFormState = (): BriefFormState => ({
   goals: '',
@@ -189,6 +230,47 @@ const parseBudgetInput = (value: string, fallbackCurrency?: string): ParsedBudge
   return { amount, currency }
 }
 
+const parseNumberInput = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  const numericPortion = trimmed.replace(/[^0-9.,-]/g, '')
+  if (!numericPortion) {
+    return null
+  }
+
+  const lastComma = numericPortion.lastIndexOf(',')
+  const lastDot = numericPortion.lastIndexOf('.')
+
+  let normalizedNumber = numericPortion
+
+  if (lastComma !== -1 && lastDot !== -1) {
+    if (lastComma > lastDot) {
+      normalizedNumber = numericPortion.replace(/\./g, '').replace(',', '.')
+    } else {
+      normalizedNumber = numericPortion.replace(/,/g, '')
+    }
+  } else if (lastComma !== -1) {
+    normalizedNumber = numericPortion.replace(',', '.')
+  }
+
+  const amount = Number(normalizedNumber)
+  if (!Number.isFinite(amount)) {
+    return null
+  }
+
+  return amount
+}
+
+const normalizeTextArrayInput = (value: string): string[] | null => {
+  const tokens = value
+    .split(/[\n,]/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+
+  return tokens.length > 0 ? tokens : null
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -292,6 +374,49 @@ function formatBudgetFromInvoice(amount: InvoiceRow['amount'] | null | undefined
   }
 }
 
+const formatNumericValue = (value: number | null | undefined) => {
+  if (value === null || value === undefined) {
+    return 'Not set'
+  }
+
+  if (!Number.isFinite(value)) {
+    return 'Not set'
+  }
+
+  try {
+    return new Intl.NumberFormat('en-US', {
+      maximumFractionDigits: 2
+    }).format(value)
+  } catch (error) {
+    console.error('Failed to format numeric value', error)
+    return String(value)
+  }
+}
+
+const formatFileSize = (bytes: number | null) => {
+  if (bytes === null || bytes === undefined) return 'Unknown size'
+  if (bytes === 0) return '0 B'
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const size = bytes / Math.pow(1024, exponent)
+  return `${size.toFixed(size < 10 ? 1 : 0)} ${units[exponent]}`
+}
+
+const formatTimestamp = (value: string | null) => {
+  if (!value) return 'Unknown'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+}
+
 function formatDateInput(value: string | null) {
   if (!value) return ''
   const date = new Date(value)
@@ -329,19 +454,37 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const [invoiceDetails, setInvoiceDetails] = useState<InvoiceInfo | null>(null)
   const [saving, setSaving] = useState(false)
   const [storedBriefAnswers, setStoredBriefAnswers] = useState<BriefAnswers | null>(null)
+  const [invoices, setInvoices] = useState<InvoiceInfo[]>([])
+  const [comments, setComments] = useState<ProjectComment[]>([])
+  const [commentBody, setCommentBody] = useState('')
+  const [commentVisibility, setCommentVisibility] = useState<Database['public']['Enums']['visibility_enum']>('both')
+  const [commentFilter, setCommentFilter] = useState<'both' | 'client' | 'internal'>('both')
+  const [loadingComments, setLoadingComments] = useState(true)
+  const [files, setFiles] = useState<ProjectFileObject[]>([])
+  const [loadingFiles, setLoadingFiles] = useState(false)
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [currentProfile, setCurrentProfile] = useState<Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null>(null)
+  const [loadingProfile, setLoadingProfile] = useState(true)
+  const [submittingComment, setSubmittingComment] = useState(false)
 
   const { pushToast } = useToast()
 
   const supabase = useMemo(createBrowserClient, [])
+  const isMountedRef = useRef(true)
 
   useEffect(() => {
-    let isMounted = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
-    const fetchProjectData = async () => {
-      setLoadingProject(true)
-      setLoadingOptions(true)
-      setError(null)
+  const fetchProjectData = useCallback(async () => {
+    setLoadingProject(true)
+    setLoadingOptions(true)
+    setError(null)
 
+    try {
       const projectPromise = supabase
         .from(PROJECTS)
         .select(
@@ -363,8 +506,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
             value_paid,
             value_quote,
             clients:client_id ( id, name ),
-            assignee_profile:assignee_profile_id ( id, full_name ),
-            invoices ( id, amount, currency )
+            assignee_profile:assignee_profile_id ( id, full_name )
           `
         )
         .eq('id', params.projectId)
@@ -375,29 +517,47 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         .from(PROFILES)
         .select('id, full_name')
         .order('full_name', { ascending: true })
-      const [projectResult, clientsResult, assigneesResult] = await Promise.all([
+      const invoicesPromise = supabase
+        .from(INVOICES)
+        .select(
+          'id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at'
+        )
+        .eq('project_id', params.projectId)
+        .order('created_at', { ascending: false })
+      const briefPromise = supabase.from(BRIEFS).select('answers').eq('project_id', params.projectId).maybeSingle()
+
+      const [projectResult, clientsResult, assigneesResult, invoicesResult, briefResult] = await Promise.all([
         projectPromise,
         clientsPromise,
-        assigneesPromise
+        assigneesPromise,
+        invoicesPromise,
+        briefPromise
       ])
 
-      if (!isMounted) {
+      if (!isMountedRef.current) {
         return
       }
 
       const { data: clientsData, error: clientsError } = clientsResult
-      const { data: assigneesData, error: assigneesError } = assigneesResult
-
       if (clientsError) {
         console.error('Failed to load clients', clientsError)
       }
+      setClients((clientsData ?? []) as Array<Pick<ClientRow, 'id' | 'name'>>)
+
+      const { data: assigneesData, error: assigneesError } = assigneesResult
       if (assigneesError) {
         console.error('Failed to load profiles', assigneesError)
       }
-
-      setClients((clientsData ?? []) as Array<Pick<ClientRow, 'id' | 'name'>>)
       setAssignees((assigneesData ?? []) as Array<Pick<ProfileRow, 'id' | 'full_name'>>)
-      setLoadingOptions(false)
+
+      const { data: invoicesData, error: invoicesError } = invoicesResult
+      if (invoicesError) {
+        console.error('Failed to load invoices', invoicesError)
+      }
+      const typedInvoices = (invoicesData ?? []) as InvoiceInfo[]
+      setInvoices(typedInvoices)
+      const invoiceRecord = typedInvoices.length > 0 ? typedInvoices[0] : null
+      setInvoiceDetails(invoiceRecord ?? null)
 
       const { data: projectData, error: projectError } = projectResult
 
@@ -405,37 +565,27 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         console.error('Failed to load project', projectError)
         setProject(null)
         setFormState(null)
-        setInvoiceDetails(null)
         setStoredBriefAnswers(null)
         setBriefFormState(createEmptyBriefFormState())
         setError('We could not load this project. Please try again.')
-        setLoadingProject(false)
         return
       }
 
       if (!projectData) {
         setProject(null)
         setFormState(null)
-        setInvoiceDetails(null)
         setStoredBriefAnswers(null)
         setBriefFormState(createEmptyBriefFormState())
         setError('We could not find this project.')
-        setLoadingProject(false)
         return
       }
 
       type ProjectQuery = ProjectRow & {
         clients: Pick<ClientRow, 'id' | 'name'> | null
         assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
-        invoices: InvoiceInfo[] | null
       }
 
-      const { clients: projectClient, assignee_profile: projectAssignee, invoices, ...projectRest } =
-        projectData as ProjectQuery
-
-      const invoiceRecord = invoices && invoices.length > 0 ? invoices[0] : null
-
-      setInvoiceDetails(invoiceRecord)
+      const { clients: projectClient, assignee_profile: projectAssignee, ...projectRest } = projectData as ProjectQuery
 
       const formattedBudget = invoiceRecord
         ? formatBudgetFromInvoice(invoiceRecord.amount, invoiceRecord.currency)
@@ -456,21 +606,224 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         dueDate: formatDateInput(normalizedProject.due_date),
         clientId: normalizedProject.client?.id ?? normalizedProject.client_id ?? '',
         assigneeId: normalizedProject.assignee?.id ?? normalizedProject.assignee_profile_id ?? '',
-        budget: normalizedProject.budget ?? ''
+        budget: formattedBudget ?? '',
+        valueQuote:
+          normalizedProject.value_quote !== null && normalizedProject.value_quote !== undefined
+            ? String(normalizedProject.value_quote)
+            : '',
+        valueInvoiced:
+          normalizedProject.value_invoiced !== null && normalizedProject.value_invoiced !== undefined
+            ? String(normalizedProject.value_invoiced)
+            : '',
+        valuePaid:
+          normalizedProject.value_paid !== null && normalizedProject.value_paid !== undefined
+            ? String(normalizedProject.value_paid)
+            : '',
+        labels: normalizedProject.labels ? normalizedProject.labels.join('\n') : '',
+        tags: normalizedProject.tags ? normalizedProject.tags.join('\n') : ''
       })
 
+      const { data: briefData, error: briefError } = briefResult
+      if (briefError) {
+        console.error('Failed to load brief answers', briefError)
+      }
+
+      const normalizedBriefAnswers = normalizeBriefAnswers(briefData?.answers ?? null)
+      if (normalizedBriefAnswers) {
+        setStoredBriefAnswers(normalizedBriefAnswers)
+        setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
+      } else {
+        setStoredBriefAnswers(null)
+        setBriefFormState(createEmptyBriefFormState())
+      }
+    } catch (cause) {
+      console.error('Failed to load project data', cause)
+      if (!isMountedRef.current) {
+        return
+      }
+      setProject(null)
+      setFormState(null)
+      setInvoices([])
+      setInvoiceDetails(null)
       setStoredBriefAnswers(null)
       setBriefFormState(createEmptyBriefFormState())
-
+      setError('We ran into an issue loading this project. Please try again.')
+    } finally {
+      if (!isMountedRef.current) {
+        return
+      }
+      setLoadingOptions(false)
       setLoadingProject(false)
     }
+  }, [params.projectId, supabase])
 
+  const fetchProjectComments = useCallback(async () => {
+    setLoadingComments(true)
+
+    const { data, error } = await supabase
+      .from(COMMENTS)
+      .select(
+        `
+          id,
+          body,
+          created_at,
+          visibility,
+          author_profile:author_profile_id ( id, full_name, role )
+        `
+      )
+      .eq('project_id', params.projectId)
+      .order('created_at', { ascending: false })
+
+    if (!isMountedRef.current) {
+      return
+    }
+
+    if (error) {
+      console.error('Failed to load project comments', error)
+      setComments([])
+      setLoadingComments(false)
+      return
+    }
+
+    type CommentQuery = Database['public']['Tables']['comments']['Row'] & {
+      author_profile: Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null
+    }
+
+    const typedComments = (data ?? []).map((comment) => {
+      const { author_profile, ...rest } = comment as CommentQuery
+      return {
+        ...rest,
+        author: author_profile ?? null
+      }
+    })
+
+    setComments(typedComments)
+    setLoadingComments(false)
+  }, [params.projectId, supabase])
+
+  const fetchProjectFiles = useCallback(async () => {
+    setLoadingFiles(true)
+
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .list(params.projectId, {
+        limit: 100,
+        sortBy: { column: 'updated_at', order: 'desc' }
+      })
+
+    if (!isMountedRef.current) {
+      return
+    }
+
+    if (error) {
+      console.error('Failed to load project files', error)
+      pushToast({
+        title: 'Unable to load files',
+        description: 'We could not load the project files just now. Please try again.',
+        variant: 'error'
+      })
+      setFiles([])
+      setLoadingFiles(false)
+      return
+    }
+
+    const typedFiles = (data ?? []).map((fileObject) => {
+      const metadata = (fileObject.metadata ?? {}) as { size?: number | string }
+      let normalizedSize: number | null = null
+      if (typeof metadata.size === 'number') {
+        normalizedSize = metadata.size
+      } else if (typeof metadata.size === 'string') {
+        const parsed = Number.parseInt(metadata.size, 10)
+        normalizedSize = Number.isNaN(parsed) ? null : parsed
+      }
+
+      return {
+        path: `${params.projectId}/${fileObject.name}`,
+        name: fileObject.name,
+        id: fileObject.id ?? null,
+        created_at: fileObject.created_at ?? null,
+        updated_at: fileObject.updated_at ?? null,
+        last_accessed_at: fileObject.last_accessed_at ?? null,
+        size: normalizedSize
+      }
+    })
+
+    setFiles(typedFiles)
+    setLoadingFiles(false)
+  }, [params.projectId, pushToast, supabase])
+
+  useEffect(() => {
     void fetchProjectData()
+  }, [fetchProjectData])
+
+  useEffect(() => {
+    void fetchProjectComments()
+  }, [fetchProjectComments])
+
+  useEffect(() => {
+    void fetchProjectFiles()
+  }, [fetchProjectFiles])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadProfile = async () => {
+      try {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) {
+          console.error('Failed to fetch session', sessionError)
+        }
+
+        const userId = sessionData?.session?.user?.id ?? null
+
+        if (!userId) {
+          if (!isCancelled && isMountedRef.current) {
+            setCurrentProfile(null)
+            setLoadingProfile(false)
+          }
+          return
+        }
+
+        const { data: profileData, error: profileError } = await supabase
+          .from(PROFILES)
+          .select('id, full_name, role')
+          .eq('id', userId)
+          .maybeSingle()
+
+        if (!isMountedRef.current || isCancelled) {
+          return
+        }
+
+        if (profileError) {
+          console.error('Failed to load profile', profileError)
+          setCurrentProfile(null)
+        } else {
+          setCurrentProfile((profileData ?? null) as Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null)
+        }
+      } catch (cause) {
+        console.error('Unexpected error loading profile', cause)
+        if (!isCancelled && isMountedRef.current) {
+          setCurrentProfile(null)
+        }
+      } finally {
+        if (!isCancelled && isMountedRef.current) {
+          setLoadingProfile(false)
+        }
+      }
+    }
+
+    void loadProfile()
 
     return () => {
-      isMounted = false
+      isCancelled = true
     }
-  }, [params.projectId, supabase])
+  }, [supabase])
+
+  useEffect(() => {
+    if (currentProfile?.role !== 'owner' && commentVisibility === 'internal') {
+      setCommentVisibility('both')
+    }
+  }, [commentVisibility, currentProfile])
 
   const handleFieldChange = <Key extends keyof EditableProject>(field: Key, value: EditableProject[Key]) => {
     setFormState((previous) => {
@@ -521,6 +874,45 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       return
     }
 
+    const trimmedQuoteInput = formState.valueQuote.trim()
+    const parsedValueQuote =
+      trimmedQuoteInput.length > 0 ? parseNumberInput(trimmedQuoteInput) : null
+    if (trimmedQuoteInput.length > 0 && parsedValueQuote === null) {
+      pushToast({
+        title: 'Invalid quote value',
+        description: 'Use numbers only for the quoted amount (for example 25000).',
+        variant: 'error'
+      })
+      return
+    }
+
+    const trimmedInvoicedInput = formState.valueInvoiced.trim()
+    const parsedValueInvoiced =
+      trimmedInvoicedInput.length > 0 ? parseNumberInput(trimmedInvoicedInput) : null
+    if (trimmedInvoicedInput.length > 0 && parsedValueInvoiced === null) {
+      pushToast({
+        title: 'Invalid invoiced value',
+        description: 'Use numbers only for the invoiced amount (for example 12500).',
+        variant: 'error'
+      })
+      return
+    }
+
+    const trimmedPaidInput = formState.valuePaid.trim()
+    const parsedValuePaid = trimmedPaidInput.length > 0 ? parseNumberInput(trimmedPaidInput) : null
+    if (trimmedPaidInput.length > 0 && parsedValuePaid === null) {
+      pushToast({
+        title: 'Invalid paid value',
+        description: 'Use numbers only for the paid amount (for example 5000).',
+        variant: 'error'
+      })
+      return
+    }
+
+    const normalizedLabels = normalizeTextArrayInput(formState.labels)
+    const normalizedTagsRaw = normalizeTextArrayInput(formState.tags)
+    const normalizedTags = normalizedTagsRaw ? normalizedTagsRaw.map((tag) => tag.replace(/^#/, '')) : null
+
     try {
       setSaving(true)
       setError(null)
@@ -541,8 +933,11 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         client_id: selectedClientId,
         assignee_profile_id: assigneeValue,
         due_date: normalizedDueDate,
-        value_quote: parsedBudget ? parsedBudget.amount : null,
-        value_invoiced: parsedBudget ? parsedBudget.amount : null
+        value_quote: parsedValueQuote,
+        value_invoiced: parsedValueInvoiced,
+        value_paid: parsedValuePaid,
+        labels: normalizedLabels,
+        tags: normalizedTags
       }
 
       const { error: projectUpdateError } = await supabase
@@ -555,7 +950,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         throw new Error(projectUpdateError.message)
       }
 
-      let nextInvoiceDetails: InvoiceInfo | null = null
+      let nextInvoiceDetails: InvoiceInfo | null = invoiceDetails
 
       if (parsedBudget) {
         if (invoiceDetails?.id) {
@@ -568,7 +963,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
             .from(INVOICES)
             .update(invoiceUpdate)
             .eq('id', invoiceDetails.id)
-            .select('id, amount, currency')
+            .select('id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at')
             .maybeSingle()
 
           if (invoiceUpdateError) {
@@ -576,12 +971,18 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
             throw new Error(invoiceUpdateError.message)
           }
 
-          nextInvoiceDetails =
-            updatedInvoice ?? {
-              id: invoiceDetails.id,
-              amount: parsedBudget.amount,
-              currency: parsedBudget.currency
-            }
+          nextInvoiceDetails = updatedInvoice ?? {
+            id: invoiceDetails.id,
+            amount: parsedBudget.amount,
+            currency: parsedBudget.currency,
+            status: invoiceDetails.status,
+            issued_at: invoiceDetails.issued_at,
+            due_at: invoiceDetails.due_at,
+            external_url: invoiceDetails.external_url,
+            paid_at: invoiceDetails.paid_at,
+            created_at: invoiceDetails.created_at,
+            updated_at: invoiceDetails.updated_at
+          }
         } else {
           const invoiceInsert: InvoiceInsert = {
             project_id: params.projectId,
@@ -592,7 +993,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           const { data: createdInvoice, error: invoiceInsertError } = await supabase
             .from(INVOICES)
             .insert(invoiceInsert)
-            .select('id, amount, currency')
+            .select('id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at')
             .single()
 
           if (invoiceInsertError) {
@@ -609,6 +1010,29 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           console.error('Failed to delete invoice in Supabase', invoiceDeleteError)
           throw new Error(invoiceDeleteError.message)
         }
+
+        nextInvoiceDetails = null
+      }
+
+      if (normalizedBriefAnswers) {
+        const { error: briefUpsertError } = await supabase
+          .from(BRIEFS)
+          .upsert({ project_id: params.projectId, answers: normalizedBriefAnswers })
+
+        if (briefUpsertError) {
+          console.error('Failed to store brief answers', briefUpsertError)
+          throw new Error(briefUpsertError.message)
+        }
+      } else {
+        const { error: briefDeleteError } = await supabase
+          .from(BRIEFS)
+          .delete()
+          .eq('project_id', params.projectId)
+
+        if (briefDeleteError) {
+          console.error('Failed to clear brief answers', briefDeleteError)
+          throw new Error(briefDeleteError.message)
+        }
       }
 
       const updatedClient = clients.find((client) => client.id === selectedClientId) ?? null
@@ -620,6 +1044,20 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         : null
 
       setInvoiceDetails(nextInvoiceDetails)
+      setInvoices((previous) => {
+        if (!nextInvoiceDetails) {
+          return previous.filter((invoice) => invoice.id !== (invoiceDetails?.id ?? ''))
+        }
+
+        const nextInvoices = [...previous]
+        const existingIndex = nextInvoices.findIndex((invoice) => invoice.id === nextInvoiceDetails?.id)
+        if (existingIndex === -1) {
+          nextInvoices.unshift(nextInvoiceDetails)
+        } else {
+          nextInvoices[existingIndex] = nextInvoiceDetails
+        }
+        return nextInvoices
+      })
 
       setProject((previous) => {
         const reference = previous ?? project
@@ -635,24 +1073,36 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           client: updatedClient,
           assignee: updatedAssignee,
           budget: formattedBudget,
-          value_quote: parsedBudget ? parsedBudget.amount : null,
-          value_invoiced: parsedBudget ? parsedBudget.amount : null,
+          value_quote: parsedValueQuote,
+          value_invoiced: parsedValueInvoiced,
+          value_paid: parsedValuePaid,
+          labels: normalizedLabels,
+          tags: normalizedTags,
           updated_at: new Date().toISOString()
         }
       })
 
-      setFormState({
-        name: trimmedName,
-        description: trimmedDescription,
-        status: selectedStatus as ProjectStatus,
-        dueDate: normalizedDueDate ?? '',
-        clientId: selectedClientId,
-        assigneeId: assigneeValue ?? '',
-        budget: formattedBudget ?? ''
+      setFormState((previous) => {
+        if (!previous) return previous
+        return {
+          ...previous,
+          name: trimmedName,
+          description: trimmedDescription,
+          status: selectedStatus as ProjectStatus,
+          dueDate: normalizedDueDate ?? '',
+          clientId: selectedClientId,
+          assigneeId: assigneeValue ?? '',
+          budget: formattedBudget ?? '',
+          valueQuote: trimmedQuoteInput,
+          valueInvoiced: trimmedInvoicedInput,
+          valuePaid: trimmedPaidInput,
+          labels: previous.labels,
+          tags: previous.tags
+        }
       })
 
       setStoredBriefAnswers(normalizedBriefAnswers)
-      setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
+      setBriefFormState(normalizedBriefAnswers ? mapBriefAnswersToFormState(normalizedBriefAnswers) : createEmptyBriefFormState())
 
       pushToast({
         title: 'Project updated',
@@ -676,11 +1126,245 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
     }
   }
 
-  const isLoading = loadingProject
+  const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const { files: selectedFiles } = event.target
+    if (!selectedFiles || selectedFiles.length === 0) {
+      return
+    }
 
-  const readableProjectName = formState?.name || project?.name || 'Project overview'
-  const readableStatus = project?.status ?? 'Unknown'
-  const readableDueDate = project ? formatDisplayDate(project.due_date) : 'No due date set'
+    setUploadingFile(true)
+
+    try {
+      const uploads = Array.from(selectedFiles).map(async (file) => {
+        const filePath = `${params.projectId}/${file.name}`
+        const { error: uploadError } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .upload(filePath, file, { upsert: true })
+
+        if (uploadError) {
+          throw uploadError
+        }
+      })
+
+      const results = await Promise.allSettled(uploads)
+      const failed = results.filter((result) => result.status === 'rejected')
+
+      if (failed.length > 0) {
+        pushToast({
+          title: 'Upload incomplete',
+          description: 'Some files could not be uploaded. Please try again.',
+          variant: 'error'
+        })
+      } else {
+        pushToast({
+          title: 'Files uploaded',
+          description: `${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'} uploaded successfully.`,
+          variant: 'success'
+        })
+      }
+
+      await fetchProjectFiles()
+    } catch (cause) {
+      console.error('Failed to upload project files', cause)
+      pushToast({
+        title: 'Upload failed',
+        description: 'We could not upload these files. Please try again.',
+        variant: 'error'
+      })
+    } finally {
+      setUploadingFile(false)
+      event.target.value = ''
+    }
+  }
+
+  const handleDownloadFile = async (file: ProjectFileObject) => {
+    const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(file.path, 60)
+
+    if (error || !data?.signedUrl) {
+      console.error('Failed to create download URL', error)
+      pushToast({
+        title: 'Download failed',
+        description: 'We could not download this file. Please try again.',
+        variant: 'error'
+      })
+      return
+    }
+
+    if (typeof window !== 'undefined') {
+      window.open(data.signedUrl, '_blank')
+    }
+  }
+
+  const handleDeleteFile = async (file: ProjectFileObject) => {
+    const { error } = await supabase.storage.from(STORAGE_BUCKET).remove([file.path])
+
+    if (error) {
+      console.error('Failed to delete file', error)
+      pushToast({
+        title: 'Could not delete file',
+        description: 'We were unable to remove this file. Please try again.',
+        variant: 'error'
+      })
+      return
+    }
+
+    setFiles((previous) => previous.filter((item) => item.path !== file.path))
+    pushToast({
+      title: 'File deleted',
+      description: `${file.name} has been removed.`,
+      variant: 'success'
+    })
+  }
+
+  const handleCommentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!currentProfile) {
+      pushToast({
+        title: 'Sign in required',
+        description: 'Sign in to share comments on this project.',
+        variant: 'error'
+      })
+      return
+    }
+
+    const trimmedBody = commentBody.trim()
+    if (!trimmedBody) {
+      pushToast({
+        title: 'Empty comment',
+        description: 'Add a message before posting your comment.',
+        variant: 'error'
+      })
+      return
+    }
+
+    const visibility = currentProfile.role === 'owner' ? commentVisibility : 'both'
+
+    try {
+      setSubmittingComment(true)
+
+      const { data, error } = await supabase
+        .from(COMMENTS)
+        .insert({
+          project_id: params.projectId,
+          body: trimmedBody,
+          visibility,
+          author_profile_id: currentProfile.id
+        })
+        .select(
+          `
+            id,
+            body,
+            created_at,
+            visibility,
+            author_profile:author_profile_id ( id, full_name, role )
+          `
+        )
+        .single()
+
+      if (error) {
+        console.error('Failed to submit comment', error)
+        throw new Error(error.message)
+      }
+
+      type InsertedComment = Database['public']['Tables']['comments']['Row'] & {
+        author_profile: Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null
+      }
+
+      const inserted = data as InsertedComment
+
+      setComments((previous) => [
+        {
+          id: inserted.id,
+          body: inserted.body,
+          created_at: inserted.created_at,
+          visibility: inserted.visibility,
+          author: inserted.author_profile ?? {
+            id: currentProfile.id,
+            full_name: currentProfile.full_name,
+            role: currentProfile.role
+          }
+        },
+        ...previous
+      ])
+
+      setCommentBody('')
+      setCommentVisibility(currentProfile.role === 'owner' ? visibility : 'both')
+
+      pushToast({
+        title: 'Comment posted',
+        description: 'Your update is visible on the project timeline.',
+        variant: 'success'
+      })
+    } catch (cause) {
+      console.error('Failed to submit project comment', cause)
+      pushToast({
+        title: 'Unable to post comment',
+        description: 'We could not post your comment. Please try again.',
+        variant: 'error'
+      })
+    } finally {
+      setSubmittingComment(false)
+    }
+  }
+
+  const canEditBrief = currentProfile?.role === 'owner'
+  const canUploadFiles = Boolean(currentProfile)
+  const canDeleteFiles = currentProfile?.role === 'owner'
+  const canViewInternalComments = currentProfile?.role === 'owner'
+
+  const accessibleComments = useMemo(() => {
+    if (canViewInternalComments) {
+      return comments
+    }
+    return comments.filter((comment) => comment.visibility !== 'internal')
+  }, [canViewInternalComments, comments])
+
+  const filteredComments = useMemo(() => {
+    if (commentFilter === 'client') {
+      return accessibleComments.filter(
+        (comment) => comment.visibility === 'both' || comment.visibility === 'client'
+      )
+    }
+
+    if (commentFilter === 'internal') {
+      if (!canViewInternalComments) {
+        return []
+      }
+
+      return comments.filter((comment) => comment.visibility === 'internal')
+    }
+
+    return accessibleComments
+  }, [accessibleComments, canViewInternalComments, commentFilter, comments])
+
+  const tabs = useMemo(() => {
+    const definitions: Array<{ id: TabKey; label: string }> = [
+      { id: 'overview', label: 'Overview' },
+      { id: 'brief', label: 'Brief' },
+      { id: 'files', label: files.length > 0 ? `Files (${files.length})` : 'Files' },
+      {
+        id: 'comments',
+        label:
+          accessibleComments.length > 0
+            ? `Comments (${accessibleComments.length})`
+            : 'Comments'
+      },
+      { id: 'billing', label: invoices.length > 0 ? `Billing (${invoices.length})` : 'Billing' }
+    ]
+
+    return definitions
+  }, [accessibleComments.length, files.length, invoices.length])
+
+  const isLoading = loadingProject || loadingProfile
+
+  const readableProjectName = formState?.name.trim()
+    ? formState.name
+    : project?.name || 'Project overview'
+  const readableStatus = formState?.status || project?.status || 'Unknown'
+  const dueDateSource = formState?.dueDate && formState.dueDate.trim().length > 0 ? formState.dueDate : project?.due_date
+  const readableDueDate = formatDisplayDate(dueDateSource ?? null)
+  const readableCountdown = formatRelativeTimeFromNow(dueDateSource ?? null)
   const readableBudget =
     formState?.budget && formState.budget.trim().length > 0
       ? formState.budget
@@ -697,10 +1381,97 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         minute: '2-digit'
       })
     : 'Unknown'
-  const readableCountdown = project ? formatRelativeTimeFromNow(project.due_date) : 'Unknown'
-  const readableDescription = project?.description?.trim()
-    ? project.description
-    : 'Not provided yet'
+  const readableDescription = formState?.description.trim()
+    ? formState.description
+    : project?.description?.trim()
+      ? project.description
+      : 'Not provided yet'
+
+  const summaryValueQuote = formatNumericValue(
+    project?.value_quote ?? (formState ? parseNumberInput(formState.valueQuote) : null)
+  )
+  const summaryValueInvoiced = formatNumericValue(
+    project?.value_invoiced ?? (formState ? parseNumberInput(formState.valueInvoiced) : null)
+  )
+  const summaryValuePaid = formatNumericValue(
+    project?.value_paid ?? (formState ? parseNumberInput(formState.valuePaid) : null)
+  )
+
+  const displayLabels = useMemo(() => {
+    if (formState?.labels) {
+      const normalized = normalizeTextArrayInput(formState.labels)
+      if (normalized) {
+        return normalized
+      }
+    }
+    return project?.labels ?? []
+  }, [formState?.labels, project?.labels])
+
+  const displayTags = useMemo(() => {
+    if (formState?.tags) {
+      const normalized = normalizeTextArrayInput(formState.tags)
+      if (normalized) {
+        return normalized.map((tag) => tag.replace(/^#/, ''))
+      }
+    }
+    return (project?.tags ?? []).map((tag) => tag.replace(/^#/, ''))
+  }, [formState?.tags, project?.tags])
+
+  const recentActivity = useMemo(() => {
+    const entries: RecentActivityItem[] = []
+
+    if (project?.updated_at) {
+      entries.push({
+        id: `project-${project.id}`,
+        label: 'Project updated',
+        description: 'Project details were updated.',
+        timestamp: project.updated_at
+      })
+    }
+
+    for (const comment of comments) {
+      const label = comment.visibility === 'internal' ? 'Owner note' : 'Comment added'
+      const trimmed = comment.body.length > 140 ? `${comment.body.slice(0, 139)}…` : comment.body
+      entries.push({
+        id: `comment-${comment.id}`,
+        label,
+        description: trimmed,
+        timestamp: comment.created_at
+      })
+    }
+
+    for (const file of files) {
+      entries.push({
+        id: `file-${file.path}`,
+        label: 'File uploaded',
+        description: file.name,
+        timestamp: file.updated_at ?? file.created_at ?? file.last_accessed_at
+      })
+    }
+
+    for (const invoice of invoices) {
+      const formattedAmount =
+        formatBudgetFromInvoice(invoice.amount, invoice.currency) ?? formatNumericValue(invoice.amount)
+      entries.push({
+        id: `invoice-${invoice.id}`,
+        label: `Invoice ${invoice.status ?? 'updated'}`,
+        description: formattedAmount,
+        timestamp: invoice.updated_at ?? invoice.issued_at ?? invoice.created_at
+      })
+    }
+
+    const sortByTimestamp = (value: RecentActivityItem) => {
+      if (!value.timestamp) {
+        return Number.NEGATIVE_INFINITY
+      }
+      const parsed = new Date(value.timestamp).getTime()
+      return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed
+    }
+
+    return entries
+      .sort((a, b) => sortByTimestamp(b) - sortByTimestamp(a))
+      .slice(0, 12)
+  }, [comments, files, invoices, project])
 
   const resolvedBriefAnswers = useMemo(() => {
     if (storedBriefAnswers) return storedBriefAnswers
@@ -740,10 +1511,27 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         </div>
       </div>
 
+      <div className="flex gap-1 overflow-x-auto rounded-full border border-white/10 bg-base-900/40 p-1 text-xs font-semibold text-white/60 sm:text-sm">
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`whitespace-nowrap rounded-full px-4 py-2 transition ${
+                isActive ? 'bg-white text-base-900 shadow-lg shadow-black/20' : 'hover:text-white'
+              }`}
+              aria-pressed={isActive}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
       {error ? (
-        <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100">
-          {error}
-        </div>
+        <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100">{error}</div>
       ) : null}
 
       {isLoading ? (
@@ -752,101 +1540,154 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           <div className="h-32 animate-pulse rounded-2xl border border-white/5 bg-white/5" />
         </div>
       ) : project && formState ? (
-        <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-          <div className="space-y-6">
-            <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
-              <header className="mb-6 space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Project basics</p>
-                <h2 className="text-lg font-semibold text-white">Core details</h2>
-                <p className="text-sm text-white/60">
-                  Update the client, owner, status, budget, description, and due dates for this project.
-                </p>
-              </header>
-              <div className="grid gap-5 md:grid-cols-2">
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Project name</span>
-                  <input
-                    type="text"
-                    value={formState.name}
-                    onChange={(event) => handleFieldChange('name', event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder="Project name"
-                  />
-                </label>
+        <>
+          {activeTab === 'overview' ? (
+            <div className="grid gap-6 xl:grid-cols-[2fr,1fr]">
+              <div className="space-y-6">
+                <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
+                  <header className="mb-6 space-y-1">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Quick edit</p>
+                    <h2 className="text-lg font-semibold text-white">Core project details</h2>
+                    <p className="text-sm text-white/60">
+                      Keep the essentials—client, owner, status, and schedule—aligned for everyone involved.
+                    </p>
+                  </header>
+                  <div className="grid gap-5 md:grid-cols-2">
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Project name</span>
+                      <input
+                        type="text"
+                        value={formState.name}
+                        onChange={(event) => handleFieldChange('name', event.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                        placeholder="Project name"
+                      />
+                    </label>
 
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Client</span>
-                  <select
-                    value={formState.clientId}
-                    onChange={(event) => handleFieldChange('clientId', event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
-                  >
-                    <option value="">
-                      {loadingOptions && clients.length === 0 ? 'Loading clients…' : 'Select a client'}
-                    </option>
-                    {clients.map((clientOption) => (
-                      <option key={clientOption.id} value={clientOption.id}>
-                        {clientOption.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Client</span>
+                      <select
+                        value={formState.clientId}
+                        onChange={(event) => handleFieldChange('clientId', event.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
+                      >
+                        <option value="">
+                          {loadingOptions && clients.length === 0 ? 'Loading clients…' : 'Select a client'}
+                        </option>
+                        {clients.map((clientOption) => (
+                          <option key={clientOption.id} value={clientOption.id}>
+                            {clientOption.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Owner</span>
-                  <select
-                    value={formState.assigneeId}
-                    onChange={(event) => handleFieldChange('assigneeId', event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
-                  >
-                    <option value="">
-                      {loadingOptions && assignees.length === 0 ? 'Loading team…' : 'Unassigned'}
-                    </option>
-                    {assignees.map((assignee) => (
-                      <option key={assignee.id} value={assignee.id}>
-                        {assignee.full_name ?? 'Unnamed teammate'}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Owner</span>
+                      <select
+                        value={formState.assigneeId}
+                        onChange={(event) => handleFieldChange('assigneeId', event.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
+                      >
+                        <option value="">
+                          {loadingOptions && assignees.length === 0 ? 'Loading team…' : 'Unassigned'}
+                        </option>
+                        {assignees.map((assignee) => (
+                          <option key={assignee.id} value={assignee.id}>
+                            {assignee.full_name ?? 'Unnamed teammate'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Status</span>
-                  <select
-                    value={formState.status}
-                    onChange={(event) => handleFieldChange('status', event.target.value as ProjectStatus)}
-                    className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
-                  >
-                    <option value="">Select a status</option>
-                    {statusOptions.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Status</span>
+                      <select
+                        value={formState.status}
+                        onChange={(event) => handleFieldChange('status', event.target.value as ProjectStatus)}
+                        className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
+                      >
+                        <option value="">Select a status</option>
+                        {statusOptions.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                <label className="space-y-2 text-sm text-white/70 md:col-span-2 md:max-w-xs">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Due date</span>
-                  <input
-                    type="date"
-                    value={formState.dueDate}
-                    onChange={(event) => handleFieldChange('dueDate', event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
-                  />
-                </label>
-                <label className="space-y-2 text-sm text-white/70 md:col-span-2 md:max-w-xs">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Budget</span>
-                  <input
-                    type="text"
-                    value={formState.budget}
-                    onChange={(event) => handleFieldChange('budget', event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder="$25,000"
-                  />
-                </label>
-                <label className="space-y-2 text-sm text-white/70 md:col-span-2">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Project description</span>
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Due date</span>
+                      <input
+                        type="date"
+                        value={formState.dueDate}
+                        onChange={(event) => handleFieldChange('dueDate', event.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 focus:border-white/30 focus:outline-none"
+                      />
+                    </label>
+
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Budget</span>
+                      <input
+                        type="text"
+                        value={formState.budget}
+                        onChange={(event) => handleFieldChange('budget', event.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                        placeholder="€25,000 or 25000 USD"
+                      />
+                      <span className="block text-xs text-white/40">Supports currency symbols or plain numbers.</span>
+                    </label>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
+                  <header className="mb-4 space-y-1">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Value tracking</p>
+                    <h2 className="text-lg font-semibold text-white">Financial snapshot</h2>
+                    <p className="text-sm text-white/60">
+                      Capture the quoted amount, invoice totals, and what has already been paid.
+                    </p>
+                  </header>
+                  <div className="grid gap-5 sm:grid-cols-3">
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Quoted value</span>
+                      <input
+                        type="text"
+                        value={formState.valueQuote}
+                        onChange={(event) => handleFieldChange('valueQuote', event.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                        placeholder="25000"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Invoiced value</span>
+                      <input
+                        type="text"
+                        value={formState.valueInvoiced}
+                        onChange={(event) => handleFieldChange('valueInvoiced', event.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                        placeholder="18000"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Paid to date</span>
+                      <input
+                        type="text"
+                        value={formState.valuePaid}
+                        onChange={(event) => handleFieldChange('valuePaid', event.target.value)}
+                        className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                        placeholder="12500"
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-3 text-xs text-white/40">Enter numbers only; currency can be referenced in labels or notes.</p>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
+                  <header className="mb-3 space-y-1">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Narrative</p>
+                    <h2 className="text-lg font-semibold text-white">Project description</h2>
+                  </header>
                   <textarea
                     rows={6}
                     value={formState.description}
@@ -854,258 +1695,638 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                     className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
                     placeholder="Describe the mission, scope, and any decisions that shape the work."
                   />
-                </label>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
+                  <header className="mb-3 space-y-1">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Organization</p>
+                    <h2 className="text-lg font-semibold text-white">Labels & tags</h2>
+                  </header>
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Labels</span>
+                      <textarea
+                        rows={3}
+                        value={formState.labels}
+                        onChange={(event) => handleFieldChange('labels', event.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                        placeholder="High priority, Design sprint"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm text-white/70">
+                      <span className="text-xs uppercase tracking-wide text-white/50">Tags</span>
+                      <textarea
+                        rows={3}
+                        value={formState.tags}
+                        onChange={(event) => handleFieldChange('tags', event.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                        placeholder="ai, discovery, phase-one"
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-3 text-xs text-white/40">Separate values with commas or line breaks.</p>
+                </section>
               </div>
-            </section>
 
-            <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
-              <header className="mb-4 space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Discovery</p>
-                <h2 className="text-lg font-semibold text-white">The Brief</h2>
-                <p className="text-sm text-white/60">Review and refine the answers captured when this project was kicked off.</p>
-              </header>
-              <div className="grid gap-5 md:grid-cols-2">
-                <label className="space-y-2 text-sm text-white/70 md:col-span-2">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Goals</span>
-                  <textarea
-                    rows={4}
-                    value={briefFormState.goals}
-                    onChange={(event) => handleBriefFieldChange('goals', event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder="Outline the primary objectives and the outcomes we are targeting."
-                  />
-                </label>
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Personas</span>
-                  <textarea
-                    rows={4}
-                    value={briefFormState.personas}
-                    onChange={(event) => handleBriefFieldChange('personas', event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder={['Product manager', 'Operations lead', 'Customer support'].join('\n')}
-                  />
-                  <span className="block text-xs text-white/40">Separate each persona with a new line.</span>
-                </label>
-              <label className="space-y-2 text-sm text-white/70">
-                <span className="text-xs uppercase tracking-wide text-white/50">Key features</span>
-                <textarea
-                  rows={4}
-                  value={briefFormState.features}
-                  onChange={(event) => handleBriefFieldChange('features', event.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                  placeholder={['Real-time dashboards', 'Role-based access', 'AI-assisted insights'].join('\n')}
-                />
-                <span className="block text-xs text-white/40">List one feature per line.</span>
-              </label>
-              <label className="space-y-2 text-sm text-white/70">
-                <span className="text-xs uppercase tracking-wide text-white/50">Integrations</span>
-                <textarea
-                    rows={3}
-                    value={briefFormState.integrations}
-                    onChange={(event) => handleBriefFieldChange('integrations', event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder={['Salesforce', 'HubSpot', 'Segment'].join('\n')}
-                  />
-                  <span className="block text-xs text-white/40">Use line breaks for multiple integrations.</span>
-                </label>
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Timeline</span>
-                  <input
-                    type="text"
-                    value={briefFormState.timeline}
-                    onChange={(event) => handleBriefFieldChange('timeline', event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder="Beta launch in Q3 with GA in November."
-                  />
-                </label>
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Success metrics</span>
-                  <textarea
-                    rows={3}
-                    value={briefFormState.successMetrics}
-                    onChange={(event) => handleBriefFieldChange('successMetrics', event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder="Increase activation rate to 45% and reduce handoff time by half."
-                  />
-                </label>
-                <label className="space-y-2 text-sm text-white/70">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Competitors</span>
-                  <textarea
-                    rows={3}
-                    value={briefFormState.competitors}
-                    onChange={(event) => handleBriefFieldChange('competitors', event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder={['Acme Analytics', 'Northwind Suite'].join('\n')}
-                  />
-                  <span className="block text-xs text-white/40">Add one competitor per line.</span>
-                </label>
-                <label className="space-y-2 text-sm text-white/70 md:col-span-2">
-                  <span className="text-xs uppercase tracking-wide text-white/50">Risks</span>
-                  <textarea
-                    rows={4}
-                    value={briefFormState.risks}
-                    onChange={(event) => handleBriefFieldChange('risks', event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-                    placeholder="Identify open questions, dependencies, or blockers we should monitor."
-                  />
-                </label>
-              </div>
-            </section>
-          </div>
+              <aside className="space-y-6">
+                <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
+                  <header className="mb-4 space-y-1">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Summary</p>
+                    <h2 className="text-lg font-semibold text-white">Key details</h2>
+                  </header>
+                  <dl className="space-y-4 text-sm text-white/70">
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Project name</dt>
+                      <dd className="text-white/80">{project?.name ?? 'Untitled project'}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-white/50">Client</dt>
+                      <dd className="text-right text-white/80">{project.client ? project.client.name : 'Not set'}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-white/50">Owner</dt>
+                      <dd className="text-right text-white/80">{project.assignee?.full_name ?? 'Unassigned'}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-white/50">Due date</dt>
+                      <dd className="text-right text-white/80">{readableDueDate}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-white/50">Countdown</dt>
+                      <dd className="text-right text-white/80">{readableCountdown}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-white/50">Budget</dt>
+                      <dd className="text-right text-white/80">{readableBudget}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-white/50">Quoted</dt>
+                      <dd className="text-right text-white/80">{summaryValueQuote}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-white/50">Invoiced</dt>
+                      <dd className="text-right text-white/80">{summaryValueInvoiced}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-white/50">Paid</dt>
+                      <dd className="text-right text-white/80">{summaryValuePaid}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <dt className="text-white/50">Created</dt>
+                      <dd className="text-right text-white/80">{readableCreatedAt}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Labels</dt>
+                      <dd>
+                        {displayLabels.length > 0 ? (
+                          <ul className="flex flex-wrap gap-2 text-xs text-white/80">
+                            {displayLabels.map((label) => (
+                              <li key={label} className="rounded-full border border-white/10 px-3 py-1">
+                                {label}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-white/50">None assigned yet</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Tags</dt>
+                      <dd>
+                        {displayTags.length > 0 ? (
+                          <ul className="flex flex-wrap gap-2 text-xs text-white/80">
+                            {displayTags.map((tag) => (
+                              <li key={tag} className="rounded-full border border-white/10 px-3 py-1">
+                                #{tag.replace(/^#/, '')}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-white/50">No tags yet</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Project description</dt>
+                      <dd className="whitespace-pre-line text-white/80">{readableDescription}</dd>
+                    </div>
+                  </dl>
+                </section>
 
-          <aside className="space-y-6">
-            <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
-              <header className="mb-4 space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Summary</p>
-                <h2 className="text-lg font-semibold text-white">Key details</h2>
-              </header>
-              <dl className="space-y-4 text-sm text-white/70">
-                <div className="space-y-1">
-                  <dt className="text-white/50">Project name</dt>
-                  <dd className="text-white/80">{project?.name ?? 'Untitled project'}</dd>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <dt className="text-white/50">Client</dt>
-                  <dd className="text-right text-white/80">
-                    {project.client ? project.client.name : 'Not set'}
-                  </dd>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <dt className="text-white/50">Owner</dt>
-                  <dd className="text-right text-white/80">
-                    {project.assignee?.full_name ?? 'Unassigned'}
-                  </dd>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <dt className="text-white/50">Due date</dt>
-                  <dd className="text-right text-white/80">{readableDueDate}</dd>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <dt className="text-white/50">Budget</dt>
-                  <dd className="text-right text-white/80">{readableBudget}</dd>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <dt className="text-white/50">Countdown</dt>
-                  <dd className="text-right text-white/80">{readableCountdown}</dd>
-                </div>
-                <div className="flex items-start justify-between gap-3">
-                  <dt className="text-white/50">Created</dt>
-                  <dd className="text-right text-white/80">{readableCreatedAt}</dd>
-                </div>
-                <div className="space-y-1">
-                  <dt className="text-white/50">Project description</dt>
-                  <dd className="whitespace-pre-line text-white/80">{readableDescription}</dd>
-                </div>
-              </dl>
-            </section>
+                <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
+                  <header className="mb-4 space-y-1">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Recent activity</p>
+                    <h2 className="text-lg font-semibold text-white">What’s happened lately</h2>
+                  </header>
+                  {recentActivity.length > 0 ? (
+                    <ul className="space-y-4">
+                      {recentActivity.map((item) => (
+                        <li key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                          <div className="flex items-center justify-between text-xs uppercase tracking-wide text-white/50">
+                            <span>{item.label}</span>
+                            <span className="text-white/40">
+                              {item.timestamp ? formatRelativeTimeFromNow(item.timestamp) : 'Unknown'}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm text-white/70 whitespace-pre-line">{item.description}</p>
+                          <p className="mt-1 text-xs text-white/40">{formatTimestamp(item.timestamp)}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-white/60">
+                      As you add comments, files, and invoices, the recent history of this project will appear here.
+                    </p>
+                  )}
+                </section>
+              </aside>
+            </div>
+          ) : null}
 
-            <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
-              <header className="mb-4 space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Brief responses</p>
-                <h2 className="text-lg font-semibold text-white">Discovery summary</h2>
-              </header>
-              {hasBriefSummary ? (
-                <dl className="space-y-4 text-sm text-white/70">
-                  <div className="space-y-1">
-                    <dt className="text-white/50">Goals</dt>
-                    <dd className="whitespace-pre-line text-white/80">
-                      {resolvedBriefAnswers?.goals ?? 'Not provided'}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-white/50">Personas</dt>
-                    <dd className="text-white/80">
-                      {resolvedBriefAnswers?.personas && resolvedBriefAnswers.personas.length > 0 ? (
-                        <ul className="list-disc space-y-1 pl-5 text-left">
-                          {resolvedBriefAnswers.personas.map((persona) => (
-                            <li key={persona}>{persona}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-white/50">Key features</dt>
-                    <dd className="text-white/80">
-                      {resolvedBriefAnswers?.features && resolvedBriefAnswers.features.length > 0 ? (
-                        <ul className="list-disc space-y-1 pl-5 text-left">
-                          {resolvedBriefAnswers.features.map((feature) => (
-                            <li key={feature}>{feature}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-white/50">Integrations</dt>
-                    <dd className="text-white/80">
-                      {resolvedBriefAnswers?.integrations && resolvedBriefAnswers.integrations.length > 0 ? (
-                        <ul className="list-disc space-y-1 pl-5 text-left">
-                          {resolvedBriefAnswers.integrations.map((integration) => (
-                            <li key={integration}>{integration}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-white/50">Timeline</dt>
-                    <dd className="whitespace-pre-line text-white/80">
-                      {resolvedBriefAnswers?.timeline ?? 'Not provided'}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-white/50">Success metrics</dt>
-                    <dd className="whitespace-pre-line text-white/80">
-                      {resolvedBriefAnswers?.successMetrics ?? 'Not provided'}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-white/50">Competitors</dt>
-                    <dd className="text-white/80">
-                      {resolvedBriefAnswers?.competitors && resolvedBriefAnswers.competitors.length > 0 ? (
-                        <ul className="list-disc space-y-1 pl-5 text-left">
-                          {resolvedBriefAnswers.competitors.map((competitor) => (
-                            <li key={competitor}>{competitor}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </dd>
-                  </div>
-                  <div className="space-y-1">
-                    <dt className="text-white/50">Risks</dt>
-                    <dd className="whitespace-pre-line text-white/80">
-                      {resolvedBriefAnswers?.risks ?? 'Not provided'}
-                    </dd>
-                  </div>
-                </dl>
-              ) : (
-                <p className="text-sm text-white/60">
-                  We don&apos;t have any discovery answers for this project yet. Capture details in the brief to see them here.
-                </p>
-              )}
-            </section>
+          {activeTab === 'brief' ? (
+            <div className="space-y-6">
+              <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
+                <header className="mb-4 space-y-1">
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">Discovery</p>
+                  <h2 className="text-lg font-semibold text-white">Project brief</h2>
+                  <p className="text-sm text-white/60">
+                    Capture goals, personas, and the context that keeps everyone aligned.
+                  </p>
+                </header>
+                {!canEditBrief ? (
+                  <p className="mb-4 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/60">
+                    You can review the brief from here. Only the project owner can make edits.
+                  </p>
+                ) : null}
+                <div className="grid gap-5 md:grid-cols-2">
+                  <label className="space-y-2 text-sm text-white/70 md:col-span-2">
+                    <span className="text-xs uppercase tracking-wide text-white/50">Goals</span>
+                    <textarea
+                      rows={4}
+                      value={briefFormState.goals}
+                      onChange={(event) => handleBriefFieldChange('goals', event.target.value)}
+                      disabled={!canEditBrief}
+                      className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none disabled:opacity-60"
+                      placeholder="Outline the primary objectives and the outcomes we are targeting."
+                    />
+                  </label>
+                  <label className="space-y-2 text-sm text-white/70">
+                    <span className="text-xs uppercase tracking-wide text-white/50">Personas</span>
+                    <textarea
+                      rows={4}
+                      value={briefFormState.personas}
+                      onChange={(event) => handleBriefFieldChange('personas', event.target.value)}
+                      disabled={!canEditBrief}
+                      className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none disabled:opacity-60"
+                      placeholder={['Product manager', 'Operations lead', 'Customer support'].join('\n')}
+                    />
+                    <span className="block text-xs text-white/40">Separate each persona with a new line.</span>
+                  </label>
+                  <label className="space-y-2 text-sm text-white/70">
+                    <span className="text-xs uppercase tracking-wide text-white/50">Key features</span>
+                    <textarea
+                      rows={4}
+                      value={briefFormState.features}
+                      onChange={(event) => handleBriefFieldChange('features', event.target.value)}
+                      disabled={!canEditBrief}
+                      className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none disabled:opacity-60"
+                      placeholder={['Real-time dashboards', 'Role-based access', 'AI-assisted insights'].join('\n')}
+                    />
+                    <span className="block text-xs text-white/40">List one feature per line.</span>
+                  </label>
+                  <label className="space-y-2 text-sm text-white/70">
+                    <span className="text-xs uppercase tracking-wide text-white/50">Integrations</span>
+                    <textarea
+                      rows={3}
+                      value={briefFormState.integrations}
+                      onChange={(event) => handleBriefFieldChange('integrations', event.target.value)}
+                      disabled={!canEditBrief}
+                      className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none disabled:opacity-60"
+                      placeholder={['Salesforce', 'HubSpot', 'Segment'].join('\n')}
+                    />
+                  </label>
+                  <label className="space-y-2 text-sm text-white/70">
+                    <span className="text-xs uppercase tracking-wide text-white/50">Timeline</span>
+                    <input
+                      type="text"
+                      value={briefFormState.timeline}
+                      onChange={(event) => handleBriefFieldChange('timeline', event.target.value)}
+                      disabled={!canEditBrief}
+                      className="w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none disabled:opacity-60"
+                      placeholder="Beta launch in Q3 with GA in November."
+                    />
+                  </label>
+                  <label className="space-y-2 text-sm text-white/70">
+                    <span className="text-xs uppercase tracking-wide text-white/50">Success metrics</span>
+                    <textarea
+                      rows={3}
+                      value={briefFormState.successMetrics}
+                      onChange={(event) => handleBriefFieldChange('successMetrics', event.target.value)}
+                      disabled={!canEditBrief}
+                      className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none disabled:opacity-60"
+                      placeholder="Increase activation rate to 45% and reduce handoff time by half."
+                    />
+                  </label>
+                  <label className="space-y-2 text-sm text-white/70">
+                    <span className="text-xs uppercase tracking-wide text-white/50">Competitors</span>
+                    <textarea
+                      rows={3}
+                      value={briefFormState.competitors}
+                      onChange={(event) => handleBriefFieldChange('competitors', event.target.value)}
+                      disabled={!canEditBrief}
+                      className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none disabled:opacity-60"
+                      placeholder={['Acme Analytics', 'Northwind Suite'].join('\n')}
+                    />
+                    <span className="block text-xs text-white/40">Add one competitor per line.</span>
+                  </label>
+                  <label className="space-y-2 text-sm text-white/70 md:col-span-2">
+                    <span className="text-xs uppercase tracking-wide text-white/50">Risks</span>
+                    <textarea
+                      rows={4}
+                      value={briefFormState.risks}
+                      onChange={(event) => handleBriefFieldChange('risks', event.target.value)}
+                      disabled={!canEditBrief}
+                      className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none disabled:opacity-60"
+                      placeholder="Identify open questions, dependencies, or blockers we should monitor."
+                    />
+                  </label>
+                </div>
+              </section>
 
-            <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
-              <header className="mb-4 space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/40">Delivery playbook</p>
-                <h2 className="text-lg font-semibold text-white">Coming attractions</h2>
-              </header>
-              <p className="text-sm text-white/65">
-                Organize milestones, share critical files, and align decisions in one place. We&apos;ll add
-                structured timeline and asset management here soon.
-              </p>
-            </section>
-          </aside>
-        </div>
+              <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
+                <header className="mb-4 space-y-1">
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">Brief responses</p>
+                  <h2 className="text-lg font-semibold text-white">Discovery summary</h2>
+                </header>
+                {hasBriefSummary ? (
+                  <dl className="space-y-4 text-sm text-white/70">
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Goals</dt>
+                      <dd className="whitespace-pre-line text-white/80">{resolvedBriefAnswers?.goals ?? 'Not provided'}</dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Personas</dt>
+                      <dd className="text-white/80">
+                        {resolvedBriefAnswers?.personas && resolvedBriefAnswers.personas.length > 0 ? (
+                          <ul className="list-disc space-y-1 pl-5 text-left">
+                            {resolvedBriefAnswers.personas.map((persona) => (
+                              <li key={persona}>{persona}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          'Not provided'
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Key features</dt>
+                      <dd className="text-white/80">
+                        {resolvedBriefAnswers?.features && resolvedBriefAnswers.features.length > 0 ? (
+                          <ul className="list-disc space-y-1 pl-5 text-left">
+                            {resolvedBriefAnswers.features.map((feature) => (
+                              <li key={feature}>{feature}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          'Not provided'
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Integrations</dt>
+                      <dd className="text-white/80">
+                        {resolvedBriefAnswers?.integrations && resolvedBriefAnswers.integrations.length > 0 ? (
+                          <ul className="list-disc space-y-1 pl-5 text-left">
+                            {resolvedBriefAnswers.integrations.map((integration) => (
+                              <li key={integration}>{integration}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          'Not provided'
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Timeline</dt>
+                      <dd className="whitespace-pre-line text-white/80">
+                        {resolvedBriefAnswers?.timeline ?? 'Not provided'}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Success metrics</dt>
+                      <dd className="whitespace-pre-line text-white/80">
+                        {resolvedBriefAnswers?.successMetrics ?? 'Not provided'}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Competitors</dt>
+                      <dd className="text-white/80">
+                        {resolvedBriefAnswers?.competitors && resolvedBriefAnswers.competitors.length > 0 ? (
+                          <ul className="list-disc space-y-1 pl-5 text-left">
+                            {resolvedBriefAnswers.competitors.map((competitor) => (
+                              <li key={competitor}>{competitor}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          'Not provided'
+                        )}
+                      </dd>
+                    </div>
+                    <div className="space-y-1">
+                      <dt className="text-white/50">Risks</dt>
+                      <dd className="whitespace-pre-line text-white/80">
+                        {resolvedBriefAnswers?.risks ?? 'Not provided'}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="text-sm text-white/60">
+                    Capture discovery answers in the brief above to surface them here for the team and client.
+                  </p>
+                )}
+              </section>
+            </div>
+          ) : null}
+
+          {activeTab === 'files' ? (
+            <div className="space-y-6">
+              <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
+                <header className="mb-4 space-y-1">
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">Assets</p>
+                  <h2 className="text-lg font-semibold text-white">Upload project files</h2>
+                  <p className="text-sm text-white/60">
+                    Store contracts, design references, and delivery artifacts in a shared space.
+                  </p>
+                </header>
+                {canUploadFiles ? (
+                  <label className="inline-flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 bg-base-900/60 px-6 py-10 text-center text-sm font-semibold text-white/70 transition hover:border-white/40 hover:text-white sm:w-auto sm:px-12">
+                    <input
+                      type="file"
+                      multiple
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      disabled={uploadingFile}
+                    />
+                    <span className="text-lg font-semibold text-white">{uploadingFile ? 'Uploading…' : 'Upload files'}</span>
+                    <span className="text-xs text-white/40">Drag and drop or click to select multiple files.</span>
+                  </label>
+                ) : (
+                  <p className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/60">
+                    Sign in as a project collaborator to upload files.
+                  </p>
+                )}
+              </section>
+
+              <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
+                <header className="mb-4 space-y-1">
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">Library</p>
+                  <h2 className="text-lg font-semibold text-white">Project files</h2>
+                </header>
+                {loadingFiles ? (
+                  <div className="space-y-3">
+                    <div className="h-20 animate-pulse rounded-xl border border-white/10 bg-white/5" />
+                    <div className="h-20 animate-pulse rounded-xl border border-white/10 bg-white/5" />
+                  </div>
+                ) : files.length > 0 ? (
+                  <ul className="space-y-4">
+                    {files.map((file) => (
+                      <li
+                        key={file.path}
+                        className="flex flex-col gap-3 rounded-xl border border-white/10 bg-base-900/50 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div>
+                          <p className="font-semibold text-white">{file.name}</p>
+                          <p className="text-xs text-white/40">
+                            {formatFileSize(file.size)} · {formatTimestamp(file.updated_at ?? file.created_at ?? file.last_accessed_at)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void handleDownloadFile(file)}
+                            className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/40"
+                          >
+                            Download
+                          </button>
+                          {canDeleteFiles ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteFile(file)}
+                              className="rounded-full border border-rose-400/40 px-4 py-2 text-xs font-semibold text-rose-200 transition hover:border-rose-300 hover:text-rose-100"
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-white/60">
+                    No files uploaded yet. Share specs, architecture docs, and other assets so everyone stays aligned.
+                  </p>
+                )}
+              </section>
+            </div>
+          ) : null}
+
+          {activeTab === 'comments' ? (
+            <div className="space-y-6">
+              <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
+                <header className="mb-4 space-y-1">
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">Collaboration</p>
+                  <h2 className="text-lg font-semibold text-white">Leave a comment</h2>
+                </header>
+                {currentProfile ? (
+                  <form className="space-y-4" onSubmit={handleCommentSubmit}>
+                    <textarea
+                      rows={4}
+                      value={commentBody}
+                      onChange={(event) => setCommentBody(event.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-base-900/60 px-3 py-3 text-sm leading-6 text-white/90 placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                      placeholder="Share an update, ask a question, or capture a note for your team."
+                    />
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <select
+                        value={commentVisibility}
+                        onChange={(event) =>
+                          setCommentVisibility(event.target.value as Database['public']['Enums']['visibility_enum'])
+                        }
+                        className="w-full rounded-full border border-white/10 bg-base-900/60 px-4 py-2 text-sm text-white/80 focus:border-white/30 focus:outline-none sm:w-auto"
+                      >
+                        <option value="both">Visible to agency & client</option>
+                        <option value="client">Client-visible</option>
+                        <option value="internal" disabled={!canViewInternalComments}>
+                          Owner notes only
+                        </option>
+                      </select>
+                      <button
+                        type="submit"
+                        disabled={submittingComment}
+                        className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-base-900 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/60"
+                      >
+                        {submittingComment ? 'Posting…' : 'Post comment'}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <p className="text-sm text-white/60">
+                    Sign in with your agency or client account to participate in the conversation.
+                  </p>
+                )}
+              </section>
+
+              <section className="rounded-2xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
+                <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Timeline</p>
+                    <h2 className="text-lg font-semibold text-white">Comments & notes</h2>
+                  </div>
+                  <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-base-900/60 p-1 text-xs font-semibold text-white/60 sm:text-sm">
+                    {(['both', 'client', 'internal'] as const).map((filter) => {
+                      const label = filter === 'both' ? 'Both' : filter === 'client' ? 'Client view' : 'Owner notes'
+                      const isActiveFilter = commentFilter === filter
+                      return (
+                        <button
+                          key={filter}
+                          type="button"
+                          onClick={() => setCommentFilter(filter)}
+                          className={`whitespace-nowrap rounded-full px-3 py-1 transition ${
+                            isActiveFilter ? 'bg-white text-base-900 shadow' : 'hover:text-white'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </header>
+                {loadingComments ? (
+                  <div className="space-y-3">
+                    <div className="h-20 animate-pulse rounded-xl border border-white/10 bg-white/5" />
+                    <div className="h-20 animate-pulse rounded-xl border border-white/10 bg-white/5" />
+                  </div>
+                ) : filteredComments.length > 0 ? (
+                  <ul className="space-y-4">
+                    {filteredComments.map((comment) => (
+                      <li key={comment.id} className="rounded-xl border border-white/10 bg-base-900/50 p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {comment.author?.full_name ?? 'Unknown teammate'}
+                            </p>
+                            <p className="text-xs text-white/40">{formatTimestamp(comment.created_at)}</p>
+                          </div>
+                          <span className="inline-flex items-center rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/60">
+                            {comment.visibility === 'internal'
+                              ? 'Owner only'
+                              : comment.visibility === 'client'
+                                ? 'Client-visible'
+                                : 'Visible to all'}
+                          </span>
+                        </div>
+                        <p className="mt-3 whitespace-pre-line text-sm text-white/80">{comment.body}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-white/60">
+                    No comments yet. Start the conversation to keep everyone aligned on next steps.
+                  </p>
+                )}
+              </section>
+            </div>
+          ) : null}
+
+          {activeTab === 'billing' ? (
+            <div className="space-y-6">
+              <section className="rounded-2xl border border-white/10 bg-base-900/50 p-6 shadow-lg shadow-base-900/40 backdrop-blur">
+                <header className="mb-4 space-y-1">
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">Billing</p>
+                  <h2 className="text-lg font-semibold text-white">Invoice history</h2>
+                  <p className="text-sm text-white/60">
+                    Track quotes, invoices sent, and payments made to keep budgets on track.
+                  </p>
+                </header>
+                {invoices.length > 0 ? (
+                  <div className="overflow-hidden rounded-xl border border-white/10">
+                    <table className="min-w-full divide-y divide-white/5 text-sm text-white/80">
+                      <thead className="bg-base-900/60 text-xs uppercase tracking-wide text-white/40">
+                        <tr>
+                          <th scope="col" className="px-4 py-3 text-left font-semibold">
+                            Invoice
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left font-semibold">
+                            Status
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left font-semibold">
+                            Amount
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left font-semibold">
+                            Issued
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left font-semibold">
+                            Due
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left font-semibold">
+                            Paid
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left font-semibold">
+                            Link
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {invoices.map((invoice) => {
+                          const formattedAmount =
+                            formatBudgetFromInvoice(invoice.amount, invoice.currency) ??
+                            formatNumericValue(invoice.amount)
+                          return (
+                            <tr key={invoice.id}>
+                              <td className="px-4 py-3 font-mono text-xs text-white/60">#{invoice.id.slice(0, 8)}</td>
+                              <td className="px-4 py-3">
+                                <span className="inline-flex items-center rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70">
+                                  {invoice.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-white/80">{formattedAmount}</td>
+                              <td className="px-4 py-3 text-white/60">
+                                {formatTimestamp(invoice.issued_at ?? invoice.created_at)}
+                              </td>
+                              <td className="px-4 py-3 text-white/60">{formatTimestamp(invoice.due_at)}</td>
+                              <td className="px-4 py-3 text-white/60">
+                                {invoice.paid_at ? formatTimestamp(invoice.paid_at) : '—'}
+                              </td>
+                              <td className="px-4 py-3 text-white/60">
+                                {invoice.external_url ? (
+                                  <a
+                                    href={invoice.external_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white transition hover:border-white/40 hover:text-white"
+                                  >
+                                    Open
+                                  </a>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-white/60">
+                    No invoices recorded yet. Create a quote or invoice to start tracking billing milestones.
+                  </p>
+                )}
+              </section>
+            </div>
+          ) : null}
+        </>
       ) : (
         <div className="rounded-2xl border border-white/10 bg-base-900/50 p-6 text-sm text-white/70">
           We don&apos;t have any details to show for this project yet.
@@ -1113,5 +2334,6 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       )}
     </div>
   )
+
 }
 
