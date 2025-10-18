@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
+import { FilterDropdown } from '../_components/filter-dropdown'
 import { StatusBadge } from '../_components/status-badge'
 
 type Client = Database['public']['Tables']['clients']['Row']
@@ -171,18 +172,13 @@ export default function ClientsPage() {
                 className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/40 focus:outline-none"
               />
             </label>
-            <label className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 focus-within:border-white/30 focus-within:text-white/80 sm:w-56">
-              <span className="text-xs uppercase tracking-wide text-white/40">Status</span>
-              <select
-                value={statusFilter}
-                onChange={(event) => handleStatusChange(event.target.value)}
-                className="w-full bg-transparent text-sm text-white/80 focus:outline-none"
-              >
-                {statuses.map((status) => (
-                  <option key={status}>{status}</option>
-                ))}
-              </select>
-            </label>
+            <FilterDropdown
+              label="Status"
+              value={statusFilter}
+              options={statuses}
+              onChange={(nextValue) => handleStatusChange(nextValue)}
+              className="sm:w-56"
+            />
           </div>
           <button
             type="button"
