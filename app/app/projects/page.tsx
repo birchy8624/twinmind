@@ -20,6 +20,7 @@ type Project = ProjectRow & {
 
 const PAGE_SIZE = 8
 const statusFilters = ['All statuses', 'Backlog', 'Call Arranged', 'Brief Gathered', 'Build', 'Closed']
+const ALL_CLIENTS = 'All clients'
 const PROJECTS = 'projects' as const
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
@@ -78,6 +79,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
+  const [clientFilter, setClientFilter] = useState(ALL_CLIENTS)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -141,6 +143,16 @@ export default function ProjectsPage() {
     }
   }, [supabase])
 
+  const clientFilters = useMemo(() => {
+    const uniqueClients = new Set<string>()
+
+    projects.forEach((project) => {
+      uniqueClients.add(project.client?.name ?? 'Unknown client')
+    })
+
+    return [ALL_CLIENTS, ...Array.from(uniqueClients).sort((a, b) => a.localeCompare(b))]
+  }, [projects])
+
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.toLowerCase()
     return projects.filter((project) => {
@@ -157,9 +169,12 @@ export default function ProjectsPage() {
         assigneeName.includes(normalizedQuery)
       const matchesStatus =
         statusFilter === 'All statuses' || formatStatus(project.status) === statusFilter
-      return matchesQuery && matchesStatus
+      const matchesClient =
+        clientFilter === ALL_CLIENTS ||
+        (project.client?.name ?? 'Unknown client') === clientFilter
+      return matchesQuery && matchesStatus && matchesClient
     })
-  }, [projects, query, statusFilter])
+  }, [projects, query, statusFilter, clientFilter])
 
   const totalPages = Math.max(1, Math.ceil(filteredProjects.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -216,13 +231,22 @@ export default function ProjectsPage() {
                 ))}
               </select>
             </label>
+            <label className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 focus-within:border-white/30 focus-within:text-white/80 sm:w-56">
+              <span className="text-xs uppercase tracking-wide text-white/40">Client</span>
+              <select
+                value={clientFilter}
+                onChange={(event) => {
+                  setClientFilter(event.target.value)
+                  setPage(1)
+                }}
+                className="w-full bg-transparent text-sm text-white/80 focus:outline-none"
+              >
+                {clientFilters.map((client) => (
+                  <option key={client}>{client}</option>
+                ))}
+              </select>
+            </label>
           </div>
-          <button
-            type="button"
-            className="inline-flex items-center justify-center gap-2 self-start rounded-full border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white"
-          >
-            Timeline view
-          </button>
         </div>
 
         <div className="mt-5 overflow-hidden rounded-2xl border border-white/5">
