@@ -402,8 +402,18 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
               </thead>
               <tbody className="divide-y divide-white/5">
                 {sortedProjects.map((project) => (
-                  <tr key={project.id} className="bg-base-900/50">
-                    <td className="px-5 py-4 text-white">{project.name}</td>
+                  <tr
+                    key={project.id}
+                    className="group bg-base-900/50 transition hover:bg-base-900/70 focus-within:bg-base-900/70"
+                  >
+                    <td className="px-5 py-4 text-white">
+                      <Link
+                        href={`/app/projects/${project.id}`}
+                        className="block text-white transition hover:text-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 focus-visible:ring-offset-base-900"
+                      >
+                        {project.name}
+                      </Link>
+                    </td>
                     <td className="px-5 py-4">
                       <StatusBadge status={formatStatus(project.status)} />
                     </td>
