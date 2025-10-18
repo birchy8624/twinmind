@@ -258,11 +258,15 @@ export default function DashboardPage() {
               }
             })
             .filter(
-              (project) =>
+              (
+                project
+              ): project is typeof project & { dueInDays: number; status: ProjectStatus } =>
                 project.dueInDays !== null &&
                 project.dueInDays >= 0 &&
                 project.dueInDays <= UPCOMING_WINDOW_DAYS &&
-                project.status &&
+                project.status !== null &&
+                project.status !== 'Closed' &&
+                project.status !== 'Archived' &&
                 ACTIVE_PROJECT_STATUSES.includes(project.status)
             )
             .sort((a, b) => a.dueInDays - b.dueInDays)
