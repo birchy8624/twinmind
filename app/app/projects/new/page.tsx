@@ -10,12 +10,13 @@ import { z } from 'zod'
 import { createProject, type ProjectWizardPayload } from './actions'
 
 import type { Database } from '@/types/supabase'
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabase/browser'
 import { useToast } from '../../_components/toast-context'
 
 type ClientRow = Database['public']['Tables']['clients']['Row']
 
 type ClientOption = Pick<ClientRow, 'id' | 'name'>
+const CLIENTS = 'clients' as const
 
 type StepConfig = {
   id: 'details' | 'brief' | 'confirm'
@@ -129,31 +130,17 @@ export default function NewProjectPage() {
     defaultValues
   })
 
-  const supabase = useMemo(() => {
-    try {
-      return createClient()
-    } catch (error) {
-      console.error(error)
-      return null
-    }
-  }, [])
+  const supabase = useMemo(createBrowserClient, [])
 
   useEffect(() => {
     let isMounted = true
 
     const fetchClients = async () => {
-      if (!supabase) {
-        setClientsError('Supabase client unavailable. Please verify your configuration.')
-        setClients([])
-        setLoadingClients(false)
-        return
-      }
-
       setLoadingClients(true)
       setClientsError(null)
 
       const { data, error } = await supabase
-        .from('clients')
+        .from(CLIENTS)
         .select('id, name')
         .order('name', { ascending: true })
 

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
 import { StatusBadge } from '../_components/status-badge'
@@ -12,6 +12,7 @@ import { StatusBadge } from '../_components/status-badge'
 type Client = Database['public']['Tables']['clients']['Row']
 
 const PAGE_SIZE = 8
+const CLIENTS = 'clients' as const
 
 const statuses = ['All statuses', 'Active', 'Inactive', 'Invited', 'Archived']
 
@@ -62,31 +63,18 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const supabase = useMemo(() => {
-    try {
-      return createClient()
-    } catch (clientError) {
-      console.error(clientError)
-      return null
-    }
-  }, [])
+  const supabase = useMemo(createBrowserClient, [])
 
   useEffect(() => {
     let isMounted = true
 
     const fetchClients = async () => {
-      if (!supabase) {
-        setError('Supabase client unavailable. Please check your configuration.')
-        setLoading(false)
-        return
-      }
-
       setLoading(true)
       setError(null)
 
       const { data, error: fetchError } = await supabase
-        .from('clients')
-        .select('id, name, website, account_status, created_at')
+        .from(CLIENTS)
+        .select('id, name, website, account_status, created_at, notes, updated_at')
         .order('created_at', { ascending: false })
 
       if (!isMounted) return
@@ -96,7 +84,16 @@ export default function ClientsPage() {
         setError('We ran into an issue loading clients. Please try again.')
         setClients([])
       } else {
-        setClients(data ?? [])
+        const rows: Client[] = (data ?? []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          website: row.website ?? null,
+          account_status: row.account_status ?? null,
+          created_at: row.created_at ?? null,
+          notes: row.notes ?? null,
+          updated_at: row.updated_at ?? null
+        }))
+        setClients(rows)
       }
 
       setLoading(false)

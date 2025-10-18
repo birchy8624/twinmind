@@ -8,7 +8,7 @@ import { z } from 'zod'
 
 import { ConfirmModal } from '../_components/confirm-modal'
 import { useToast } from '../_components/toast-context'
-import { createBrowserClient } from '@/lib/supabaseClient'
+import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
 const profileSchema = z.object({

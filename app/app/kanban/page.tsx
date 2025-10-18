@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
-import { createBrowserClient } from '@/lib/supabaseClient'
+import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
 import { StatusBadge } from '../_components/status-badge'
@@ -211,10 +211,6 @@ export default function KanbanPage() {
       setError(null)
       setUpdateError(null)
 
-      const pipelineStatusConditions = PIPELINE_COLUMNS.map((column) =>
-        `status.eq."${column.status.replace(/"/g, '\\"')}"`
-      ).join(',')
-
       let query = supabase
         .from(PROJECTS)
         .select(
@@ -233,8 +229,10 @@ export default function KanbanPage() {
         )
         .order('created_at', { ascending: false })
 
-      if (pipelineStatusConditions) {
-        query = query.or(pipelineStatusConditions)
+      const pipelineStatuses = PIPELINE_COLUMNS.map((column) => column.status) as ColumnStatus[]
+
+      if (pipelineStatuses.length > 0) {
+        query = query.in('status', pipelineStatuses)
       }
 
       const postgrestDebugMetadata = KANBAN_DEBUG_ENABLED
