@@ -49,6 +49,25 @@ type ActionResult =
   | { ok: true; projectId: string }
   | { ok: false; message: string }
 
+function splitContactName(fullName: string): {
+  firstName: string | null
+  lastName: string | null
+} {
+  const trimmed = fullName.trim()
+
+  if (!trimmed) {
+    return { firstName: null, lastName: null }
+  }
+
+  const [first, ...rest] = trimmed.split(/\s+/)
+  const last = rest.join(' ').trim()
+
+  return {
+    firstName: first || null,
+    lastName: last.length > 0 ? last : null
+  }
+}
+
 export async function createClientProject(input: unknown): Promise<ActionResult> {
   const parsed = WizardSchema.safeParse(input)
   if (!parsed.success) {
@@ -87,6 +106,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     }
 
     if (clientId) {
+      await admin.from('contacts').delete().eq('client_id', clientId)
       await admin.from('client_members').delete().eq('client_id', clientId)
       await admin.from('clients').delete().eq('id', clientId)
     }
@@ -188,6 +208,30 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     }
 
     // TODO: Trigger email invite for the client portal user.
+  }
+
+  if (!clientId) {
+    return fail('Create primary contact', { message: 'Missing client id.' })
+  }
+
+  const { firstName, lastName } = splitContactName(client.name)
+
+  const contactInsert: Database['public']['Tables']['contacts']['Insert'] = {
+    client_id: clientId,
+    first_name: firstName,
+    last_name: lastName,
+    email: client.email,
+    phone: client.phone ?? null,
+    title: client.company ?? null,
+    is_primary: true,
+    gdpr_consent: client.gdpr_consent,
+    profile_id: invitedProfileId
+  }
+
+  const { error: contactError } = await admin.from('contacts').insert(contactInsert)
+
+  if (contactError) {
+    return fail('Create primary contact', contactError)
   }
 
   const projectInsert: Database['public']['Tables']['projects']['Insert'] = {
