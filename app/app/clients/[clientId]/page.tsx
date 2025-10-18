@@ -40,6 +40,7 @@ type ClientContact = {
   is_primary: boolean | null
   created_at: string
   timezone: string | null
+  profile_id: string | null
 }
 
 type ClientInvite = {
@@ -74,6 +75,20 @@ type ClientDetails = {
   contacts: ClientContact[]
   invites: ClientInvite[]
   projects: ClientProject[]
+}
+
+type ClientPersonRow = {
+  id: string
+  kind: 'contact' | 'member' | 'invite'
+  name: string
+  nameHint: string | null
+  email: string | null
+  phone: string | null
+  timezone: string | null
+  accessLabel: string
+  accessDescription: string | null
+  showInviteButton: boolean
+  createdAt: string
 }
 
 type ClientDetailsQuery = ClientRow & {
@@ -141,6 +156,157 @@ function getContactName(contact: ClientContact) {
   return parts.join(' ')
 }
 
+function buildCombinedRows({
+  contacts,
+  members,
+  invites
+}: {
+  contacts: ClientContact[]
+  members: ClientMember[]
+  invites: ClientInvite[]
+}): ClientPersonRow[] {
+  const memberByProfileId = new Map<string, ClientMember>()
+  const memberByEmail = new Map<string, ClientMember>()
+
+  for (const member of members) {
+    const profileId = member.profile?.id
+    const email = normalizeEmail(member.profile?.email)
+
+    if (profileId) {
+      memberByProfileId.set(profileId, member)
+    }
+
+    if (email && !memberByEmail.has(email)) {
+      memberByEmail.set(email, member)
+    }
+  }
+
+  const inviteByEmail = new Map<string, ClientInvite>()
+  for (const invite of invites) {
+    const email = normalizeEmail(invite.email)
+    if (email && !inviteByEmail.has(email)) {
+      inviteByEmail.set(email, invite)
+    }
+  }
+
+  const usedMemberIds = new Set<string>()
+  const usedInviteIds = new Set<string>()
+  const rows: ClientPersonRow[] = []
+
+  for (const contact of contacts) {
+    const normalizedEmail = normalizeEmail(contact.email)
+    let matchedMember: ClientMember | null = null
+
+    if (contact.profile_id && memberByProfileId.has(contact.profile_id)) {
+      matchedMember = memberByProfileId.get(contact.profile_id) ?? null
+    } else if (normalizedEmail && memberByEmail.has(normalizedEmail)) {
+      matchedMember = memberByEmail.get(normalizedEmail) ?? null
+    }
+
+    if (matchedMember) {
+      usedMemberIds.add(matchedMember.id)
+    }
+
+    let matchedInvite: ClientInvite | null = null
+    if (!matchedMember && normalizedEmail && inviteByEmail.has(normalizedEmail)) {
+      matchedInvite = inviteByEmail.get(normalizedEmail) ?? null
+    }
+
+    if (matchedInvite) {
+      usedInviteIds.add(matchedInvite.id)
+    }
+
+    const hasAccount = Boolean(contact.profile_id || matchedMember?.profile?.id)
+
+    let accessLabel = 'No access'
+    let accessDescription: string | null = null
+
+    if (hasAccount) {
+      accessLabel = 'Client Access'
+      accessDescription = matchedMember?.role ? formatRole(matchedMember.role) : null
+    } else if (matchedInvite) {
+      accessLabel = matchedInvite.accepted_profile_id ? 'Invite accepted' : 'Invite pending'
+      accessDescription = matchedInvite.accepted_profile_id
+        ? `Accepted ${formatDate(matchedInvite.created_at)}`
+        : `Expires ${formatDate(matchedInvite.expires_at)}`
+    }
+
+    rows.push({
+      id: `contact-${contact.id}`,
+      kind: 'contact',
+      name: getContactName(contact),
+      nameHint: contact.title ?? null,
+      email: contact.email,
+      phone: contact.phone ?? null,
+      timezone: contact.timezone ?? null,
+      accessLabel,
+      accessDescription,
+      showInviteButton: !hasAccount && !matchedInvite,
+      createdAt: contact.created_at
+    })
+  }
+
+  for (const member of members) {
+    if (usedMemberIds.has(member.id)) {
+      continue
+    }
+
+    rows.push({
+      id: `member-${member.id}`,
+      kind: 'member',
+      name: member.profile?.full_name || '—',
+      nameHint: 'Client member',
+      email: member.profile?.email ?? null,
+      phone: null,
+      timezone: null,
+      accessLabel: 'Client Access',
+      accessDescription: member.role ? formatRole(member.role) : null,
+      showInviteButton: false,
+      createdAt: member.created_at ?? '1970-01-01T00:00:00.000Z'
+    })
+  }
+
+  for (const invite of invites) {
+    if (usedInviteIds.has(invite.id)) {
+      continue
+    }
+
+    rows.push({
+      id: `invite-${invite.id}`,
+      kind: 'invite',
+      name: invite.profile?.full_name || 'Pending invite',
+      nameHint: invite.profile?.full_name ? 'Invitation' : 'Pending invitation',
+      email: invite.email,
+      phone: null,
+      timezone: null,
+      accessLabel: invite.accepted_profile_id ? 'Invite accepted' : 'Invite pending',
+      accessDescription: invite.accepted_profile_id
+        ? `Accepted ${formatDate(invite.created_at)}`
+        : `Expires ${formatDate(invite.expires_at)}`,
+      showInviteButton: false,
+      createdAt: invite.created_at
+    })
+  }
+
+  return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
+
+function normalizeEmail(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? null
+}
+
+function formatRole(value: string | null) {
+  if (!value) {
+    return null
+  }
+
+  return value
+    .split(/[ _]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ')
+}
+
 function isClientDetailsRow(value: unknown): value is ClientDetailsQuery {
   return (
     typeof value === 'object' &&
@@ -184,6 +350,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
           title,
           is_primary,
           created_at,
+          profile_id,
           profile:profiles!contacts_profile_id_fkey (
             timezone
           )
@@ -253,7 +420,8 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
       title: contact.title ?? null,
       is_primary: contact.is_primary ?? null,
       created_at: contact.created_at,
-      timezone: contact.profile?.timezone ?? null
+      timezone: contact.profile?.timezone ?? null,
+      profile_id: contact.profile_id ?? null
     })),
     invites: (clientRow.invites ?? []).map((invite) => ({
       id: invite.id,
@@ -298,6 +466,12 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
   const sortedInvites = [...(client.invites ?? [])].sort((a, b) =>
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
+
+  const combinedRows = buildCombinedRows({
+    contacts: sortedContacts,
+    members: sortedMembers,
+    invites: sortedInvites
+  })
 
   return (
     <div className="space-y-8">
@@ -429,113 +603,73 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Contacts</h2>
-            <span className="text-sm text-white/60">{sortedContacts.length} total</span>
-          </div>
-          <div className="overflow-hidden rounded-2xl border border-white/10">
-            {sortedContacts.length > 0 ? (
-              <table className="min-w-full divide-y divide-white/10 text-left text-sm text-white/70">
-                <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
-                  <tr>
-                    <th className="px-5 py-3 font-medium">Name</th>
-                    <th className="px-5 py-3 font-medium">Email</th>
-                    <th className="px-5 py-3 font-medium">Phone</th>
-                    <th className="px-5 py-3 font-medium">Timezone</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {sortedContacts.map((contact) => (
-                    <tr key={contact.id} className="bg-base-900/50">
-                      <td className="px-5 py-4 text-white">
-                        <div>{getContactName(contact)}</div>
-                        <div className="text-xs text-white/50">{contact.title || '—'}</div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <Link
-                          href={`mailto:${contact.email}`}
-                          className="text-sky-300 transition hover:text-sky-200"
-                        >
-                          {contact.email}
-                        </Link>
-                      </td>
-                      <td className="px-5 py-4">{contact.phone || '—'}</td>
-                      <td className="px-5 py-4">{contact.timezone || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="px-6 py-10 text-center text-sm text-white/50">
-                No contacts have been added for this client yet.
-              </div>
-            )}
-          </div>
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white">People</h2>
+          <span className="text-sm text-white/60">{combinedRows.length} total</span>
         </div>
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Client members &amp; invites</h2>
-          </div>
-          <div className="overflow-hidden rounded-2xl border border-white/10">
-            {sortedMembers.length > 0 || sortedInvites.length > 0 ? (
-              <table className="min-w-full divide-y divide-white/10 text-left text-sm text-white/70">
-                <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
-                  <tr>
-                    <th className="px-5 py-3 font-medium">Name</th>
-                    <th className="px-5 py-3 font-medium">Email</th>
-                    <th className="px-5 py-3 font-medium">Role / Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {sortedMembers.map((member) => (
-                    <tr key={`member-${member.id}`} className="bg-base-900/50">
-                      <td className="px-5 py-4 text-white">
-                        {member.profile?.full_name || '—'}
-                      </td>
-                      <td className="px-5 py-4">
-                        {member.profile?.email ? (
-                          <Link
-                            href={`mailto:${member.profile.email}`}
-                            className="text-sky-300 transition hover:text-sky-200"
-                          >
-                            {member.profile.email}
-                          </Link>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="px-5 py-4 capitalize">{member.role ? member.role : 'Member'}</td>
-                    </tr>
-                  ))}
-                  {sortedInvites.map((invite) => (
-                    <tr key={`invite-${invite.id}`} className="bg-base-900/30">
-                      <td className="px-5 py-4 text-white">
-                        {invite.profile?.full_name || 'Pending invite'}
-                      </td>
-                      <td className="px-5 py-4">
+        <div className="overflow-hidden rounded-2xl border border-white/10">
+          {combinedRows.length > 0 ? (
+            <table className="min-w-full divide-y divide-white/10 text-left text-sm text-white/70">
+              <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+                <tr>
+                  <th className="px-5 py-3 font-medium">Person</th>
+                  <th className="px-5 py-3 font-medium">Contact</th>
+                  <th className="px-5 py-3 font-medium">Access</th>
+                  <th className="px-5 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {combinedRows.map((row) => (
+                  <tr key={row.id} className="bg-base-900/50">
+                    <td className="px-5 py-4 text-white">
+                      <div>{row.name}</div>
+                      <div className="text-xs text-white/45">
+                        {row.nameHint || (row.kind === 'contact' ? row.timezone || '—' : '—')}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      {row.email ? (
                         <Link
-                          href={`mailto:${invite.email}`}
+                          href={`mailto:${row.email}`}
                           className="text-sky-300 transition hover:text-sky-200"
                         >
-                          {invite.email}
+                          {row.email}
                         </Link>
-                      </td>
-                      <td className="px-5 py-4">
-                        {invite.accepted_profile_id ? 'Accepted' : `Expires ${formatDate(invite.expires_at)}`}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="px-6 py-10 text-center text-sm text-white/50">
-                No members or invitations yet.
-              </div>
-            )}
-          </div>
+                      ) : (
+                        '—'
+                      )}
+                      <div className="text-xs text-white/45">
+                        {row.phone || (row.kind === 'contact' ? row.timezone || '—' : '—')}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="font-medium text-white">{row.accessLabel}</div>
+                      {row.accessDescription ? (
+                        <div className="text-xs text-white/50">{row.accessDescription}</div>
+                      ) : null}
+                    </td>
+                    <td className="px-5 py-4">
+                      {row.showInviteButton ? (
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-full border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:border-white/30 hover:text-white"
+                          >
+                            Invite
+                          </button>
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="px-6 py-10 text-center text-sm text-white/50">
+              No people are linked to this client yet.
+            </div>
+          )}
         </div>
       </section>
     </div>
