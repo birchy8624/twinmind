@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
+import { FilterDropdown } from '../_components/filter-dropdown'
 import { StatusBadge } from '../_components/status-badge'
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
@@ -216,36 +217,26 @@ export default function ProjectsPage() {
                 className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/40 focus:outline-none"
               />
             </label>
-            <label className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 focus-within:border-white/30 focus-within:text-white/80 sm:w-56">
-              <span className="text-xs uppercase tracking-wide text-white/40">Status</span>
-              <select
-                value={statusFilter}
-                onChange={(event) => {
-                  setStatusFilter(event.target.value)
-                  setPage(1)
-                }}
-                className="w-full bg-transparent text-sm text-white/80 focus:outline-none"
-              >
-                {statusFilters.map((status) => (
-                  <option key={status}>{status}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 focus-within:border-white/30 focus-within:text-white/80 sm:w-56">
-              <span className="text-xs uppercase tracking-wide text-white/40">Client</span>
-              <select
-                value={clientFilter}
-                onChange={(event) => {
-                  setClientFilter(event.target.value)
-                  setPage(1)
-                }}
-                className="w-full bg-transparent text-sm text-white/80 focus:outline-none"
-              >
-                {clientFilters.map((client) => (
-                  <option key={client}>{client}</option>
-                ))}
-              </select>
-            </label>
+            <FilterDropdown
+              label="Status"
+              value={statusFilter}
+              options={statusFilters}
+              onChange={(nextValue) => {
+                setStatusFilter(nextValue)
+                setPage(1)
+              }}
+              className="sm:w-56"
+            />
+            <FilterDropdown
+              label="Client"
+              value={clientFilter}
+              options={clientFilters}
+              onChange={(nextValue) => {
+                setClientFilter(nextValue)
+                setPage(1)
+              }}
+              className="sm:w-56"
+            />
           </div>
         </div>
 
