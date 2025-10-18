@@ -620,7 +620,7 @@ export default function KanbanPage() {
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-white/50">
-            <span>Search projects</span>
+            <span className="sr-only">Search projects</span>
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
