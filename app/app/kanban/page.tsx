@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
+import { FilterDropdown } from '../_components/filter-dropdown'
 import { StatusBadge } from '../_components/status-badge'
 import { useToast } from '../_components/toast-context'
 
@@ -372,9 +373,12 @@ export default function KanbanPage() {
         entries.set(project.client.id, project.client.name)
       }
     }
-    return Array.from(entries.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+
+    const sortedClients = Array.from(entries.entries())
+      .map(([id, name]) => ({ value: id, label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+
+    return [{ value: 'all', label: 'All clients' }, ...sortedClients]
   }, [projectList])
 
   const assigneeOptions = useMemo(() => {
@@ -384,9 +388,12 @@ export default function KanbanPage() {
         entries.set(project.assignee.id, project.assignee.full_name ?? 'Unassigned')
       }
     }
-    return Array.from(entries.entries())
-      .map(([id, name]) => ({ id, name: name || 'Unassigned' }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+
+    const sortedAssignees = Array.from(entries.entries())
+      .map(([id, name]) => ({ value: id, label: name || 'Unassigned' }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+
+    return [{ value: 'all', label: 'All assignees' }, ...sortedAssignees]
   }, [projectList])
 
   const labelOptions = useMemo(() => {
@@ -398,7 +405,12 @@ export default function KanbanPage() {
         }
       }
     }
-    return Array.from(values).sort((a, b) => a.localeCompare(b))
+
+    const sortedLabels = Array.from(values)
+      .sort((a, b) => a.localeCompare(b))
+      .map((label) => ({ value: label, label }))
+
+    return [{ value: 'all', label: 'All labels' }, ...sortedLabels]
   }, [projectList])
 
   const tagOptions = useMemo(() => {
@@ -410,7 +422,12 @@ export default function KanbanPage() {
         }
       }
     }
-    return Array.from(values).sort((a, b) => a.localeCompare(b))
+
+    const sortedTags = Array.from(values)
+      .sort((a, b) => a.localeCompare(b))
+      .map((tag) => ({ value: tag, label: tag }))
+
+    return [{ value: 'all', label: 'All tags' }, ...sortedTags]
   }, [projectList])
 
   const matchesFilters = useCallback(
@@ -599,7 +616,7 @@ export default function KanbanPage() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="rounded-3xl border border-white/10 bg-base-900/40 p-5 shadow-lg shadow-base-900/30 backdrop-blur"
+        className="relative z-10 rounded-3xl border border-white/10 bg-base-900/40 p-5 shadow-lg shadow-base-900/30 backdrop-blur"
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-white/50">
@@ -612,66 +629,30 @@ export default function KanbanPage() {
               type="search"
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-white/50">
-            <span>Client</span>
-            <select
-              value={clientFilter}
-              onChange={(event) => setClientFilter(event.target.value)}
-              className="rounded-xl border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
-            >
-              <option value="all">All clients</option>
-              {clientOptions.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-white/50">
-            <span>Assignee</span>
-            <select
-              value={assigneeFilter}
-              onChange={(event) => setAssigneeFilter(event.target.value)}
-              className="rounded-xl border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
-            >
-              <option value="all">All assignees</option>
-              {assigneeOptions.map((assignee) => (
-                <option key={assignee.id} value={assignee.id}>
-                  {assignee.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-white/50">
-            <span>Label</span>
-            <select
-              value={labelFilter}
-              onChange={(event) => setLabelFilter(event.target.value)}
-              className="rounded-xl border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
-            >
-              <option value="all">All labels</option>
-              {labelOptions.map((label) => (
-                <option key={label} value={label}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-white/50">
-            <span>Tag</span>
-            <select
-              value={tagFilter}
-              onChange={(event) => setTagFilter(event.target.value)}
-              className="rounded-xl border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
-            >
-              <option value="all">All tags</option>
-              {tagOptions.map((tag) => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
-              ))}
-            </select>
-          </label>
+          <FilterDropdown
+            label="Client"
+            value={clientFilter}
+            options={clientOptions}
+            onChange={setClientFilter}
+          />
+          <FilterDropdown
+            label="Assignee"
+            value={assigneeFilter}
+            options={assigneeOptions}
+            onChange={setAssigneeFilter}
+          />
+          <FilterDropdown
+            label="Label"
+            value={labelFilter}
+            options={labelOptions}
+            onChange={setLabelFilter}
+          />
+          <FilterDropdown
+            label="Tag"
+            value={tagFilter}
+            options={tagOptions}
+            onChange={setTagFilter}
+          />
         </div>
       </motion.div>
 
