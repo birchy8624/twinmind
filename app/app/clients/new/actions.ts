@@ -146,13 +146,20 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
   clientId = clientRow.id
 
   if (inviteClient) {
-    const { data: authResponse, error: authError } = await admin.auth.admin.createUser({
-      email: contact.email,
-      email_confirm: true,
-      user_metadata: {
+    const siteUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (process.env.NEXT_PUBLIC_VERCEL_URL
+        ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
+        : 'http://localhost:3000')
+
+    const inviteRedirect = new URL('/portal/invite', siteUrl).toString()
+
+    const { data: authResponse, error: authError } = await admin.auth.admin.inviteUserByEmail(contact.email, {
+      data: {
         full_name: contactFullName || undefined,
         company: client.name
-      }
+      },
+      redirectTo: inviteRedirect
     })
 
     if (authError) {
@@ -198,7 +205,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
       return fail('Link client membership', memberError)
     }
 
-    // TODO: Trigger email invite for the client portal user.
+    // Invitation email with portal access has been triggered by Supabase.
   }
 
   if (!clientId) {
