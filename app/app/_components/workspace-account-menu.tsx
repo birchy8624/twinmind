@@ -198,6 +198,18 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
         return
       }
 
+      try {
+        await fetch('/api/auth/callback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          keepalive: true,
+          body: JSON.stringify({ event: 'SIGNED_OUT' })
+        })
+      } catch (callbackError) {
+        console.error('Failed to sync server sign out state', callbackError)
+      }
+
       setIsOpen(false)
       setProfileRole(null)
       router.replace('/?signed_out=1')
