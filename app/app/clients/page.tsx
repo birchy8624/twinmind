@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
@@ -66,6 +67,7 @@ export default function ClientsPage() {
   const [error, setError] = useState<string | null>(null)
 
   const supabase = useMemo(createBrowserClient, [])
+  const router = useRouter()
 
   useEffect(() => {
     let isMounted = true
@@ -74,18 +76,21 @@ export default function ClientsPage() {
       setLoading(true)
       setError(null)
 
-      const { data, error: fetchError } = await supabase
-        .from(CLIENTS)
-        .select('id, name, website, account_status, created_at, notes, updated_at')
-        .order('created_at', { ascending: false })
+      try {
+        const { data, error: fetchError } = await supabase
+          .from(CLIENTS)
+          .select('id, name, website, account_status, created_at, notes, updated_at')
+          .order('created_at', { ascending: false })
 
-      if (!isMounted) return
+        if (!isMounted) return
 
-      if (fetchError) {
-        console.error(fetchError)
-        setError('We ran into an issue loading clients. Please try again.')
-        setClients([])
-      } else {
+        if (fetchError) {
+          console.error(fetchError)
+          setError('We ran into an issue loading clients. Please try again.')
+          setClients([])
+          return
+        }
+
         const selected = (data ?? []) as ClientSelection[]
         const rows: Client[] = selected.map((row) => ({
           id: row.id,
@@ -97,9 +102,17 @@ export default function ClientsPage() {
           updated_at: row.updated_at ?? null
         }))
         setClients(rows)
-      }
+      } catch (unknownError) {
+        if (!isMounted) return
 
-      setLoading(false)
+        console.error(unknownError)
+        setError('We ran into an issue loading clients. Please try again.')
+        setClients([])
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
     }
 
     void fetchClients()
@@ -188,56 +201,76 @@ export default function ClientsPage() {
           </button>
         </div>
 
-        <div className="mt-5 overflow-hidden rounded-2xl border border-white/5">
-          <table className="min-w-full divide-y divide-white/5 text-left text-sm text-white/70">
-            <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
-              <tr>
-                <th className="px-5 py-3 font-medium">Client</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Website</th>
-                <th className="px-5 py-3 font-medium">Created</th>
-                <th className="px-5 py-3 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              <AnimatePresence initial={false}>
-                {pageClients.map((client) => {
-                  const createdAt = client.created_at ? new Date(client.created_at) : null
+        <div className="mt-5 -mx-6 overflow-x-auto md:mx-0">
+          <div className="inline-block min-w-full align-middle">
+            <div className="overflow-hidden rounded-2xl border border-white/5">
+              <table className="min-w-full divide-y divide-white/5 text-left text-sm text-white/70">
+                <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
+                  <tr>
+                    <th className="px-5 py-3 font-medium">Client</th>
+                    <th className="px-5 py-3 font-medium">Status</th>
+                    <th className="px-5 py-3 font-medium">Website</th>
+                    <th className="px-5 py-3 font-medium">Created</th>
+                    <th className="px-5 py-3 text-right font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  <AnimatePresence initial={false}>
+                    {pageClients.map((client) => {
+                      const createdAt = client.created_at ? new Date(client.created_at) : null
 
-                  return (
-                    <motion.tr
-                      key={client.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ duration: 0.18, ease: 'easeOut' }}
-                      className="bg-base-900/40 transition hover:bg-base-900/60 hover:shadow-[0_0_30px_rgba(59,130,246,0.25)]"
-                    >
-                      <td className="px-5 py-4 text-sm font-medium text-white">
-                        <div>{client.name}</div>
-                        <div className="text-xs text-white/50">{client.website || 'No website yet'}</div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <StatusBadge status={formatStatus(client.account_status)} />
-                      </td>
-                      <td className="px-5 py-4 text-sm">{client.website ? client.website.replace(/^https?:\/\//, '') : '—'}</td>
-                      <td className="px-5 py-4 text-sm">
-                        <span title={createdAt ? createdAt.toLocaleString() : undefined}>
-                          {formatRelativeTimeFromNow(client.created_at)}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-right text-sm">
-                        <Link
-                          href={`/app/clients/${client.id}`}
-                          className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/20 hover:text-white"
+                      return (
+                        <motion.tr
+                          key={client.id}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.18, ease: 'easeOut' }}
+                          className="cursor-pointer bg-base-900/40 transition hover:bg-base-900/60 hover:shadow-[0_0_30px_rgba(59,130,246,0.25)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-limeglow-400"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => router.push(`/app/clients/${client.id}`)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              router.push(`/app/clients/${client.id}`)
+                            }
+                          }}
                         >
-                          Open
-                        </Link>
-                      </td>
-                    </motion.tr>
-                  )
-                })}
-              </AnimatePresence>
+                          <td className="px-5 py-4 text-sm font-medium text-white">
+                            <Link
+                              href={`/app/clients/${client.id}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="inline-flex items-center gap-2 text-white transition hover:text-white/80"
+                            >
+                              {client.name}
+                            </Link>
+                            <div className="text-xs text-white/50">{client.website || 'No website yet'}</div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <StatusBadge status={formatStatus(client.account_status)} />
+                          </td>
+                          <td className="px-5 py-4 text-sm">
+                            {client.website ? client.website.replace(/^https?:\/\//, '') : '—'}
+                          </td>
+                          <td className="px-5 py-4 text-sm">
+                            <span title={createdAt ? createdAt.toLocaleString() : undefined}>
+                              {formatRelativeTimeFromNow(client.created_at)}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-right text-sm">
+                            <Link
+                              href={`/app/clients/${client.id}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/20 hover:text-white"
+                            >
+                              Open
+                            </Link>
+                          </td>
+                        </motion.tr>
+                      )
+                    })}
+                  </AnimatePresence>
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-10 text-center text-sm text-white/50">
@@ -261,6 +294,8 @@ export default function ClientsPage() {
               ) : null}
             </tbody>
           </table>
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-col gap-3 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">

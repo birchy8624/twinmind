@@ -17,9 +17,9 @@ export default function Pricing(){
       </div>
 
       <div className="flex flex-col items-center text-center md:items-start md:text-left">
-        <span className="text-sm uppercase tracking-[0.4em] text-limeglow-500/70">Tiers</span>
+        <span className="text-xs uppercase tracking-[0.28em] text-limeglow-500/70 sm:text-sm sm:tracking-[0.4em]">Tiers</span>
         <h2 className="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight">Pricing</h2>
-        <p className="text-white/70 mt-3 max-w-2xl">
+        <p className="mt-3 max-w-2xl text-base text-white/75 sm:text-lg">
           AI‑level speed. Human‑level quality. Choose the cadence that fits your budget.
         </p>
       </div>
@@ -38,14 +38,14 @@ export default function Pricing(){
               </div>
             )}
             <div>
-              <div className="text-xs uppercase tracking-[0.4em] text-white/50">{p.tier}</div>
+              <div className="text-[0.7rem] uppercase tracking-[0.3em] text-white/55 sm:text-xs sm:tracking-[0.4em]">{p.tier}</div>
               <h3 className="mt-2 text-xl font-semibold text-white">{p.name}</h3>
-              <div className="mt-3 text-3xl font-semibold bg-gradient-to-r from-limeglow-500 via-limeglow-600 to-limeglow-700 bg-clip-text text-transparent">
+              <div className="mt-3 bg-gradient-to-r from-limeglow-500 via-limeglow-600 to-limeglow-700 bg-clip-text text-3xl font-semibold text-transparent">
                 {p.price}
               </div>
-              <p className="text-white/75 mt-3 leading-relaxed">{p.desc}</p>
+              <p className="mt-3 text-base leading-relaxed text-white/80 sm:text-[1.05rem]">{p.desc}</p>
             </div>
-            <ul className="space-y-2 text-sm text-white/70">
+            <ul className="space-y-2 text-sm text-white/75 sm:text-base">
               {p.features.map(f => (
                 <li key={f} className="flex items-center gap-2">
                   <span className="h-5 w-5 rounded-full bg-limeglow-500/15 text-limeglow-400 flex items-center justify-center text-xs font-semibold">✓</span>

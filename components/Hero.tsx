@@ -20,7 +20,7 @@ export default function Hero(){
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.8 }}
-          className="mt-6 text-lg text-white/80 max-w-2xl mx-auto"
+          className="mt-6 max-w-2xl text-base text-white/80 sm:text-lg"
         >
           TwinMinds Studio blends human creativity with AI precision & speed to build beautiful, intelligent web apps, fast, affordable and built to scale.
         </motion.p>
@@ -28,7 +28,7 @@ export default function Hero(){
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.8 }}
-          className="mt-10 flex flex-wrap items-center justify-center gap-4"
+          className="mt-10 flex flex-wrap items-center justify-center gap-3 sm:gap-4"
         >
           <a href="#contact" className="btn btn-primary">Start your project</a>
           <a href="#portfolio" className="btn ring-1 ring-white/10 hover:ring-white/20">See our work</a>
@@ -37,7 +37,7 @@ export default function Hero(){
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.35, duration: 1 }}
-          className="mt-16 grid w-full max-w-5xl grid-cols-1 gap-4 md:grid-cols-3 md:gap-6"
+          className="mt-12 grid w-full max-w-5xl grid-cols-1 gap-4 sm:gap-5 md:mt-16 md:grid-cols-3 md:gap-6"
         >
           {[
             { title: 'Built Fast', desc: 'From idea to a live app faster than ever before.' },
@@ -49,7 +49,7 @@ export default function Hero(){
               className="card bg-base-800/35 ring-limeglow-500/25 shadow-[0_18px_40px_-24px_rgba(163,255,18,0.45)] transition-all hover:-translate-y-1 hover:ring-limeglow-500/40 hover:shadow-glow"
             >
               <h3 className="font-semibold text-white">{f.title}</h3>
-              <p className="text-white/80 mt-2">{f.desc}</p>
+              <p className="mt-2 text-base text-white/80 sm:text-[1.05rem]">{f.desc}</p>
             </div>
           ))}
         </motion.div>

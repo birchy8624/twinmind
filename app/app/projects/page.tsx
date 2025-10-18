@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
@@ -87,6 +88,7 @@ export default function ProjectsPage() {
   const [error, setError] = useState<string | null>(null)
 
   const supabase = useMemo(createBrowserClient, [])
+  const router = useRouter()
 
   useEffect(() => {
     let isMounted = true
@@ -95,29 +97,32 @@ export default function ProjectsPage() {
       setLoading(true)
       setError(null)
 
-      const { data, error: fetchError } = await supabase
-        .from(PROJECTS)
-        .select(
-          `
-            id,
-            name,
-            status,
-            description,
-            due_date,
-            created_at,
-            clients:client_id ( id, name ),
-            assignee_profile:assignee_profile_id ( id, full_name )
-          `
-        )
-        .order('created_at', { ascending: false })
+      try {
+        const { data, error: fetchError } = await supabase
+          .from(PROJECTS)
+          .select(
+            `
+              id,
+              name,
+              status,
+              description,
+              due_date,
+              created_at,
+              clients:client_id ( id, name ),
+              assignee_profile:assignee_profile_id ( id, full_name )
+            `
+          )
+          .order('created_at', { ascending: false })
 
-      if (!isMounted) return
+        if (!isMounted) return
 
-      if (fetchError) {
-        console.error(fetchError)
-        setError('We ran into an issue loading projects. Please try again.')
-        setProjects([])
-      } else {
+        if (fetchError) {
+          console.error(fetchError)
+          setError('We ran into an issue loading projects. Please try again.')
+          setProjects([])
+          return
+        }
+
         type ProjectQuery = ProjectRow & {
           clients: Pick<ClientRow, 'id' | 'name'> | null
           assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
@@ -133,9 +138,17 @@ export default function ProjectsPage() {
         )
 
         setProjects(normalizedProjects)
-      }
+      } catch (unknownError) {
+        if (!isMounted) return
 
-      setLoading(false)
+        console.error(unknownError)
+        setError('We ran into an issue loading projects. Please try again.')
+        setProjects([])
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
+      }
     }
 
     void fetchProjects()
@@ -242,8 +255,10 @@ export default function ProjectsPage() {
           </div>
         </div>
 
-        <div className="mt-5 overflow-hidden rounded-2xl border border-white/5">
-          <table className="min-w-full divide-y divide-white/5 text-left text-sm text-white/70">
+        <div className="mt-5 -mx-6 overflow-x-auto md:mx-0">
+          <div className="inline-block min-w-full align-middle">
+            <div className="overflow-hidden rounded-2xl border border-white/5">
+              <table className="min-w-full divide-y divide-white/5 text-left text-sm text-white/70">
             <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/60">
               <tr>
                 <th className="px-5 py-3 font-medium">Project</th>
@@ -267,48 +282,62 @@ export default function ProjectsPage() {
                       ? createdAtDate
                       : null
                   return (
-                  <motion.tr
-                    key={project.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className="bg-base-900/40 transition hover:bg-base-900/60 hover:shadow-[0_0_30px_rgba(99,102,241,0.25)]"
-                  >
-                    <td className="px-5 py-4 text-sm font-medium text-white">
-                      {project.name}
-                      <p className="text-xs text-white/50 line-clamp-2">
-                        {project.description}
-                      </p>
-                    </td>
-                    <td className="px-5 py-4 text-sm">{project.client?.name ?? 'Unknown client'}</td>
-                    <td className="px-5 py-4 text-sm">{project.assignee?.full_name ?? 'Unassigned'}</td>
-                    <td className="px-5 py-4">
-                      <StatusBadge status={readableStatus} />
-                    </td>
-                    <td className="px-5 py-4 text-sm">
-                      {createdAt ? (
-                        <span title={createdAt.toLocaleString()}>
-                          {formatRelativeTimeFromNow(createdAt)}
+                    <motion.tr
+                      key={project.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="cursor-pointer bg-base-900/40 transition hover:bg-base-900/60 hover:shadow-[0_0_30px_rgba(99,102,241,0.25)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-limeglow-400"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => router.push(`/app/projects/${project.id}`)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          router.push(`/app/projects/${project.id}`)
+                        }
+                      }}
+                    >
+                      <td className="px-5 py-4 text-sm font-medium text-white">
+                        <Link
+                          href={`/app/projects/${project.id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="inline-flex items-center gap-2 text-white transition hover:text-white/80"
+                        >
+                          {project.name}
+                        </Link>
+                        <p className="text-xs text-white/50 line-clamp-2">{project.description}</p>
+                      </td>
+                      <td className="px-5 py-4 text-sm">{project.client?.name ?? 'Unknown client'}</td>
+                      <td className="px-5 py-4 text-sm">{project.assignee?.full_name ?? 'Unassigned'}</td>
+                      <td className="px-5 py-4">
+                        <StatusBadge status={readableStatus} />
+                      </td>
+                      <td className="px-5 py-4 text-sm">
+                        {createdAt ? (
+                          <span title={createdAt.toLocaleString()}>
+                            {formatRelativeTimeFromNow(createdAt)}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-5 py-4 text-sm">
+                        <span title={project.due_date ? new Date(project.due_date).toLocaleDateString() : undefined}>
+                          {formatDueDate(project.due_date)}
                         </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="px-5 py-4 text-sm">
-                      <span title={project.due_date ? new Date(project.due_date).toLocaleDateString() : undefined}>
-                        {formatDueDate(project.due_date)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-right text-sm">
-                      <Link
-                        href={`/app/projects/${project.id}`}
-                        className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/20 hover:text-white"
-                      >
-                        Open
-                      </Link>
-                    </td>
-                  </motion.tr>
+                      </td>
+                      <td className="px-5 py-4 text-right text-sm">
+                        <Link
+                          href={`/app/projects/${project.id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:bg-white/20 hover:text-white"
+                        >
+                          Open
+                        </Link>
+                      </td>
+                    </motion.tr>
                   )
                 })}
               </AnimatePresence>
@@ -335,6 +364,8 @@ export default function ProjectsPage() {
               ) : null}
             </tbody>
           </table>
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-col gap-3 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">
