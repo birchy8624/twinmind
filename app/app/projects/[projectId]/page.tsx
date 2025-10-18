@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
-import { createBrowserClient } from '@/lib/supabaseClient'
+import { createBrowserClient } from '@/lib/supabase/browser'
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
@@ -44,6 +44,8 @@ type InvoiceInfo = Pick<InvoiceRow, 'id' | 'amount' | 'currency'>
 
 const PROJECTS = 'projects' as const
 const INVOICES = 'invoices' as const
+const CLIENTS = 'clients' as const
+const PROFILES = 'profiles' as const
 
 type ProjectUpdate = Database['public']['Tables']['projects']['Update']
 type ProjectStatus = Database['public']['Enums']['project_status']
@@ -330,32 +332,18 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const { pushToast } = useToast()
 
-  const supabase = useMemo(() => {
-    try {
-      return createBrowserClient()
-    } catch (clientError) {
-      console.error(clientError)
-      return null
-    }
-  }, [])
+  const supabase = useMemo(createBrowserClient, [])
 
   useEffect(() => {
     let isMounted = true
 
     const fetchProjectData = async () => {
-      if (!supabase) {
-        setError('Supabase client is not available. Please check your environment configuration.')
-        setLoadingProject(false)
-        setLoadingOptions(false)
-        return
-      }
-
       setLoadingProject(true)
       setLoadingOptions(true)
       setError(null)
 
       const projectPromise = supabase
-        .from('projects')
+        .from(PROJECTS)
         .select(
           `
             id,
@@ -382,9 +370,9 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         .eq('id', params.projectId)
         .maybeSingle()
 
-      const clientsPromise = supabase.from('clients').select('id, name').order('name', { ascending: true })
+      const clientsPromise = supabase.from(CLIENTS).select('id, name').order('name', { ascending: true })
       const assigneesPromise = supabase
-        .from('profiles')
+        .from(PROFILES)
         .select('id, full_name')
         .order('full_name', { ascending: true })
       const [projectResult, clientsResult, assigneesResult] = await Promise.all([
@@ -503,16 +491,6 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
   const handleSaveChanges = async () => {
     if (!formState) {
-      return
-    }
-
-    if (!supabase) {
-      setError('Supabase client is not available. Please check your environment configuration.')
-      pushToast({
-        title: 'Unable to save project',
-        description: 'Supabase client is not available. Please refresh and try again.',
-        variant: 'error'
-      })
       return
     }
 

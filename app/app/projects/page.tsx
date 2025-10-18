@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
 import { StatusBadge } from '../_components/status-badge'
@@ -19,7 +19,8 @@ type Project = ProjectRow & {
 }
 
 const PAGE_SIZE = 8
-const statusFilters = ['All statuses', 'Backlog', 'In Progress', 'Completed', 'Archived']
+const statusFilters = ['All statuses', 'Backlog', 'Call Arranged', 'Brief Gathered', 'Build', 'Closed']
+const PROJECTS = 'projects' as const
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
@@ -81,30 +82,17 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const supabase = useMemo(() => {
-    try {
-      return createClient()
-    } catch (clientError) {
-      console.error(clientError)
-      return null
-    }
-  }, [])
+  const supabase = useMemo(createBrowserClient, [])
 
   useEffect(() => {
     let isMounted = true
 
     const fetchProjects = async () => {
-      if (!supabase) {
-        setError('Supabase client unavailable. Please verify your configuration.')
-        setLoading(false)
-        return
-      }
-
       setLoading(true)
       setError(null)
 
       const { data, error: fetchError } = await supabase
-        .from('projects')
+        .from(PROJECTS)
         .select(
           `
             id,

@@ -5,17 +5,18 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useToast } from './toast-context'
-import { createClient } from '@/utils/supabaseBrowser'
-import type { Database } from '@/types/supabase'
+import { createBrowserClient } from '@/lib/supabase/browser'
 
 type WorkspaceAccountMenuProps = {
   className?: string
 }
 
+const PROFILES = 'profiles' as const
+
 export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
   const router = useRouter()
   const { pushToast } = useToast()
-  const supabase = useMemo(() => createClient(), [])
+  const supabase = useMemo(createBrowserClient, [])
   const [isOpen, setIsOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [profileName, setProfileName] = useState<string | null>(null)
@@ -67,10 +68,10 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
         const metadataName = resolveMetadataName(user.user_metadata)
 
         const { data: profile, error: profileError } = await supabase
-          .from('profiles')
+          .from(PROFILES)
           .select('full_name')
           .eq('id', user.id)
-          .maybeSingle<Pick<Database['public']['Tables']['profiles']['Row'], 'full_name'>>()
+          .maybeSingle()
 
         if (profileError) {
           throw profileError

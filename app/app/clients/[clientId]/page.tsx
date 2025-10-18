@@ -2,9 +2,10 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { StatusBadge } from '../../_components/status-badge'
-import { createServerClient } from '@/utils/supabaseServer'
+import { createServerSupabase } from '@/lib/supabase/server'
 
 export const revalidate = 0
+export const runtime = 'nodejs'
 
 interface ClientOverviewPageProps {
   params: {
@@ -44,6 +45,8 @@ type ClientInvite = {
   accepted_profile_id: string | null
   profile: ProfileSummary | null
 }
+
+const CLIENTS = 'clients' as const
 
 type ClientProject = {
   id: string
@@ -124,10 +127,10 @@ function normalizeWebsite(value: string | null) {
 }
 
 export default async function ClientOverviewPage({ params }: ClientOverviewPageProps) {
-  const supabase = createServerClient()
+  const supabase = createServerSupabase()
 
   const { data, error } = await supabase
-    .from('clients')
+    .from(CLIENTS)
     .select(
       `
         id,
