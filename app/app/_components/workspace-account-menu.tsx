@@ -14,7 +14,8 @@ type WorkspaceAccountMenuProps = {
 
 const PROFILES = 'profiles' as const
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
-type ProfileName = Pick<ProfileRow, 'full_name'>
+type ProfileRecord = Pick<ProfileRow, 'full_name' | 'role'>
+type ProfileRole = Database['public']['Enums']['role']
 
 export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
   const router = useRouter()
@@ -24,6 +25,31 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
   const [signingOut, setSigningOut] = useState(false)
   const [profileName, setProfileName] = useState<string | null>(null)
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+  const [profileRole, setProfileRole] = useState<ProfileRole | null>(null)
+
+  const resolveMetadataRole = useCallback((metadata: Record<string, unknown> | undefined): ProfileRole | null => {
+    if (!metadata) {
+      return null
+    }
+
+    const candidateKeys = ['role', 'title', 'position']
+
+    for (const key of candidateKeys) {
+      const value = metadata[key]
+
+      if (typeof value !== 'string') {
+        continue
+      }
+
+      const normalized = value.trim().toLowerCase()
+
+      if (normalized === 'owner' || normalized === 'client') {
+        return normalized as ProfileRole
+      }
+    }
+
+    return null
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -64,15 +90,17 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
         if (!user) {
           if (isMounted) {
             setProfileName(null)
+            setProfileRole(null)
           }
           return
         }
 
         const metadataName = resolveMetadataName(user.user_metadata)
+        const metadataRole = resolveMetadataRole(user.user_metadata)
 
         const { data: profile, error: profileError } = await supabase
           .from(PROFILES)
-          .select('full_name')
+          .select('full_name, role')
           .eq('id', user.id)
           .maybeSingle()
 
@@ -80,21 +108,24 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
           throw profileError
         }
 
-        const profileRecord = profile as ProfileName | null
+        const profileRecord = profile as ProfileRecord | null
         const profileFullName =
           typeof profileRecord?.full_name === 'string' ? profileRecord.full_name.trim() : ''
         const userEmail = typeof user.email === 'string' ? user.email.trim() : ''
 
         const resolvedName = profileFullName || metadataName || userEmail || null
+        const resolvedRole = profileRecord?.role ?? metadataRole ?? null
 
         if (isMounted) {
           setProfileName(resolvedName)
+          setProfileRole(resolvedRole)
         }
       } catch (error) {
         console.error('Failed to load active profile', error)
 
         if (isMounted) {
           setProfileName(null)
+          setProfileRole(null)
         }
       } finally {
         if (isMounted) {
@@ -115,7 +146,7 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
       isMounted = false
       subscription.unsubscribe()
     }
-  }, [supabase])
+  }, [resolveMetadataRole, supabase])
 
   const initials = useMemo(() => {
     if (!profileName) {
@@ -168,6 +199,7 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
       }
 
       setIsOpen(false)
+      setProfileRole(null)
       router.replace('/?signed_out=1')
     } catch (error) {
       console.error('Failed to sign out', error)
@@ -180,6 +212,8 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
       setSigningOut(false)
     }
   }, [signingOut, supabase, pushToast, router])
+
+  const isOwner = profileRole === 'owner'
 
   return (
     <details
@@ -200,6 +234,14 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
         >
           View profile
         </Link>
+        {isOwner ? (
+          <Link
+            href="/app/user-management"
+            className="block rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
+          >
+            User management
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={handleSignOut}
