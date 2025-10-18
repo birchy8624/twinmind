@@ -3,7 +3,7 @@
 import { z } from 'zod'
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { createServerClient } from '@/utils/supabaseServer'
+import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
 
 const BriefSchema = z.object({
@@ -57,7 +57,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
 
   const { inviteClient, client, project, brief } = parsed.data
 
-  const ownerClient = createServerClient()
+  const ownerClient = createServerSupabase()
   const {
     data: { user: ownerUser },
     error: ownerError

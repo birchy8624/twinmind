@@ -3,11 +3,11 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabase/browser'
 
 export default function SignInForm() {
   const router = useRouter()
-  const supabase = useMemo(() => createClient(), [])
+  const supabase = useMemo(createBrowserClient, [])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 

@@ -5,17 +5,21 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useToast } from './toast-context'
-import { createClient } from '@/utils/supabaseBrowser'
+import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
 type WorkspaceAccountMenuProps = {
   className?: string
 }
 
+const PROFILES = 'profiles' as const
+type ProfileRow = Database['public']['Tables']['profiles']['Row']
+type ProfileName = Pick<ProfileRow, 'full_name'>
+
 export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
   const router = useRouter()
   const { pushToast } = useToast()
-  const supabase = useMemo(() => createClient(), [])
+  const supabase = useMemo(createBrowserClient, [])
   const [isOpen, setIsOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [profileName, setProfileName] = useState<string | null>(null)
@@ -67,17 +71,18 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
         const metadataName = resolveMetadataName(user.user_metadata)
 
         const { data: profile, error: profileError } = await supabase
-          .from('profiles')
+          .from(PROFILES)
           .select('full_name')
           .eq('id', user.id)
-          .maybeSingle<Pick<Database['public']['Tables']['profiles']['Row'], 'full_name'>>()
+          .maybeSingle()
 
         if (profileError) {
           throw profileError
         }
 
+        const profileRecord = profile as ProfileName | null
         const profileFullName =
-          typeof profile?.full_name === 'string' ? profile.full_name.trim() : ''
+          typeof profileRecord?.full_name === 'string' ? profileRecord.full_name.trim() : ''
         const userEmail = typeof user.email === 'string' ? user.email.trim() : ''
 
         const resolvedName = profileFullName || metadataName || userEmail || null

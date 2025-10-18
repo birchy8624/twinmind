@@ -2,13 +2,17 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { StatusBadge } from '../../_components/status-badge'
-import { createServerClient } from '@/utils/supabaseServer'
+import { createServerSupabase } from '@/lib/supabase/server'
+import type { Database } from '@/types/supabase'
+
+type ClientRow = Database['public']['Tables']['clients']['Row']
 
 export const revalidate = 0
+export const runtime = 'nodejs'
 
 interface ClientOverviewPageProps {
   params: {
-    clientId: string
+    clientId: ClientRow['id']
   }
 }
 
@@ -21,7 +25,7 @@ type ProfileSummary = {
 type ClientMember = {
   id: string
   role: string | null
-  created_at: string
+  created_at: string | null
   profile: ProfileSummary | null
 }
 
@@ -45,13 +49,15 @@ type ClientInvite = {
   profile: ProfileSummary | null
 }
 
+const CLIENTS = 'clients' as const
+
 type ClientProject = {
   id: string
   name: string
   status: string
   due_date: string | null
   created_at: string
-  updated_at: string
+  updated_at: string | null
 }
 
 type ClientDetails = {
@@ -60,12 +66,27 @@ type ClientDetails = {
   website: string | null
   notes: string | null
   account_status: string | null
-  created_at: string
-  updated_at: string
+  created_at: string | null
+  updated_at: string | null
   client_members: ClientMember[]
   contacts: ClientContact[]
   invites: ClientInvite[]
   projects: ClientProject[]
+}
+
+type ClientDetailsQuery = ClientRow & {
+  client_members: Array<
+    ClientMember & {
+      profile: ProfileSummary | null
+    }
+  > | null
+  contacts: ClientContact[] | null
+  invites: Array<
+    ClientInvite & {
+      profile: ProfileSummary | null
+    }
+  > | null
+  projects: ClientProject[] | null
 }
 
 function formatStatus(status: string | null) {
@@ -116,18 +137,28 @@ function normalizeWebsite(value: string | null) {
   if (!value) return null
 
   try {
-    const url = new URL(value.startsWith('http') ? value : `https://${value}`)
-    return url
+    return new URL(value.startsWith('http') ? value : `https://${value}`)
   } catch (error) {
+    console.error('Failed to normalize website URL', error)
     return null
   }
 }
 
+function isClientDetailsRow(value: unknown): value is ClientDetailsQuery {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'id' in value &&
+    'name' in value
+  )
+}
+
 export default async function ClientOverviewPage({ params }: ClientOverviewPageProps) {
-  const supabase = createServerClient()
+  const clientId: ClientRow['id'] = params.clientId
+  const supabase = createServerSupabase()
 
   const { data, error } = await supabase
-    .from('clients')
+    .from(CLIENTS)
     .select(
       `
         id,
@@ -179,18 +210,73 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
         )
       `
     )
-    .eq('id', params.clientId)
+    .filter('id', 'eq', clientId)
+    .returns<ClientDetailsQuery>()
     .maybeSingle()
 
   if (error) {
     console.error(error)
   }
 
-  if (!data) {
+  if (!isClientDetailsRow(data)) {
     notFound()
   }
 
-  const client = data as ClientDetails
+  const clientRow: ClientDetailsQuery = data
+
+  const client: ClientDetails = {
+    id: clientRow.id,
+    name: clientRow.name,
+    website: clientRow.website ?? null,
+    notes: clientRow.notes ?? null,
+    account_status: clientRow.account_status ?? null,
+    created_at: clientRow.created_at ?? null,
+    updated_at: clientRow.updated_at ?? null,
+    client_members: (clientRow.client_members ?? []).map((member) => ({
+      id: member.id,
+      role: member.role ?? null,
+      created_at: member.created_at ?? null,
+      profile: member.profile
+        ? {
+            id: member.profile.id,
+            full_name: member.profile.full_name ?? null,
+            email: member.profile.email ?? null
+          }
+        : null
+    })),
+    contacts: (clientRow.contacts ?? []).map((contact) => ({
+      id: contact.id,
+      first_name: contact.first_name ?? null,
+      last_name: contact.last_name ?? null,
+      email: contact.email,
+      phone: contact.phone ?? null,
+      title: contact.title ?? null,
+      is_primary: contact.is_primary ?? null,
+      created_at: contact.created_at
+    })),
+    invites: (clientRow.invites ?? []).map((invite) => ({
+      id: invite.id,
+      email: invite.email,
+      created_at: invite.created_at,
+      expires_at: invite.expires_at,
+      accepted_profile_id: invite.accepted_profile_id ?? null,
+      profile: invite.profile
+        ? {
+            id: invite.profile.id,
+            full_name: invite.profile.full_name ?? null,
+            email: invite.profile.email ?? null
+          }
+        : null
+    })),
+    projects: (clientRow.projects ?? []).map((project) => ({
+      id: project.id,
+      name: project.name,
+      status: project.status,
+      due_date: project.due_date ?? null,
+      created_at: project.created_at,
+      updated_at: project.updated_at ?? null
+    }))
+  }
 
   const normalizedWebsite = normalizeWebsite(client.website)
   const formattedStatus = formatStatus(client.account_status)
@@ -203,9 +289,11 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
 
-  const sortedMembers = [...(client.client_members ?? [])].sort((a, b) =>
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  )
+  const sortedMembers = [...(client.client_members ?? [])].sort((a, b) => {
+    const aTime = a.created_at ? new Date(a.created_at).getTime() : -Infinity
+    const bTime = b.created_at ? new Date(b.created_at).getTime() : -Infinity
+    return bTime - aTime
+  })
 
   const sortedInvites = [...(client.invites ?? [])].sort((a, b) =>
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
