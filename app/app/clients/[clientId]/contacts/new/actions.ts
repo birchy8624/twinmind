@@ -43,7 +43,7 @@ export async function createContact(input: unknown): Promise<CreateContactResult
 
   const { data: clientRow, error: clientError } = await supabase
     .from('clients')
-    .select('id, gdpr_consent')
+    .select('id,gdpr_consent')
     .eq('id', clientId)
     .single()
 
