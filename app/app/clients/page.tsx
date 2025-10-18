@@ -74,7 +74,7 @@ export default function ClientsPage() {
 
       const { data, error: fetchError } = await supabase
         .from(CLIENTS)
-        .select('id, name, website, account_status, created_at')
+        .select('id, name, website, account_status, created_at, notes, updated_at')
         .order('created_at', { ascending: false })
 
       if (!isMounted) return
@@ -84,7 +84,16 @@ export default function ClientsPage() {
         setError('We ran into an issue loading clients. Please try again.')
         setClients([])
       } else {
-        setClients(data ?? [])
+        const rows: Client[] = (data ?? []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          website: row.website ?? null,
+          account_status: row.account_status ?? null,
+          created_at: row.created_at ?? null,
+          notes: row.notes ?? null,
+          updated_at: row.updated_at ?? null
+        }))
+        setClients(rows)
       }
 
       setLoading(false)
