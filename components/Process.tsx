@@ -72,9 +72,9 @@ export default function Process(){
           <div className="h-[24rem] w-[26rem] rounded-full bg-gradient-to-t from-limeglow-700/14 via-transparent to-transparent blur-3xl"></div>
         </div>
         <div className="flex flex-col items-center text-center md:items-start md:text-left">
-          <span className="text-sm uppercase tracking-[0.4em] text-limeglow-500/70">Playbook</span>
+          <span className="text-xs uppercase tracking-[0.28em] text-limeglow-500/70 sm:text-sm sm:tracking-[0.4em]">Playbook</span>
           <h2 className="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight">How we work</h2>
-          <p className="text-white/70 mt-3 max-w-2xl">
+          <p className="mt-3 max-w-2xl text-base text-white/75 sm:text-lg">
             A four-stage process that keeps momentum high and collaboration seamless, from the first workshop to handover.
           </p>
         </div>
@@ -95,9 +95,9 @@ export default function Process(){
                   </span>
                 </div>
                 <div className="flex flex-col items-center gap-3 md:items-start">
-                  <div className="text-2xl font-semibold tracking-[0.14em] text-limeglow-500">{s.n}</div>
-                  <h3 className="font-semibold text-white">{s.title}</h3>
-                  <p className="text-white/75 leading-relaxed">{s.desc}</p>
+                  <div className="text-xl font-semibold tracking-[0.16em] text-limeglow-500 sm:text-2xl">{s.n}</div>
+                  <h3 className="text-lg font-semibold text-white">{s.title}</h3>
+                  <p className="text-center text-base leading-relaxed text-white/80 md:text-left md:text-[1.05rem]">{s.desc}</p>
                 </div>
               </div>
             ))}

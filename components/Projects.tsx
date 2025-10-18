@@ -3,6 +3,7 @@ import { useRef } from 'react'
 import Section from './Section'
 import { projects } from '@/lib/projects'
 import { motion } from 'framer-motion'
+import Image from 'next/image'
 
 export default function Projects(){
   const railRef = useRef<HTMLDivElement>(null)
@@ -18,9 +19,9 @@ export default function Projects(){
     <Section id="portfolio">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="text-center md:text-left">
-          <span className="text-sm uppercase tracking-[0.4em] text-limeglow-500/70">Selected work</span>
+          <span className="text-xs uppercase tracking-[0.28em] text-limeglow-500/70 sm:text-sm sm:tracking-[0.4em]">Selected work</span>
           <h2 className="mt-3 text-3xl sm:text-4xl font-semibold tracking-tight">Portfolio</h2>
-          <p className="text-white/70 mt-3 max-w-2xl">A selection of our live, production-ready projects you can explore.</p>
+          <p className="mt-3 max-w-2xl text-base text-white/75 sm:text-lg">A selection of our live, production-ready projects you can explore.</p>
         </div>
         <div className="flex justify-center gap-3 md:justify-end">
           <button
@@ -64,20 +65,22 @@ export default function Projects(){
             >
               <div className="relative aspect-[1917/963] w-full overflow-hidden rounded-2xl ring-1 ring-white/10 transition-all group-hover:ring-limeglow-500/60">
                 {p.image ? (
-                  <img
+                  <Image
                     src={p.image}
                     alt={`${p.name} preview`}
-                    className="absolute inset-0 h-full w-full object-cover object-center"
-                    loading="lazy"
+                    fill
+                    sizes="(max-width: 768px) 80vw, (max-width: 1024px) 320px, 360px"
+                    className="object-cover object-center"
+                    priority={false}
                   />
                 ) : (
                   <div className="absolute inset-0 bg-base-700/60"></div>
                 )}
               </div>
               <h3 className="mt-3 font-semibold text-white">{p.name}</h3>
-              <p className="text-white/75 text-xs mt-2 leading-relaxed sm:text-sm">{p.description}</p>
-              <p className="text-white/50 text-[0.65rem] mt-3 uppercase tracking-[0.2em] sm:text-[0.7rem]">{p.tech.join(' • ')}</p>
-              <span className="mt-3 inline-flex items-center gap-1 text-limeglow-500 text-sm">
+              <p className="mt-2 text-sm leading-relaxed text-white/80 sm:text-base">{p.description}</p>
+              <p className="mt-3 text-[0.7rem] uppercase tracking-[0.18em] text-white/60 sm:text-xs">{p.tech.join(' • ')}</p>
+              <span className="mt-3 inline-flex items-center gap-1 text-sm text-limeglow-500 sm:text-base">
                 View demo
                 <svg viewBox="0 0 16 16" className="h-3.5 w-3.5">
                   <path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
