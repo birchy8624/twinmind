@@ -8,6 +8,7 @@ import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
 import { FilterDropdown } from '../_components/filter-dropdown'
+import { MultiSelectDropdown } from '../_components/multi-select-dropdown'
 import { StatusBadge } from '../_components/status-badge'
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
@@ -20,7 +21,7 @@ type Project = ProjectRow & {
 }
 
 const PAGE_SIZE = 8
-const statusFilters = ['All statuses', 'Backlog', 'Call Arranged', 'Brief Gathered', 'Build', 'Closed']
+const statusFilters = ['Backlog', 'Call Arranged', 'Brief Gathered', 'Build', 'Closed']
 const ALL_CLIENTS = 'All clients'
 const PROJECTS = 'projects' as const
 
@@ -79,7 +80,7 @@ function formatDueDate(value: string | null) {
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [query, setQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState('All statuses')
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [clientFilter, setClientFilter] = useState(ALL_CLIENTS)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -169,7 +170,7 @@ export default function ProjectsPage() {
         clientName.includes(normalizedQuery) ||
         assigneeName.includes(normalizedQuery)
       const matchesStatus =
-        statusFilter === 'All statuses' || formatStatus(project.status) === statusFilter
+        statusFilter.length === 0 || statusFilter.includes(formatStatus(project.status))
       const matchesClient =
         clientFilter === ALL_CLIENTS ||
         (project.client?.name ?? 'Unknown client') === clientFilter
@@ -217,10 +218,11 @@ export default function ProjectsPage() {
                 className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/40 focus:outline-none"
               />
             </label>
-            <FilterDropdown
+            <MultiSelectDropdown
               label="Status"
-              value={statusFilter}
+              values={statusFilter}
               options={statusFilters}
+              placeholder="All statuses"
               onChange={(nextValue) => {
                 setStatusFilter(nextValue)
                 setPage(1)
