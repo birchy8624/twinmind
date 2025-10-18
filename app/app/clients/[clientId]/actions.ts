@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { createServerSupabase } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import type { Database } from '@/types/supabase'
 
 const deleteClientSchema = z.object({
   clientId: z.string().min(1, 'Client identifier is required')
@@ -36,11 +37,13 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     return { ok: false, message: 'Not authenticated.' }
   }
 
+  type ProfileRoleRow = Pick<Database['public']['Tables']['profiles']['Row'], 'role'>
+
   const { data: profileRow, error: profileError } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', user.id)
-    .maybeSingle()
+    .maybeSingle<ProfileRoleRow>()
 
   if (profileError) {
     console.error('deleteClient profile error:', profileError)
