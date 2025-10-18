@@ -1407,129 +1407,178 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         throw new Error('PDF downloads are only available in the browser.')
       }
 
-      const formatDateForPdf = (value: string | null): string => {
-        if (!value) return 'Not recorded'
-        const parsed = new Date(value)
-        if (Number.isNaN(parsed.getTime())) {
-          return 'Not recorded'
-        }
-        return parsed.toLocaleDateString('en-US', {
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric'
-        })
-      }
-
-      const amountLabel =
-        formatBudgetFromInvoice(invoice.amount, invoice.currency) ??
-        `${invoice.amount.toFixed(2)} ${invoice.currency.toUpperCase()}`
-      const stageLabel = normalizeInvoiceStage(invoice.status)
-      const dueLabel = invoice.due_at ? formatDateForPdf(invoice.due_at) : 'No due date set'
-      const issuedLabel = formatDateForPdf(invoice.issued_at ?? invoice.created_at)
-      const paidLabel =
-        invoice.paid_at && stageLabel === 'Paid'
-          ? formatDateForPdf(invoice.paid_at)
-          : 'Not paid yet'
-      const projectName = project?.name ?? 'Untitled project'
-      const clientName = project?.client?.name ?? 'Unassigned client'
-      const generatedLabel = formatDateForPdf(new Date().toISOString())
-      const externalLink = invoice.external_url ?? 'Not provided'
-
       const toRgb = (value: number) => (value / 255).toFixed(3)
       const escapePdfText = (value: string) =>
         value.replace(/\\/g, '\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
-      const shorten = (value: string, limit = 70) =>
-        value.length > limit ? `${value.slice(0, limit - 1)}…` : value
+      const addText = (
+        value: string,
+        x: number,
+        y: number,
+        fontSize: number,
+        color: [number, number, number]
+      ) => {
+        streamCommands.push('BT')
+        streamCommands.push(`/F1 ${fontSize} Tf`)
+        streamCommands.push(`${toRgb(color[0])} ${toRgb(color[1])} ${toRgb(color[2])} rg`)
+        streamCommands.push(`${x} ${y} Td`)
+        streamCommands.push(`(${escapePdfText(value)}) Tj`)
+        streamCommands.push('ET')
+      }
+
+      const currencyCode = (invoice.currency ?? 'USD').toUpperCase()
+      const formatCurrencyValue = (value: number) => {
+        try {
+          return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currencyCode,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          }).format(value)
+        } catch (error) {
+          console.error('Failed to format currency for invoice PDF', error)
+          return `${value.toFixed(2)} ${currencyCode}`
+        }
+      }
+
+      const invoiceNumber = invoice.id.slice(0, 8).toUpperCase()
+      const todayLabel = new Intl.DateTimeFormat('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      }).format(new Date())
+
+      const billedTo = {
+        label: 'Billed to',
+        lines: ['Studio Showdwe', '123 Anywhere St., Any City', 'hello@reallygreatsite.com']
+      }
+      const billedFrom = {
+        label: 'From',
+        lines: ['Twinmind HQ', '55 Innovation Way, Metropolis', 'billing@twinmind.app']
+      }
+
+      const projectName = project?.name ?? 'Untitled project'
+      const quantity = 1
+      const amountFormatted = formatCurrencyValue(invoice.amount)
+      const totalFormatted = formatCurrencyValue(invoice.amount * quantity)
 
       const streamCommands: string[] = []
       streamCommands.push('q')
-      streamCommands.push(`${toRgb(18)} ${toRgb(24)} ${toRgb(32)} rg`)
-      streamCommands.push('0 700 612 110 re f')
+      streamCommands.push('1 1 1 rg')
+      streamCommands.push('0 0 612 792 re f')
       streamCommands.push('Q')
+
       streamCommands.push('q')
-      streamCommands.push(`${toRgb(236)} ${toRgb(72)} ${toRgb(153)} rg`)
-      streamCommands.push('72 688 120 6 re f')
+      streamCommands.push(`${toRgb(240)} ${toRgb(244)} ${toRgb(252)} rg`)
+      streamCommands.push('0 640 m')
+      streamCommands.push('160 720 360 660 612 720 c')
+      streamCommands.push('612 792 l')
+      streamCommands.push('0 792 l')
+      streamCommands.push('h f')
       streamCommands.push('Q')
-      streamCommands.push('BT')
-      streamCommands.push('/F1 28 Tf')
-      streamCommands.push(`${toRgb(255)} ${toRgb(255)} ${toRgb(255)} rg`)
-      streamCommands.push('72 760 Td')
-      streamCommands.push(`(${escapePdfText('Invoice summary')}) Tj`)
-      streamCommands.push('0 -32 Td')
-      streamCommands.push('/F1 14 Tf')
-      streamCommands.push(`${toRgb(209)} ${toRgb(213)} ${toRgb(219)} rg`)
-      streamCommands.push(`(${escapePdfText(`Project: ${projectName}`)}) Tj`)
-      streamCommands.push('0 -20 Td')
-      streamCommands.push(`(${escapePdfText(`Client: ${clientName}`)}) Tj`)
-      streamCommands.push('ET')
 
-      streamCommands.push('BT')
-      streamCommands.push('/F1 20 Tf')
-      streamCommands.push(`${toRgb(30)} ${toRgb(41)} ${toRgb(59)} rg`)
-      streamCommands.push('72 640 Td')
-      streamCommands.push(`(${escapePdfText(`Invoice #${invoice.id.slice(0, 8)}`)}) Tj`)
-      streamCommands.push('0 -28 Td')
-      streamCommands.push('/F1 12 Tf')
-      streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(242)} ${toRgb(245)} ${toRgb(248)} rg`)
+      streamCommands.push('0 0 m')
+      streamCommands.push('0 120 l')
+      streamCommands.push('220 80 360 140 612 90 c')
+      streamCommands.push('612 0 l')
+      streamCommands.push('h f')
+      streamCommands.push('Q')
 
-      const pushLabelValue = (label: string, value: string) => {
-        streamCommands.push(`(${escapePdfText(label)}) Tj`)
-        streamCommands.push('0 -16 Td')
-        streamCommands.push('/F1 16 Tf')
-        streamCommands.push(`${toRgb(15)} ${toRgb(23)} ${toRgb(42)} rg`)
-        streamCommands.push(`(${escapePdfText(value)}) Tj`)
-        streamCommands.push('/F1 12 Tf')
-        streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
-        streamCommands.push('0 -24 Td')
+      const logoLeft = 72
+      const logoBottom = 696
+      const logoSize = 48
+
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(163)} ${toRgb(255)} ${toRgb(18)} rg`)
+      streamCommands.push(`${logoLeft} ${logoBottom + logoSize - 8} ${logoSize + 72} 8 re f`)
+      streamCommands.push('Q')
+
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(9)} ${toRgb(11)} ${toRgb(13)} rg`)
+      streamCommands.push(`${logoLeft} ${logoBottom} ${logoSize} ${logoSize} re f`)
+      streamCommands.push('Q')
+
+      streamCommands.push('q')
+      streamCommands.push('2 w')
+      streamCommands.push(`${toRgb(163)} ${toRgb(255)} ${toRgb(18)} RG`)
+      streamCommands.push(`${logoLeft + 4} ${logoBottom + 4} ${logoSize - 8} ${logoSize - 8} re S`)
+      streamCommands.push('Q')
+
+      streamCommands.push('q')
+      streamCommands.push('1.5 w')
+      streamCommands.push(`${toRgb(0)} ${toRgb(255)} ${toRgb(163)} RG`)
+      streamCommands.push(`${logoLeft + 14} ${logoBottom + 30} m ${logoLeft + 18} ${logoBottom + 38} ${logoLeft + 30} ${logoBottom + 38} ${logoLeft + 34} ${logoBottom + 30} c`)
+      streamCommands.push(`${logoLeft + 38} ${logoBottom + 22} ${logoLeft + 34} ${logoBottom + 16} ${logoLeft + 28} ${logoBottom + 16} c`)
+      streamCommands.push(`${logoLeft + 24} ${logoBottom + 16} ${logoLeft + 20} ${logoBottom + 20} ${logoLeft + 20} ${logoBottom + 24} c`)
+      streamCommands.push(`${logoLeft + 20} ${logoBottom + 28} ${logoLeft + 24} ${logoBottom + 32} ${logoLeft + 28} ${logoBottom + 32} c`)
+      streamCommands.push('S')
+      streamCommands.push('Q')
+
+      addText('INVOICE', logoLeft + logoSize + 20, 702, 36, [18, 24, 32])
+      addText(`No. ${invoiceNumber}`, 420, 720, 12, [76, 87, 110])
+      addText(`Date: ${todayLabel}`, 420, 704, 12, [76, 87, 110])
+
+      addText('TWINMIND', logoLeft + logoSize + 20, 680, 12, [105, 255, 94])
+      addText('Creative Intelligence Studio', logoLeft + logoSize + 20, 666, 11, [76, 87, 110])
+
+      const renderInfoBlock = (info: { label: string; lines: string[] }, x: number, y: number) => {
+        addText(info.label, x, y, 12, [118, 127, 146])
+        info.lines.forEach((line, index) => {
+          addText(line, x, y - 18 - index * 16, 13, [18, 24, 32])
+        })
       }
 
-      pushLabelValue('Stage', stageLabel)
-      pushLabelValue('Amount', amountLabel)
-      pushLabelValue('Issued on', issuedLabel)
-      pushLabelValue('Due date', dueLabel)
-      pushLabelValue('Paid', paidLabel)
-      streamCommands.push('ET')
+      renderInfoBlock(billedTo, 72, 636)
+      renderInfoBlock(billedFrom, 312, 636)
 
-      streamCommands.push('BT')
-      streamCommands.push('/F1 12 Tf')
-      streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
-      streamCommands.push('350 640 Td')
-      streamCommands.push(`(${escapePdfText('External link')}) Tj`)
-      streamCommands.push('0 -16 Td')
-      streamCommands.push('/F1 14 Tf')
-      streamCommands.push(`${toRgb(15)} ${toRgb(23)} ${toRgb(42)} rg`)
-      streamCommands.push(`(${escapePdfText(shorten(externalLink))}) Tj`)
-      streamCommands.push('0 -24 Td')
-      streamCommands.push('/F1 12 Tf')
-      streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
-      streamCommands.push(`(${escapePdfText('Generated on')}) Tj`)
-      streamCommands.push('0 -16 Td')
-      streamCommands.push('/F1 14 Tf')
-      streamCommands.push(`${toRgb(15)} ${toRgb(23)} ${toRgb(42)} rg`)
-      streamCommands.push(`(${escapePdfText(generatedLabel)}) Tj`)
-      streamCommands.push('ET')
+      const tableLeft = 72
+      const tableWidth = 468
+      const tableHeaderY = 520
+      const headerHeight = 28
+      const rowHeight = 36
 
       streamCommands.push('q')
-      streamCommands.push(`${toRgb(241)} ${toRgb(245)} ${toRgb(249)} rg`)
-      streamCommands.push('72 360 468 104 re f')
+      streamCommands.push(`${toRgb(229)} ${toRgb(231)} ${toRgb(235)} rg`)
+      streamCommands.push(`${tableLeft} ${tableHeaderY} ${tableWidth} ${headerHeight} re f`)
       streamCommands.push('Q')
 
-      streamCommands.push('BT')
-      streamCommands.push('/F1 12 Tf')
-      streamCommands.push(`${toRgb(100)} ${toRgb(116)} ${toRgb(139)} rg`)
-      streamCommands.push('88 430 Td')
-      streamCommands.push(`(${escapePdfText('Notes')}) Tj`)
-      streamCommands.push('0 -18 Td')
-      streamCommands.push('/F1 13 Tf')
-      streamCommands.push(`${toRgb(51)} ${toRgb(65)} ${toRgb(85)} rg`)
-      const noteLines = [
-        'Share this summary with your client to confirm invoice details.',
-        'Add next steps or payment reminders before sending.'
-      ]
-      streamCommands.push(`(${escapePdfText(noteLines[0])}) Tj`)
-      streamCommands.push('0 -18 Td')
-      streamCommands.push(`(${escapePdfText(noteLines[1])}) Tj`)
-      streamCommands.push('ET')
+      const tableBottomY = tableHeaderY - rowHeight
+      streamCommands.push('q')
+      streamCommands.push('1 w')
+      streamCommands.push(`${toRgb(208)} ${toRgb(213)} ${toRgb(221)} RG`)
+      streamCommands.push(`${tableLeft} ${tableBottomY} ${tableWidth} ${rowHeight + headerHeight} re S`)
+      streamCommands.push(`${tableLeft} ${tableHeaderY} m ${tableLeft + tableWidth} ${tableHeaderY} l S`)
+      streamCommands.push(`${tableLeft + 260} ${tableBottomY} m ${tableLeft + 260} ${tableHeaderY + headerHeight} l S`)
+      streamCommands.push(`${tableLeft + 340} ${tableBottomY} m ${tableLeft + 340} ${tableHeaderY + headerHeight} l S`)
+      streamCommands.push(`${tableLeft + 408} ${tableBottomY} m ${tableLeft + 408} ${tableHeaderY + headerHeight} l S`)
+      streamCommands.push('Q')
+
+      addText('Item', tableLeft + 16, tableHeaderY + 16, 12, [76, 87, 110])
+      addText('Quantity', tableLeft + 272, tableHeaderY + 16, 12, [76, 87, 110])
+      addText('Price', tableLeft + 352, tableHeaderY + 16, 12, [76, 87, 110])
+      addText('Amount', tableLeft + 420, tableHeaderY + 16, 12, [76, 87, 110])
+
+      const rowTextY = tableHeaderY - 12
+      addText(projectName, tableLeft + 16, rowTextY, 13, [18, 24, 32])
+      addText(String(quantity), tableLeft + 272, rowTextY, 13, [18, 24, 32])
+      addText(amountFormatted, tableLeft + 352, rowTextY, 13, [18, 24, 32])
+      addText(totalFormatted, tableLeft + 420, rowTextY, 13, [18, 24, 32])
+
+      const summaryBoxHeight = 54
+      const summaryBoxY = tableHeaderY - rowHeight - summaryBoxHeight - 12
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(245)} ${toRgb(247)} ${toRgb(252)} rg`)
+      streamCommands.push(`${tableLeft} ${summaryBoxY} ${tableWidth} ${summaryBoxHeight} re f`)
+      streamCommands.push('Q')
+
+      addText('Total', tableLeft + 16, summaryBoxY + summaryBoxHeight - 18, 14, [18, 24, 32])
+      addText(totalFormatted, tableLeft + 360, summaryBoxY + summaryBoxHeight - 20, 18, [163, 255, 18])
+
+      const paymentInfoY = summaryBoxY - 36
+      addText('Payment method: Bank transfer', tableLeft, paymentInfoY, 12, [18, 24, 32])
+      addText('Pay to: IBAN GB82 WEST 1234 5698 7654 32', tableLeft, paymentInfoY - 18, 12, [18, 24, 32])
+      addText('Note: Thank you for collaborating with Twinmind!', tableLeft, paymentInfoY - 36, 11, [109, 114, 128])
 
       const streamContent = `${streamCommands.join('\n')}\n`
       const encoder = new TextEncoder()
