@@ -187,7 +187,7 @@ export function WorkspaceAccountMenu({ className }: WorkspaceAccountMenuProps) {
     setSigningOut(true)
 
     try {
-      const { error } = await supabase.auth.signOut()
+      const { error } = await supabase.auth.signOut({ scope: 'global' })
 
       if (error) {
         pushToast({
