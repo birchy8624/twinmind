@@ -41,19 +41,22 @@ const urlValidator = z
 
 const onboardingSchema = z.object({
   clientName: z.string().trim().min(2, 'Company name is required'),
-  clientEmail: z.string().trim().email('Enter a valid email address'),
   website: urlValidator,
-  phone: z
-    .string()
-    .trim()
-    .refine((value) => value.length === 0 || value.length >= 7, {
-      message: 'Enter a phone number or leave blank'
-    }),
   timezone: z.string().trim().min(1, 'Select a timezone'),
   budget: z.string().trim().optional().or(z.literal('')),
   gdprConsent: z.boolean().refine((value) => value, {
     message: 'GDPR consent must be recorded'
   }),
+  contactTitle: z.string().trim().optional().or(z.literal('')),
+  contactFirstName: z.string().trim().min(2, 'First name is required'),
+  contactLastName: z.string().trim().min(2, 'Last name is required'),
+  contactEmail: z.string().trim().email('Enter a valid email address'),
+  contactPhone: z
+    .string()
+    .trim()
+    .refine((value) => value.length === 0 || value.length >= 7, {
+      message: 'Enter a phone number or leave blank'
+    }),
   projectName: z.string().trim().min(2, 'Project name is required'),
   projectDescription: z
     .string()
@@ -116,15 +119,18 @@ const steps: StepConfig[] = [
   {
     id: 'client',
     title: 'Client basics',
-    description: 'Capture contact details, budget, and GDPR consent.',
+    description: 'Capture company info, primary contact details, budget, and GDPR consent.',
     fields: [
       'clientName',
-      'clientEmail',
       'website',
-      'phone',
       'timezone',
       'budget',
-      'gdprConsent'
+      'gdprConsent',
+      'contactTitle',
+      'contactFirstName',
+      'contactLastName',
+      'contactEmail',
+      'contactPhone'
     ]
   },
   {
@@ -157,12 +163,15 @@ const steps: StepConfig[] = [
 
 const defaultValues: OnboardingForm = {
   clientName: '',
-  clientEmail: '',
   website: '',
-  phone: '',
   timezone: '',
   budget: '',
   gdprConsent: false,
+  contactTitle: '',
+  contactFirstName: '',
+  contactLastName: '',
+  contactEmail: '',
+  contactPhone: '',
   projectName: '',
   projectDescription: '',
   projectDueDate: '',
@@ -189,12 +198,17 @@ function formValuesToPayload(values: OnboardingForm): WizardPayload {
     inviteClient: values.inviteClient,
     client: {
       name: values.clientName,
-      email: values.clientEmail,
       website: website,
-      phone: values.phone || undefined,
       timezone: values.timezone || undefined,
       budget: values.budget || undefined,
       gdpr_consent: values.gdprConsent
+    },
+    contact: {
+      title: values.contactTitle?.trim() || undefined,
+      first_name: values.contactFirstName.trim(),
+      last_name: values.contactLastName.trim(),
+      email: values.contactEmail,
+      phone: values.contactPhone || undefined
     },
     project: {
       name: values.projectName,
@@ -458,25 +472,46 @@ export default function NewClientPage() {
 
 function ClientBasics() {
   return (
-    <section className="space-y-6">
+    <section className="space-y-8">
       <div>
         <h3 className="text-base font-semibold text-white">Client basics</h3>
         <p className="text-sm text-white/60">
-          Contact details, timezone, and consent to create the account and quote.
+          Company information, primary contact details, timezone, and consent to create the account and quote.
         </p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <InputField id="clientName" label="Company name" placeholder="e.g. Amazon" />
-        <InputField id="clientEmail" label="Email" placeholder="sarah@skynet.io" type="email" />
-        <InputField id="website" label="Website" placeholder="https://skynet.io" />
-        <InputField id="phone" label="Phone" placeholder="+1 415 555 0100" />
-        <SelectField id="timezone" label="Timezone" options={timezones} />
-        <InputField id="budget" label="Budget estimate" placeholder="$25,000" />
-        <div className="md:col-span-2">
-          <CheckboxField
-            id="gdprConsent"
-            label="I have captured GDPR consent to store this client's information."
-          />
+
+      <div className="space-y-8">
+        <div className="space-y-4">
+          <div>
+            <h4 className="text-sm font-semibold text-white">Company</h4>
+            <p className="text-xs text-white/60">Create the client record with the organisation’s details.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <InputField id="clientName" label="Company name" placeholder="e.g. Amazon" />
+            <InputField id="website" label="Website" placeholder="https://skynet.io" />
+            <SelectField id="timezone" label="Timezone" options={timezones} />
+            <InputField id="budget" label="Budget estimate" placeholder="$25,000" />
+            <div className="md:col-span-2">
+              <CheckboxField
+                id="gdprConsent"
+                label="I have captured GDPR consent to store this client’s information."
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <h4 className="text-sm font-semibold text-white">Contacts</h4>
+            <p className="text-xs text-white/60">Store the primary point of contact for this client.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <InputField id="contactTitle" label="Title" placeholder="e.g. Head of Product" />
+            <InputField id="contactFirstName" label="First name" placeholder="Sarah" />
+            <InputField id="contactLastName" label="Last name" placeholder="Connor" />
+            <InputField id="contactEmail" label="Email" placeholder="sarah@skynet.io" type="email" />
+            <InputField id="contactPhone" label="Phone" placeholder="+1 415 555 0100" />
+          </div>
         </div>
       </div>
     </section>
@@ -584,11 +619,19 @@ function ReviewStep() {
           title="Client"
           items={[
             ['Company name', values.clientName || '—'],
-            ['Email', values.clientEmail || '—'],
             ['Website', values.website || '—'],
-            ['Phone', values.phone || '—'],
             ['Timezone', values.timezone || '—'],
             ['Budget', values.budget ? values.budget : '—']
+          ]}
+        />
+        <SummaryCard
+          title="Primary contact"
+          items={[
+            ['Title', values.contactTitle || '—'],
+            ['First name', values.contactFirstName || '—'],
+            ['Last name', values.contactLastName || '—'],
+            ['Email', values.contactEmail || '—'],
+            ['Phone', values.contactPhone || '—']
           ]}
         />
         <SummaryCard

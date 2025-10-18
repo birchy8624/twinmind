@@ -21,17 +21,21 @@ const WizardSchema = z.object({
   inviteClient: z.boolean().default(false),
   client: z.object({
     name: z.string().min(1),
-    email: z.string().email(),
-    company: z.string().optional(),
     website: z
       .string()
       .trim()
       .min(1)
       .optional(),
-    phone: z.string().optional(),
     timezone: z.string().optional(),
     budget: z.string().optional(),
     gdpr_consent: z.boolean().default(false)
+  }),
+  contact: z.object({
+    title: z.string().optional(),
+    first_name: z.string().min(1),
+    last_name: z.string().min(1),
+    email: z.string().email(),
+    phone: z.string().optional()
   }),
   project: z.object({
     name: z.string().min(1),
@@ -49,32 +53,13 @@ type ActionResult =
   | { ok: true; projectId: string }
   | { ok: false; message: string }
 
-function splitContactName(fullName: string): {
-  firstName: string | null
-  lastName: string | null
-} {
-  const trimmed = fullName.trim()
-
-  if (!trimmed) {
-    return { firstName: null, lastName: null }
-  }
-
-  const [first, ...rest] = trimmed.split(/\s+/)
-  const last = rest.join(' ').trim()
-
-  return {
-    firstName: first || null,
-    lastName: last.length > 0 ? last : null
-  }
-}
-
 export async function createClientProject(input: unknown): Promise<ActionResult> {
   const parsed = WizardSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, message: 'Invalid input.' }
   }
 
-  const { inviteClient, client, project, brief } = parsed.data
+  const { inviteClient, client, contact, project, brief } = parsed.data
 
   const ownerClient = createServerSupabase()
   const {
@@ -87,6 +72,12 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
   }
 
   const admin = supabaseAdmin()
+
+  const contactFirstName = contact.first_name.trim()
+  const contactLastName = contact.last_name.trim()
+  const contactFullName = [contactFirstName, contactLastName].filter(Boolean).join(' ')
+  const contactTitle = contact.title?.trim() || null
+  const contactPhone = contact.phone?.trim() || null
 
   let clientId: string | null = null
   let projectId: string | null = null
@@ -156,11 +147,11 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
 
   if (inviteClient) {
     const { data: authResponse, error: authError } = await admin.auth.admin.createUser({
-      email: client.email,
+      email: contact.email,
       email_confirm: true,
       user_metadata: {
-        full_name: client.name,
-        company: client.company ?? null
+        full_name: contactFullName || undefined,
+        company: client.name
       }
     })
 
@@ -177,13 +168,13 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     const profileUpsert: Database['public']['Tables']['profiles']['Insert'] = {
       id: invitedProfileId,
       role: 'client',
-      full_name: client.name,
-      company: client.company ?? null,
-      email: client.email,
-      phone: client.phone ?? null,
+      full_name: contactFullName || null,
+      company: client.name,
+      email: contact.email,
+      phone: contactPhone,
       timezone: client.timezone ?? null,
       gdpr_consent: client.gdpr_consent,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }
 
     const { error: profileError } = await admin
@@ -214,15 +205,13 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     return fail('Create primary contact', { message: 'Missing client id.' })
   }
 
-  const { firstName, lastName } = splitContactName(client.name)
-
   const contactInsert: Database['public']['Tables']['contacts']['Insert'] = {
     client_id: clientId,
-    first_name: firstName,
-    last_name: lastName,
-    email: client.email,
-    phone: client.phone ?? null,
-    title: client.company ?? null,
+    first_name: contactFirstName,
+    last_name: contactLastName,
+    email: contact.email,
+    phone: contactPhone,
+    title: contactTitle,
     is_primary: true,
     gdpr_consent: client.gdpr_consent,
     profile_id: invitedProfileId
