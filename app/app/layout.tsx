@@ -97,20 +97,7 @@ export default function AppShellLayout({ children }: AppShellLayoutProps) {
               </svg>
             </div>
             {NavLinks}
-            <div className="mt-auto pt-8">
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 to-white/5 p-4 text-xs text-white/70">
-                <p className="font-semibold text-white">Need a hand?</p>
-                <p className="mt-2 leading-relaxed">
-                  Explore the playbooks, service templates, and latest project retros in the knowledge base.
-                </p>
-                <Link
-                  href="/portal"
-                  className="mt-3 inline-flex text-[11px] font-semibold uppercase tracking-wide text-limeglow-300 underline-offset-4 hover:text-limeglow-100 hover:underline"
-                >
-                  Open knowledge base →
-                </Link>
-              </div>
-            </div>
+            <div className="mt-auto pt-8" />
           </aside>
 
           <div className="flex min-h-screen flex-col lg:ml-72">
