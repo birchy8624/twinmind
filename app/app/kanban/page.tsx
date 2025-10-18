@@ -616,7 +616,7 @@ export default function KanbanPage() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="rounded-3xl border border-white/10 bg-base-900/40 p-5 shadow-lg shadow-base-900/30 backdrop-blur"
+        className="relative z-10 rounded-3xl border border-white/10 bg-base-900/40 p-5 shadow-lg shadow-base-900/30 backdrop-blur"
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-white/50">
