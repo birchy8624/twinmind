@@ -69,6 +69,12 @@ type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
 const INVOICE_STAGE_OPTIONS = ['Quote', 'Sent', 'Paid'] as const
 type InvoiceStage = (typeof INVOICE_STAGE_OPTIONS)[number]
 
+const INVOICE_STAGE_BADGE_VARIANTS: Record<InvoiceStage, string> = {
+  Quote: 'border border-white/15 bg-white/5 text-white/70',
+  Sent: 'border border-amber-400/40 bg-amber-500/10 text-amber-200',
+  Paid: 'border border-limeglow-500/40 bg-limeglow-500/10 text-limeglow-100'
+}
+
 const normalizeInvoiceStage = (
   status: Database['public']['Enums']['invoice_status'] | null | undefined
 ): InvoiceStage => {
@@ -1353,13 +1359,6 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setInvoiceDetails((previous) =>
         previous?.id === activeInvoice.id ? updatedInvoice : previous
       )
-      setActiveInvoice(updatedInvoice)
-      setInvoiceEditor({
-        stage: normalizeInvoiceStage(updatedInvoice.status),
-        amount: String(updatedInvoice.amount),
-        currency: updatedInvoice.currency ? updatedInvoice.currency.toUpperCase() : '',
-        dueDate: formatDateInput(updatedInvoice.due_at)
-      })
 
       setProject((previous) => {
         if (!previous) return previous
@@ -1376,6 +1375,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           budget: formattedBudget ?? ''
         }
       })
+
+      closeInvoiceModal()
 
       pushToast({
         title: 'Invoice updated',
@@ -2845,12 +2846,16 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                             formatBudgetFromInvoice(invoice.amount, invoice.currency) ??
                             formatNumericValue(invoice.amount)
                           const isDownloading = downloadingInvoiceId === invoice.id
+                          const stageLabel = normalizeInvoiceStage(invoice.status)
+                          const stageClasses = INVOICE_STAGE_BADGE_VARIANTS[stageLabel]
                           return (
                             <tr key={invoice.id}>
                               <td className="px-4 py-3 font-mono text-xs text-white/60">#{invoice.id.slice(0, 8)}</td>
                               <td className="px-4 py-3">
-                                <span className="inline-flex items-center rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70">
-                                  {invoice.status}
+                                <span
+                                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${stageClasses}`}
+                                >
+                                  {stageLabel}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-white/80">{formattedAmount}</td>
