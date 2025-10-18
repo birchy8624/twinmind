@@ -86,15 +86,22 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
       throw new Error('Missing created user identifier.')
     }
 
-    const profile: ProfilesTable['Insert'] = {
-      id: createdUserId,
-      role,
-      full_name: fullName ?? null,
-      email,
-      updated_at: new Date().toISOString()
+    if (typeof createdUserId !== 'string' || createdUserId.length === 0) {
+      throw new Error('Missing created user identifier.')
     }
 
-    const { error: profileError } = await admin.from('profiles').upsert(profile, { onConflict: 'id' })
+    const profileId = createdUserId!
+
+    const { error: profileError } = await admin.from('profiles').upsert<ProfilesTable['Insert']>(
+      {
+        id: profileId,
+        role,
+        full_name: fullName ?? null,
+        email,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: 'id' }
+    )
 
     if (profileError) {
       throw profileError
@@ -148,13 +155,13 @@ export async function updateWorkspaceUserRole(input: unknown): Promise<ActionRes
       }
     }
 
-    const profile: ProfilesTable['Update'] = {
-      id: profileId,
-      role,
-      updated_at: new Date().toISOString()
-    }
-
-    const { error } = await admin.from('profiles').upsert(profile, { onConflict: 'id' })
+    const { error } = await admin
+      .from('profiles')
+      .update<ProfilesTable['Update']>({
+        role,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', profileId)
 
     if (error) {
       throw error

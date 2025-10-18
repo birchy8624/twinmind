@@ -89,7 +89,7 @@ const toWorkspaceRecord = (user: User, profile: ProfilePreview | undefined): Wor
     company: profile?.company ?? null,
     role,
     createdAt: user.created_at,
-    lastSignInAt: user.last_sign_in_at,
+    lastSignInAt: user.last_sign_in_at ?? null,
     status: toWorkspaceStatus(user)
   }
 }
