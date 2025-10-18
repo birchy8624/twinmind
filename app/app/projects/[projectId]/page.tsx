@@ -1446,6 +1446,21 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         day: 'numeric',
         year: 'numeric'
       }).format(new Date())
+      const dueDateLabel = invoice.due_at
+        ? new Intl.DateTimeFormat('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          }).format(new Date(invoice.due_at))
+        : 'Upon receipt'
+      const issuedDateLabel = invoice.issued_at
+        ? new Intl.DateTimeFormat('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          }).format(new Date(invoice.issued_at))
+        : todayLabel
+      const invoiceStageLabel = normalizeInvoiceStage(invoice.status)
 
       const billedTo = {
         label: 'Billed to',
@@ -1462,91 +1477,169 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       const totalFormatted = formatCurrencyValue(invoice.amount * quantity)
 
       const streamCommands: string[] = []
+      const brandGreen: [number, number, number] = [143, 198, 63]
+      const brandDark: [number, number, number] = [15, 23, 42]
+      const brandMid: [number, number, number] = [30, 41, 59]
+      const brandSlate: [number, number, number] = [71, 85, 105]
+      const brandSilver: [number, number, number] = [156, 163, 175]
+      const accentMint: [number, number, number] = [94, 234, 212]
+      const softSky: [number, number, number] = [244, 247, 252]
+
+      const addRightAlignedText = (
+        value: string,
+        rightX: number,
+        y: number,
+        fontSize: number,
+        color: [number, number, number]
+      ) => {
+        const approximateWidth = value.length * (fontSize * 0.52)
+        const originX = rightX - approximateWidth
+        addText(value, originX, y, fontSize, color)
+      }
+
+      const addMultilineBlock = (
+        heading: string,
+        lines: string[],
+        x: number,
+        y: number,
+        lineHeight: number,
+        headingColor: [number, number, number],
+        bodyColor: [number, number, number]
+      ) => {
+        addText(heading, x, y, 12, headingColor)
+        for (let index = 0; index < lines.length; index += 1) {
+          addText(lines[index], x, y - lineHeight * (index + 1), 12, bodyColor)
+        }
+      }
+
       streamCommands.push('q')
       streamCommands.push('1 1 1 rg')
       streamCommands.push('0 0 612 792 re f')
       streamCommands.push('Q')
 
       streamCommands.push('q')
-      streamCommands.push(`${toRgb(240)} ${toRgb(244)} ${toRgb(252)} rg`)
-      streamCommands.push('0 640 m')
-      streamCommands.push('160 720 360 660 612 720 c')
-      streamCommands.push('612 792 l')
+      streamCommands.push(`${toRgb(brandDark[0])} ${toRgb(brandDark[1])} ${toRgb(brandDark[2])} rg`)
+      streamCommands.push('0 660 612 132 re f')
+      streamCommands.push('Q')
+
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(brandGreen[0])} ${toRgb(brandGreen[1])} ${toRgb(brandGreen[2])} rg`)
+      streamCommands.push('0 660 m')
+      streamCommands.push('260 660 l')
+      streamCommands.push('360 792 l')
       streamCommands.push('0 792 l')
       streamCommands.push('h f')
       streamCommands.push('Q')
 
       streamCommands.push('q')
-      streamCommands.push(`${toRgb(242)} ${toRgb(245)} ${toRgb(248)} rg`)
-      streamCommands.push('0 0 m')
-      streamCommands.push('0 120 l')
-      streamCommands.push('220 80 360 140 612 90 c')
-      streamCommands.push('612 0 l')
+      streamCommands.push(`${toRgb(accentMint[0])} ${toRgb(accentMint[1])} ${toRgb(accentMint[2])} rg`)
+      streamCommands.push('340 660 m')
+      streamCommands.push('612 660 l')
+      streamCommands.push('612 792 l')
+      streamCommands.push('420 792 l')
       streamCommands.push('h f')
       streamCommands.push('Q')
 
-      const logoLeft = 72
-      const logoBottom = 696
-      const logoSize = 48
+      const logoCardLeft = 72
+      const logoCardBottom = 716
+      const logoCardWidth = 250
+      const logoCardHeight = 52
 
       streamCommands.push('q')
-      streamCommands.push(`${toRgb(163)} ${toRgb(255)} ${toRgb(18)} rg`)
-      streamCommands.push(`${logoLeft} ${logoBottom + logoSize - 8} ${logoSize + 72} 8 re f`)
-      streamCommands.push('Q')
-
-      streamCommands.push('q')
-      streamCommands.push(`${toRgb(9)} ${toRgb(11)} ${toRgb(13)} rg`)
-      streamCommands.push(`${logoLeft} ${logoBottom} ${logoSize} ${logoSize} re f`)
-      streamCommands.push('Q')
-
-      streamCommands.push('q')
-      streamCommands.push('2 w')
-      streamCommands.push(`${toRgb(163)} ${toRgb(255)} ${toRgb(18)} RG`)
-      streamCommands.push(`${logoLeft + 4} ${logoBottom + 4} ${logoSize - 8} ${logoSize - 8} re S`)
+      streamCommands.push(`${toRgb(255)} ${toRgb(255)} ${toRgb(255)} rg`)
+      streamCommands.push(`${logoCardLeft} ${logoCardBottom} ${logoCardWidth} ${logoCardHeight} re f`)
       streamCommands.push('Q')
 
       streamCommands.push('q')
       streamCommands.push('1.5 w')
-      streamCommands.push(`${toRgb(0)} ${toRgb(255)} ${toRgb(163)} RG`)
-      streamCommands.push(`${logoLeft + 14} ${logoBottom + 30} m ${logoLeft + 18} ${logoBottom + 38} ${logoLeft + 30} ${logoBottom + 38} ${logoLeft + 34} ${logoBottom + 30} c`)
-      streamCommands.push(`${logoLeft + 38} ${logoBottom + 22} ${logoLeft + 34} ${logoBottom + 16} ${logoLeft + 28} ${logoBottom + 16} c`)
-      streamCommands.push(`${logoLeft + 24} ${logoBottom + 16} ${logoLeft + 20} ${logoBottom + 20} ${logoLeft + 20} ${logoBottom + 24} c`)
-      streamCommands.push(`${logoLeft + 20} ${logoBottom + 28} ${logoLeft + 24} ${logoBottom + 32} ${logoLeft + 28} ${logoBottom + 32} c`)
-      streamCommands.push('S')
+      streamCommands.push(`${toRgb(brandGreen[0])} ${toRgb(brandGreen[1])} ${toRgb(brandGreen[2])} RG`)
+      streamCommands.push(`${logoCardLeft} ${logoCardBottom} ${logoCardWidth} ${logoCardHeight} re S`)
       streamCommands.push('Q')
 
-      addText('INVOICE', logoLeft + logoSize + 20, 702, 36, [18, 24, 32])
-      addText(`No. ${invoiceNumber}`, 420, 720, 12, [76, 87, 110])
-      addText(`Date: ${todayLabel}`, 420, 704, 12, [76, 87, 110])
+      addText('Twin', logoCardLeft + 14, logoCardBottom + 20, 22, brandGreen)
+      addText('Minds', logoCardLeft + 88, logoCardBottom + 20, 22, [18, 24, 32])
+      addText('Studio', logoCardLeft + 172, logoCardBottom + 20, 22, [107, 114, 128])
 
-      addText('TWINMIND', logoLeft + logoSize + 20, 680, 12, [105, 255, 94])
-      addText('Creative Intelligence Studio', logoLeft + logoSize + 20, 666, 11, [76, 87, 110])
+      addText('INVOICE', 420, 732, 30, [18, 24, 32])
 
-      const renderInfoBlock = (info: { label: string; lines: string[] }, x: number, y: number) => {
-        addText(info.label, x, y, 12, [118, 127, 146])
-        info.lines.forEach((line, index) => {
-          addText(line, x, y - 18 - index * 16, 13, [18, 24, 32])
-        })
-      }
+      streamCommands.push('q')
+      streamCommands.push('2 w')
+      streamCommands.push(`${toRgb(brandGreen[0])} ${toRgb(brandGreen[1])} ${toRgb(brandGreen[2])} RG`)
+      streamCommands.push('420 720 m 540 720 l S')
+      streamCommands.push('Q')
 
-      renderInfoBlock(billedTo, 72, 636)
-      renderInfoBlock(billedFrom, 312, 636)
+      addText(`No. ${invoiceNumber}`, 420, 702, 12, [36, 42, 55])
+      addText(`Issued ${issuedDateLabel}`, 420, 684, 12, [36, 42, 55])
+      addText(`Due ${dueDateLabel}`, 420, 666, 12, [36, 42, 55])
+      addText(`Status ${invoiceStageLabel}`, 420, 648, 12, [36, 42, 55])
+
+      const headingY = 640
+      addText('Project summary', logoCardLeft, headingY, 14, [76, 87, 110])
+      addText(`Prepared ${todayLabel}`, logoCardLeft, headingY - 18, 11, [107, 114, 128])
+
+      const billingTop = headingY - 32
+      const billingCardHeight = 110
+      const billingCardWidth = 228
+
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(softSky[0])} ${toRgb(softSky[1])} ${toRgb(softSky[2])} rg`)
+      streamCommands.push(`${logoCardLeft} ${billingTop - billingCardHeight + 18} ${billingCardWidth} ${billingCardHeight} re f`)
+      streamCommands.push('Q')
+
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(228)} ${toRgb(235)} ${toRgb(218)} rg`)
+      streamCommands.push(`${logoCardLeft + billingCardWidth + 18} ${billingTop - billingCardHeight + 18} ${billingCardWidth} ${billingCardHeight} re f`)
+      streamCommands.push('Q')
+
+      addMultilineBlock(
+        billedTo.label,
+        billedTo.lines,
+        logoCardLeft + 14,
+        billingTop,
+        18,
+        [109, 114, 128],
+        [18, 24, 32]
+      )
+
+      addMultilineBlock(
+        billedFrom.label,
+        billedFrom.lines,
+        logoCardLeft + billingCardWidth + 32,
+        billingTop,
+        18,
+        [109, 114, 128],
+        [18, 24, 32]
+      )
+
+      const invoiceInfoLeft = logoCardLeft + billingCardWidth * 2 + 50
+      const invoiceInfoTop = billingTop
+
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(236)} ${toRgb(245)} ${toRgb(255)} rg`)
+      streamCommands.push(`${invoiceInfoLeft - 12} ${billingTop - billingCardHeight + 18} 168 ${billingCardHeight} re f`)
+      streamCommands.push('Q')
+
+      addText('Invoice details', invoiceInfoLeft, invoiceInfoTop, 12, [109, 114, 128])
+      addText(`Project ${projectName}`, invoiceInfoLeft, invoiceInfoTop - 18, 12, [18, 24, 32])
+      addText(`Value ${amountFormatted}`, invoiceInfoLeft, invoiceInfoTop - 36, 12, [18, 24, 32])
+      addText(`Quantity ${quantity}`, invoiceInfoLeft, invoiceInfoTop - 54, 12, [18, 24, 32])
+      addText('Payment method Bank transfer', invoiceInfoLeft, invoiceInfoTop - 72, 12, [18, 24, 32])
 
       const tableLeft = 72
       const tableWidth = 468
-      const tableHeaderY = 520
+      const tableHeaderY = 500
       const headerHeight = 28
       const rowHeight = 36
 
       streamCommands.push('q')
-      streamCommands.push(`${toRgb(229)} ${toRgb(231)} ${toRgb(235)} rg`)
+      streamCommands.push(`${toRgb(brandMid[0])} ${toRgb(brandMid[1])} ${toRgb(brandMid[2])} rg`)
       streamCommands.push(`${tableLeft} ${tableHeaderY} ${tableWidth} ${headerHeight} re f`)
       streamCommands.push('Q')
 
       const tableBottomY = tableHeaderY - rowHeight
       streamCommands.push('q')
       streamCommands.push('1 w')
-      streamCommands.push(`${toRgb(208)} ${toRgb(213)} ${toRgb(221)} RG`)
+      streamCommands.push(`${toRgb(brandSlate[0])} ${toRgb(brandSlate[1])} ${toRgb(brandSlate[2])} RG`)
       streamCommands.push(`${tableLeft} ${tableBottomY} ${tableWidth} ${rowHeight + headerHeight} re S`)
       streamCommands.push(`${tableLeft} ${tableHeaderY} m ${tableLeft + tableWidth} ${tableHeaderY} l S`)
       streamCommands.push(`${tableLeft + 260} ${tableBottomY} m ${tableLeft + 260} ${tableHeaderY + headerHeight} l S`)
@@ -1554,10 +1647,15 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       streamCommands.push(`${tableLeft + 408} ${tableBottomY} m ${tableLeft + 408} ${tableHeaderY + headerHeight} l S`)
       streamCommands.push('Q')
 
-      addText('Item', tableLeft + 16, tableHeaderY + 16, 12, [76, 87, 110])
-      addText('Quantity', tableLeft + 272, tableHeaderY + 16, 12, [76, 87, 110])
-      addText('Price', tableLeft + 352, tableHeaderY + 16, 12, [76, 87, 110])
-      addText('Amount', tableLeft + 420, tableHeaderY + 16, 12, [76, 87, 110])
+      addText('Item', tableLeft + 16, tableHeaderY + 16, 12, [248, 250, 252])
+      addText('Quantity', tableLeft + 272, tableHeaderY + 16, 12, [248, 250, 252])
+      addText('Price', tableLeft + 352, tableHeaderY + 16, 12, [248, 250, 252])
+      addText('Amount', tableLeft + 420, tableHeaderY + 16, 12, [248, 250, 252])
+
+      streamCommands.push('q')
+      streamCommands.push(`${toRgb(247)} ${toRgb(249)} ${toRgb(252)} rg`)
+      streamCommands.push(`${tableLeft} ${tableBottomY} ${tableWidth} ${rowHeight} re f`)
+      streamCommands.push('Q')
 
       const rowTextY = tableHeaderY - 12
       addText(projectName, tableLeft + 16, rowTextY, 13, [18, 24, 32])
@@ -1565,20 +1663,33 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       addText(amountFormatted, tableLeft + 352, rowTextY, 13, [18, 24, 32])
       addText(totalFormatted, tableLeft + 420, rowTextY, 13, [18, 24, 32])
 
-      const summaryBoxHeight = 54
-      const summaryBoxY = tableHeaderY - rowHeight - summaryBoxHeight - 12
+      const summaryBoxHeight = 96
+      const summaryBoxY = tableHeaderY - rowHeight - summaryBoxHeight - 20
       streamCommands.push('q')
-      streamCommands.push(`${toRgb(245)} ${toRgb(247)} ${toRgb(252)} rg`)
+      streamCommands.push(`${toRgb(brandMid[0])} ${toRgb(brandMid[1])} ${toRgb(brandMid[2])} rg`)
       streamCommands.push(`${tableLeft} ${summaryBoxY} ${tableWidth} ${summaryBoxHeight} re f`)
       streamCommands.push('Q')
 
-      addText('Total', tableLeft + 16, summaryBoxY + summaryBoxHeight - 18, 14, [18, 24, 32])
-      addText(totalFormatted, tableLeft + 360, summaryBoxY + summaryBoxHeight - 20, 18, [163, 255, 18])
+      streamCommands.push('q')
+      streamCommands.push('2 w')
+      streamCommands.push(`${toRgb(brandGreen[0])} ${toRgb(brandGreen[1])} ${toRgb(brandGreen[2])} RG`)
+      streamCommands.push(
+        `${tableLeft + tableWidth - 140} ${summaryBoxY + 64} m ${tableLeft + tableWidth - 16} ${summaryBoxY + 64} l S`
+      )
+      streamCommands.push('Q')
 
-      const paymentInfoY = summaryBoxY - 36
-      addText('Payment method: Bank transfer', tableLeft, paymentInfoY, 12, [18, 24, 32])
-      addText('Pay to: IBAN GB82 WEST 1234 5698 7654 32', tableLeft, paymentInfoY - 18, 12, [18, 24, 32])
-      addText('Note: Thank you for collaborating with Twinmind!', tableLeft, paymentInfoY - 36, 11, [109, 114, 128])
+      addText('Total due', tableLeft + 16, summaryBoxY + summaryBoxHeight - 18, 12, [226, 232, 240])
+      addText(totalFormatted, tableLeft + 16, summaryBoxY + summaryBoxHeight - 42, 24, brandGreen)
+      addText('Thank you for trusting TwinMinds Studio with your ideas.', tableLeft + 16, summaryBoxY + 30, 11, brandSilver)
+      addRightAlignedText('Payment method', tableLeft + tableWidth - 16, summaryBoxY + summaryBoxHeight - 18, 11, brandSilver)
+      addRightAlignedText('Bank transfer', tableLeft + tableWidth - 16, summaryBoxY + summaryBoxHeight - 36, 12, [248, 250, 252])
+      addRightAlignedText('IBAN GB80 TWMS 1234 5678 9012 34', tableLeft + tableWidth - 16, summaryBoxY + summaryBoxHeight - 54, 11, brandSilver)
+      addRightAlignedText('BIC TWMNGB2LXXX', tableLeft + tableWidth - 16, summaryBoxY + summaryBoxHeight - 70, 11, brandSilver)
+
+      const paymentInfoY = summaryBoxY - 32
+      addText('Payment notes', tableLeft, paymentInfoY, 12, [71, 85, 105])
+      addText('Please settle the total within 14 days via bank transfer.', tableLeft, paymentInfoY - 18, 11, [107, 114, 128])
+      addText('Questions? Reach us at billing@twinmind.app', tableLeft, paymentInfoY - 36, 11, [107, 114, 128])
 
       const streamContent = `${streamCommands.join('\n')}\n`
       const encoder = new TextEncoder()
