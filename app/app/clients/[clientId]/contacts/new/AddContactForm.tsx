@@ -8,7 +8,7 @@ import { z } from 'zod'
 
 import { createContact } from './actions'
 
-import { useToast } from '../../../_components/toast-context'
+import { useToast } from '../../../../_components/toast-context'
 
 const contactFormSchema = z.object({
   firstName: z.string().trim().min(2, 'First name is required'),
