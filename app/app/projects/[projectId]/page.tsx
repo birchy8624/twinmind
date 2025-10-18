@@ -569,7 +569,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       const { error: projectUpdateError } = await supabase
         .from(PROJECTS)
-        .update(projectPatch)
+        .update<ProjectUpdate>(projectPatch)
         .eq('id', params.projectId)
 
       if (projectUpdateError) {
@@ -588,7 +588,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
           const { data: updatedInvoice, error: invoiceUpdateError } = await supabase
             .from(INVOICES)
-            .update(invoiceUpdate)
+            .update<InvoiceUpdate>(invoiceUpdate)
             .eq('id', invoiceDetails.id)
             .select('id, amount, currency')
             .maybeSingle()

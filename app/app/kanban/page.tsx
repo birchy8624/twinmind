@@ -534,7 +534,7 @@ export default function KanbanPage() {
 
       const { error: updateStatusError } = await supabase
         .from(PROJECTS)
-        .update(patch)
+        .update<ProjectUpdate>(patch)
         .eq('id', projectId)
 
       if (updateStatusError) {
