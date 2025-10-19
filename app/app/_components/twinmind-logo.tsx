@@ -3,9 +3,16 @@ import type { SVGProps } from 'react'
 type TwinmindLogoProps = SVGProps<SVGSVGElement>
 
 export function TwinmindLogo({ className, ...props }: TwinmindLogoProps) {
+  const resolvedClassName = [
+    'shrink-0',
+    className ?? 'h-8 w-auto'
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
     <svg
-      className={className ?? 'h-8 w-auto'}
+      className={resolvedClassName}
       width="1154"
       height="273"
       viewBox="0 0 1154 273"

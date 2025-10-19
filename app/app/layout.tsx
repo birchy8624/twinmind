@@ -132,9 +132,7 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
                     inputContainerClassName="md:flex"
                     placeholder="Search clients, projects, or assets"
                   />
-                  <div className="hidden md:block">
-                    <NotificationsMenu />
-                  </div>
+                  <NotificationsMenu className="hidden md:inline-flex" />
                   <WorkspaceAccountMenu />
                 </div>
                 <div className="mt-4 flex flex-col gap-3 md:hidden">

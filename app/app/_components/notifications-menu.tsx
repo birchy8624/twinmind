@@ -59,6 +59,11 @@ type NotificationItem = {
 
 const SEEN_STORAGE_PREFIX = 'twinmind.notifications.seen.'
 
+type NotificationsMenuProps = {
+  className?: string
+  triggerClassName?: string
+}
+
 function resolveNotificationItem(record: NotificationRecord): NotificationItem | null {
   if (!record.id || !record.created_at) {
     return null
@@ -77,7 +82,7 @@ function resolveNotificationItem(record: NotificationRecord): NotificationItem |
   }
 }
 
-export function NotificationsMenu() {
+export function NotificationsMenu({ className, triggerClassName }: NotificationsMenuProps = {}) {
   const supabase = useMemo(createBrowserClient, [])
   const { clientIds, loading: profileLoading, profile } = useActiveProfile()
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
@@ -249,14 +254,26 @@ export function NotificationsMenu() {
   const hasUnread = unreadCount > 0
   const visibleNotifications = notifications.slice(0, 5)
 
+  const containerClassName = ['relative', className]
+    .filter(Boolean)
+    .join(' ')
+
+  const triggerClasses = [
+    'relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-base-900/60 text-white/70 transition hover:border-white/20 hover:text-white',
+    triggerClassName
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={containerClassName}>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-base-900/60 text-white/70 transition hover:border-white/20 hover:text-white"
+        className={triggerClasses}
         aria-label="Notifications"
         aria-expanded={open}
+        aria-haspopup="menu"
       >
         <span className="sr-only">View notifications</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-5 w-5">
