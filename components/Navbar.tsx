@@ -1,6 +1,5 @@
 'use client'
 import Link from 'next/link'
-import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 
@@ -32,15 +31,8 @@ export default function Navbar(){
       className="sticky top-0 z-50 border-b border-white/5 bg-base-900/80 backdrop-blur supports-[backdrop-filter]:bg-base-900/60"
     >
       <div className="container flex h-16 items-center justify-between gap-3 sm:gap-6">
-        <Link href="/" className="flex items-center gap-3 font-semibold tracking-tight text-white">
-          <Image
-            src="/logo.svg"
-            alt="TwinMinds logo"
-            width={1154}
-            height={273}
-            priority
-            className="h-8 w-auto sm:h-9"
-          />
+        <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight text-white">
+          <span className="text-lg leading-none sm:text-xl">TwinMinds Studio</span>
         </Link>
         <div className="hidden items-center gap-6 md:flex lg:gap-8">
           {links.map(l => (

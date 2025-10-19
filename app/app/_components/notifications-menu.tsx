@@ -277,7 +277,8 @@ export function NotificationsMenu({ className, triggerClassName }: Notifications
       >
         <span className="sr-only">View notifications</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-5 w-5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 18.5a3 3 0 0 1-6 0M5 9a7 7 0 1 1 14 0c0 5 1 6 16H4s1-1 1-6Z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13.73 21a2 2 0 0 1-3.46 0" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
         </svg>
         {hasUnread ? <span className="absolute right-2 top-2 block h-2.5 w-2.5 rounded-full bg-red-500" /> : null}
       </button>
