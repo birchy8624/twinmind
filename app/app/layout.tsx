@@ -9,6 +9,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ActiveProfileProvider, useActiveProfile } from './_components/active-profile-context'
 import { ToastProvider } from './_components/toast-context'
 import { TwinmindLogo } from './_components/twinmind-logo'
+import { NotificationsMenu } from './_components/notifications-menu'
 import { WorkspaceAccountMenu } from './_components/workspace-account-menu'
 import { WorkspaceSearch } from './_components/workspace-search'
 
@@ -131,15 +132,7 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
                     inputContainerClassName="md:flex"
                     placeholder="Search clients, projects, or assets"
                   />
-                  <button
-                    type="button"
-                    className="hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-base-900/60 text-white/70 transition hover:border-white/20 hover:text-white md:inline-flex"
-                    aria-label="Notifications"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-5 w-5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 18.5a3 3 0 0 1-6 0M5 9a7 7 0 1 1 14 0c0 5 1 6 1 6H4s1-1 1-6Z" />
-                    </svg>
-                  </button>
+                  <NotificationsMenu className="hidden md:inline-flex" />
                   <WorkspaceAccountMenu />
                 </div>
                 <div className="mt-4 flex flex-col gap-3 md:hidden">
