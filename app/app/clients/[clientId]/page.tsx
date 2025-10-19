@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 
 import { StatusBadge } from '../../_components/status-badge'
 import { ClientDetailsCard } from './ClientDetailsCard'
+import { ClientDeleteButton } from './ClientDeleteButton'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
 
@@ -490,7 +491,10 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
             Review every detail about this relationship, from project history to active collaborators and invites.
           </p>
         </div>
-        <StatusBadge status={formattedStatus} />
+        <div className="flex items-center gap-3 self-start lg:self-auto">
+          <StatusBadge status={formattedStatus} />
+          <ClientDeleteButton clientId={client.id} clientName={client.name} />
+        </div>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
