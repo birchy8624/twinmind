@@ -80,6 +80,8 @@ function formatDueDate(value: string | null) {
 }
 
 export default function ProjectsPage() {
+  const { clientIds, loading: profileLoading, profile } = useActiveProfile()
+  const isClient = profile?.role === 'client'
   const [projects, setProjects] = useState<Project[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string[]>([])
