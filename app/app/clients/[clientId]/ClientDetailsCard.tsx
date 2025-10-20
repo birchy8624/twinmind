@@ -30,6 +30,14 @@ const ACCOUNT_STATUS_OPTIONS = ['active', 'inactive', 'invited', 'archived'] as 
 
 type AccountStatusOption = (typeof ACCOUNT_STATUS_OPTIONS)[number]
 
+function ensureAccountStatus(status: ClientRow['account_status']): AccountStatusOption {
+  if (status && ACCOUNT_STATUS_OPTIONS.includes(status as AccountStatusOption)) {
+    return status as AccountStatusOption
+  }
+
+  return 'active'
+}
+
 const ACCOUNT_STATUS_LABELS: Record<AccountStatusOption, string> = {
   active: 'Active',
   inactive: 'Inactive',
@@ -59,7 +67,7 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const defaultStatus: AccountStatusOption = (currentClient.account_status as AccountStatusOption) ?? 'active'
+  const defaultStatus = ensureAccountStatus(currentClient.account_status)
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -133,7 +141,7 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
     setIsModalOpen(false)
     reset({
       name: updatedClient.name ?? '',
-      account_status: updatedClient.account_status ?? 'active',
+      account_status: ensureAccountStatus(updatedClient.account_status),
       website: updatedClient.website ?? '',
       notes: updatedClient.notes ?? ''
     }, { keepDirty: false })
@@ -142,7 +150,7 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
   const handleStartEditing = () => {
     reset({
       name: currentClient.name ?? '',
-      account_status: currentClient.account_status ?? 'active',
+      account_status: ensureAccountStatus(currentClient.account_status),
       website: currentClient.website ?? '',
       notes: currentClient.notes ?? ''
     }, { keepDirty: false })
@@ -152,7 +160,7 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
   const handleCancelEditing = () => {
     reset({
       name: currentClient.name ?? '',
-      account_status: currentClient.account_status ?? 'active',
+      account_status: ensureAccountStatus(currentClient.account_status),
       website: currentClient.website ?? '',
       notes: currentClient.notes ?? ''
     }, { keepDirty: false })
