@@ -4,9 +4,40 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
+import { getPrimaryAccountMembership } from '@/lib/accounts'
 
 type ProfilesTable = Database['public']['Tables']['profiles']
+type AccountMembersTable = Database['public']['Tables']['account_members']
+
+type OwnerContext =
+  | { ok: false; message: string }
+  | { ok: true; accountId: string; profileId: string }
+
+async function getOwnerContext(): Promise<OwnerContext> {
+  const supabase = createServerSupabase()
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { ok: false, message: 'You must be signed in to manage workspace users.' }
+  }
+
+  try {
+    const membership = await getPrimaryAccountMembership(supabase, user.id)
+
+    if (!membership || membership.role !== 'owner') {
+      return { ok: false, message: 'Only workspace owners can manage members.' }
+    }
+
+    return { ok: true, accountId: membership.accountId, profileId: user.id }
+  } catch (error) {
+    console.error('getOwnerContext membership error:', error)
+    return { ok: false, message: 'Only workspace owners can manage members.' }
+  }
+}
 
 type ActionResult = {
   ok: boolean
@@ -47,7 +78,15 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
 
   const { email, fullName, sendInvite } = parsed.data
 
-  const assignedRole: ProfilesTable['Row']['role'] = 'owner'
+  const context = await getOwnerContext()
+
+  if (!context.ok) {
+    return { ok: false, message: context.message }
+  }
+
+  const { accountId } = context
+
+  const assignedRole: ProfilesTable['Row']['role'] = 'member'
 
   const admin = supabaseAdmin()
 
@@ -118,6 +157,22 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
       throw profileError
     }
 
+    const { error: membershipError } = await admin
+      .from('account_members')
+      .upsert<AccountMembersTable['Insert']>(
+        {
+          account_id: accountId,
+          profile_id: profileId,
+          role: assignedRole,
+          created_at: new Date().toISOString()
+        },
+        { onConflict: 'account_id,profile_id' }
+      )
+
+    if (membershipError) {
+      throw membershipError
+    }
+
     revalidatePath('/app/user-management')
 
     return { ok: true }
@@ -134,7 +189,7 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
 
 const updateRoleSchema = z.object({
   profileId: z.string().min(1),
-  role: z.literal('owner')
+  role: z.enum(['owner', 'member'])
 })
 
 export async function updateWorkspaceUserRole(input: unknown): Promise<ActionResult> {
@@ -146,10 +201,30 @@ export async function updateWorkspaceUserRole(input: unknown): Promise<ActionRes
 
   const { profileId, role } = parsed.data
 
+  const context = await getOwnerContext()
+
+  if (!context.ok) {
+    return { ok: false, message: context.message }
+  }
+
+  const { accountId } = context
+
   const admin = supabaseAdmin()
 
   try {
-    const { error } = await admin
+    const { error: membershipError } = await admin
+      .from('account_members')
+      .update<AccountMembersTable['Update']>({
+        role
+      })
+      .eq('account_id', accountId)
+      .eq('profile_id', profileId)
+
+    if (membershipError) {
+      throw membershipError
+    }
+
+    const { error: profileError } = await admin
       .from('profiles')
       .update<ProfilesTable['Update']>({
         role,
@@ -157,8 +232,8 @@ export async function updateWorkspaceUserRole(input: unknown): Promise<ActionRes
       })
       .eq('id', profileId)
 
-    if (error) {
-      throw error
+    if (profileError) {
+      throw profileError
     }
 
     revalidatePath('/app/user-management')

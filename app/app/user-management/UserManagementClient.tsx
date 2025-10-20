@@ -13,7 +13,7 @@ export type WorkspaceUserRecord = {
   email: string
   fullName: string
   company: string | null
-  role: 'owner' | 'client'
+  role: 'owner' | 'member'
   createdAt: string | null
   lastSignInAt: string | null
   status: WorkspaceUserStatus
@@ -30,7 +30,7 @@ type NewUserFormState = {
   sendInvite: boolean
 }
 
-type RoleFilter = 'all' | 'owner' | 'client'
+type RoleFilter = 'all' | 'owner' | 'member'
 
 type StatusFilter = 'all' | WorkspaceUserStatus
 
@@ -45,9 +45,9 @@ const statusLabels: Record<WorkspaceUserStatus, string> = {
   invited: 'Invited'
 }
 
-const roleLabels: Record<'owner' | 'client', string> = {
+const roleLabels: Record<'owner' | 'member', string> = {
   owner: 'Owner',
-  client: 'Client'
+  member: 'Member'
 }
 
 const formatDate = (value: string | null) => {
@@ -154,6 +154,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
   }, [roleFilter, searchQuery, statusFilter, users])
 
   const ownerCount = useMemo(() => users.filter((user) => user.role === 'owner').length, [users])
+  const memberCount = useMemo(() => users.filter((user) => user.role === 'member').length, [users])
   const invitedCount = useMemo(() => users.filter((user) => user.status === 'invited').length, [users])
 
   const handleInputChange = <Key extends keyof NewUserFormState>(key: Key, value: NewUserFormState[Key]) => {
@@ -199,8 +200,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
     })
   }
 
-  const handleRoleChange = (userId: string) => {
-    const targetRole: 'owner' = 'owner'
+  const handleRoleChange = (userId: string, targetRole: 'owner' | 'member') => {
     setRoleMutationId(`${userId}-${targetRole}`)
 
     void updateWorkspaceUserRole({ profileId: userId, role: targetRole })
@@ -214,7 +214,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
         } else {
           pushToast({
             title: 'Role updated',
-            description: 'User is now an owner.',
+            description: targetRole === 'owner' ? 'User is now an owner.' : 'User is now a workspace member.',
             variant: 'success'
           })
           router.refresh()
@@ -257,7 +257,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
                 Invite collaborators, promote workspace owners, and keep access up-to-date without leaving Twinmind.
               </p>
             </div>
-            <dl className="grid gap-4 sm:grid-cols-3">
+            <dl className="grid gap-4 sm:grid-cols-4">
               <div className="rounded-2xl border border-white/10 bg-base-900/40 px-4 py-3 text-sm text-white/70">
                 <dt className="text-xs uppercase tracking-wide text-white/40">Total members</dt>
                 <dd className="mt-1 text-xl font-semibold text-white">{users.length}</dd>
@@ -265,6 +265,10 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
               <div className="rounded-2xl border border-white/10 bg-base-900/40 px-4 py-3 text-sm text-white/70">
                 <dt className="text-xs uppercase tracking-wide text-white/40">Owners</dt>
                 <dd className="mt-1 text-xl font-semibold text-white">{ownerCount}</dd>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-base-900/40 px-4 py-3 text-sm text-white/70">
+                <dt className="text-xs uppercase tracking-wide text-white/40">Members</dt>
+                <dd className="mt-1 text-xl font-semibold text-white">{memberCount}</dd>
               </div>
               <div className="rounded-2xl border border-white/10 bg-base-900/40 px-4 py-3 text-sm text-white/70">
                 <dt className="text-xs uppercase tracking-wide text-white/40">Pending invites</dt>
@@ -298,7 +302,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
                 />
               </label>
               <p className="text-xs text-white/50">
-                New users are added as workspace owners with full access to agency tools.
+                New users are added as workspace members with collaboration access by default.
               </p>
               <label className="flex items-center gap-3 text-sm text-white/70">
                 <input
@@ -338,7 +342,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
               {([
                 ['all', 'All roles'],
                 ['owner', 'Owners'],
-                ['client', 'Clients']
+                ['member', 'Members']
               ] as const).map(([value, label]) => (
                 <button
                   key={value}
@@ -427,14 +431,24 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
                       <td className="py-4 text-right">
                         <div className="flex flex-col items-end gap-2">
                           <div className="inline-flex items-center gap-2">
-                            {user.role !== 'owner' ? (
+                            {user.role === 'member' ? (
                               <button
                                 type="button"
                                 className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                onClick={() => handleRoleChange(user.id)}
+                                onClick={() => handleRoleChange(user.id, 'owner')}
                                 disabled={isRoleLoading}
                               >
                                 Make owner
+                              </button>
+                            ) : null}
+                            {user.role === 'owner' && user.id !== currentUserId ? (
+                              <button
+                                type="button"
+                                className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => handleRoleChange(user.id, 'member')}
+                                disabled={isRoleLoading}
+                              >
+                                Make member
                               </button>
                             ) : null}
                             <button

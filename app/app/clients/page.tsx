@@ -11,8 +11,12 @@ import type { Database } from '@/types/supabase'
 import { FilterDropdown } from '../_components/filter-dropdown'
 import { StatusBadge } from '../_components/status-badge'
 
-type Client = Database['public']['Tables']['clients']['Row']
-type ClientSelection = Pick<Client, 'id' | 'name' | 'website' | 'account_status' | 'created_at' | 'notes' | 'updated_at'>
+type ClientRow = Database['public']['Tables']['clients']['Row']
+type ClientSelection = Pick<
+  ClientRow,
+  'id' | 'name' | 'website' | 'account_status' | 'created_at' | 'notes' | 'updated_at'
+>
+type Client = ClientSelection
 
 const PAGE_SIZE = 8
 const CLIENTS = 'clients' as const

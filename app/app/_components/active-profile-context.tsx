@@ -6,15 +6,22 @@ import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
-type ClientMemberRow = Database['public']['Tables']['client_members']['Row']
-type ProfileRole = Database['public']['Enums']['role']
+type AccountMemberRow = Database['public']['Tables']['account_members']['Row']
+type AccountRow = Database['public']['Tables']['accounts']['Row']
+type AccountRole = Database['public']['Enums']['account_role']
 
 const PROFILES = 'profiles' as const
-const CLIENT_MEMBERS = 'client_members' as const
+const ACCOUNT_MEMBERS = 'account_members' as const
+
+type ActiveAccountDetails = {
+  id: string
+  name: string
+  role: AccountRole
+}
 
 type ActiveProfileDetails = {
   id: string
-  role: ProfileRole | null
+  role: AccountRole | null
   fullName: string | null
   email: string | null
   displayName: string
@@ -23,7 +30,8 @@ type ActiveProfileDetails = {
 type ActiveProfileContextValue = {
   loading: boolean
   profile: ActiveProfileDetails | null
-  clientIds: string[]
+  account: ActiveAccountDetails | null
+  memberships: ActiveAccountDetails[]
 }
 
 const ActiveProfileContext = createContext<ActiveProfileContextValue | null>(null)
@@ -34,7 +42,7 @@ type ActiveProfileProviderProps = {
 
 const candidateRoleMetadataKeys = ['role', 'title', 'position'] as const
 
-const resolveMetadataRole = (metadata: Record<string, unknown> | undefined): ProfileRole | null => {
+const resolveMetadataRole = (metadata: Record<string, unknown> | undefined): AccountRole | null => {
   if (!metadata) {
     return null
   }
@@ -47,8 +55,8 @@ const resolveMetadataRole = (metadata: Record<string, unknown> | undefined): Pro
 
     const normalized = value.trim().toLowerCase()
 
-    if (normalized === 'owner' || normalized === 'client') {
-      return normalized as ProfileRole
+    if (normalized === 'owner' || normalized === 'member') {
+      return normalized as AccountRole
     }
   }
 
@@ -79,7 +87,8 @@ export function ActiveProfileProvider({ children }: ActiveProfileProviderProps) 
   const [state, setState] = useState<ActiveProfileContextValue>({
     loading: true,
     profile: null,
-    clientIds: []
+    account: null,
+    memberships: []
   })
 
   useEffect(() => {
@@ -102,7 +111,7 @@ export function ActiveProfileProvider({ children }: ActiveProfileProviderProps) 
 
         if (!user) {
           if (isMounted) {
-            setState({ loading: false, profile: null, clientIds: [] })
+            setState({ loading: false, profile: null, account: null, memberships: [] })
           }
           return
         }
@@ -124,35 +133,49 @@ export function ActiveProfileProvider({ children }: ActiveProfileProviderProps) 
 
         const profileFullName = typedProfile?.full_name?.trim() || ''
         const profileEmail = typedProfile?.email?.trim() || (typeof user.email === 'string' ? user.email.trim() : '')
-        const resolvedRole = typedProfile?.role ?? metadataRole ?? null
+        const profileRole = typedProfile?.role ?? null
+        const resolvedRole = profileRole ?? metadataRole ?? null
         const resolvedFullName = profileFullName || metadataName || null
         const resolvedDisplayName = resolvedFullName ?? profileEmail ?? 'Account'
+        const { data: membershipRows, error: membershipError } = await supabase
+          .from(ACCOUNT_MEMBERS)
+          .select('account_id, role, accounts:account_id ( id, name )')
+          .eq('profile_id', user.id)
+          .order('created_at', { ascending: true })
 
-        let clientIds: string[] = []
-
-        if (resolvedRole === 'client') {
-          const { data: membershipRows, error: membershipError } = await supabase
-            .from(CLIENT_MEMBERS)
-            .select('client_id')
-            .eq('profile_id', user.id)
-
-          if (membershipError) {
-            throw membershipError
-          }
-
-          const typedMemberships = (membershipRows ?? []) as Array<Pick<ClientMemberRow, 'client_id'>>
-          clientIds = typedMemberships
-            .map((membership) => membership.client_id)
-            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        if (membershipError) {
+          throw membershipError
         }
+
+        type MembershipRow = Pick<AccountMemberRow, 'account_id' | 'role'> & {
+          accounts: Pick<AccountRow, 'id' | 'name'> | null
+        }
+
+        const typedMemberships = (membershipRows ?? []) as MembershipRow[]
+
+        const memberships: ActiveAccountDetails[] = typedMemberships
+          .map((membership) => {
+            const accountId = membership.account_id
+            const accountName = membership.accounts?.name?.trim() || null
+            const resolvedName = accountName && accountName.length > 0 ? accountName : 'Workspace'
+            return {
+              id: accountId,
+              name: resolvedName,
+              role: membership.role ?? 'member'
+            }
+          })
+          .filter((membership) => typeof membership.id === 'string' && membership.id.length > 0)
+
+        const activeAccount = memberships[0] ?? null
 
         if (isMounted) {
           setState({
             loading: false,
-            clientIds,
+            memberships,
+            account: activeAccount,
             profile: {
               id: user.id,
-              role: resolvedRole,
+              role: activeAccount?.role ?? resolvedRole,
               fullName: resolvedFullName,
               email: profileEmail || null,
               displayName: resolvedDisplayName
@@ -162,7 +185,7 @@ export function ActiveProfileProvider({ children }: ActiveProfileProviderProps) 
       } catch (error) {
         console.error('Failed to load active profile', error)
         if (isMounted) {
-          setState({ loading: false, profile: null, clientIds: [] })
+          setState({ loading: false, profile: null, account: null, memberships: [] })
         }
       }
     }

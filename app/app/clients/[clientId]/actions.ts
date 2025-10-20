@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { createServerSupabase } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { getPrimaryAccountMembership } from '@/lib/accounts'
 import type { Database } from '@/types/supabase'
 
 const deleteClientSchema = z.object({
@@ -37,29 +38,47 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     return { ok: false, message: 'Not authenticated.' }
   }
 
-  type ProfileRoleRow = Pick<Database['public']['Tables']['profiles']['Row'], 'role'>
+  let accountId: string | null = null
 
-  const { data: profileRow, error: profileError } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle<ProfileRoleRow>()
+  try {
+    const membership = await getPrimaryAccountMembership(supabase, user.id)
 
-  if (profileError) {
-    console.error('deleteClient profile error:', profileError)
+    if (!membership || membership.role !== 'owner') {
+      return { ok: false, message: 'Only workspace owners can delete clients.' }
+    }
+
+    accountId = membership.accountId
+  } catch (error) {
+    console.error('deleteClient membership error:', error)
     return { ok: false, message: 'Unable to verify permissions.' }
   }
 
-  if (profileRow?.role !== 'owner') {
-    return { ok: false, message: 'Only workspace owners can delete clients.' }
+  if (!accountId) {
+    return { ok: false, message: 'Unable to verify permissions.' }
   }
 
   const admin = supabaseAdmin()
+
+  const { data: clientRow, error: clientQueryError } = await admin
+    .from('clients')
+    .select('account_id')
+    .eq('id', clientId)
+    .maybeSingle()
+
+  if (clientQueryError) {
+    console.error('deleteClient client lookup error:', clientQueryError)
+    return { ok: false, message: 'Unable to load client details.' }
+  }
+
+  if (!clientRow || clientRow.account_id !== accountId) {
+    return { ok: false, message: 'Client not found in this workspace.' }
+  }
 
   const { data: projectRows, error: projectQueryError } = await admin
     .from('projects')
     .select('id')
     .eq('client_id', clientId)
+    .eq('account_id', accountId)
 
   if (projectQueryError) {
     console.error('deleteClient projects query error:', projectQueryError)
@@ -147,7 +166,11 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     }
   }
 
-  const { error: clientDeleteError } = await admin.from('clients').delete().eq('id', clientId)
+  const { error: clientDeleteError } = await admin
+    .from('clients')
+    .delete()
+    .eq('id', clientId)
+    .eq('account_id', accountId)
 
   if (clientDeleteError) {
     console.error('deleteClient client delete error:', clientDeleteError)

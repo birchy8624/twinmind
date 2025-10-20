@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { getPrimaryAccountMembership } from '@/lib/accounts'
 import type { Database } from '@/types/supabase'
 
 const BriefSchema = z.object({
@@ -62,6 +63,25 @@ export async function createProject(input: unknown): Promise<ActionResult> {
     return { ok: false, message: 'Not authenticated.' }
   }
 
+  let accountId: string | null = null
+
+  try {
+    const membership = await getPrimaryAccountMembership(ownerClient, ownerUser.id)
+
+    if (!membership) {
+      return { ok: false, message: 'No active workspace membership found.' }
+    }
+
+    accountId = membership.accountId
+  } catch (error) {
+    console.error('Failed to resolve workspace membership', error)
+    return { ok: false, message: 'Unable to resolve workspace membership.' }
+  }
+
+  if (!accountId) {
+    return { ok: false, message: 'No active workspace membership found.' }
+  }
+
   const admin = supabaseAdmin()
 
   let projectId: string | null = null
@@ -94,7 +114,8 @@ export async function createProject(input: unknown): Promise<ActionResult> {
     description,
     status: 'Backlog',
     due_date: dueDate ?? null,
-    assignee_profile_id: ownerUser.id
+    assignee_profile_id: ownerUser.id,
+    account_id: accountId
   }
 
   const { data: projectRow, error: projectError } = await admin
@@ -116,7 +137,8 @@ export async function createProject(input: unknown): Promise<ActionResult> {
   const briefInsert: Database['public']['Tables']['briefs']['Insert'] = {
     project_id: projectId,
     answers: brief as Database['public']['Tables']['briefs']['Insert']['answers'],
-    completed: true
+    completed: true,
+    account_id: accountId
   }
 
   const { error: briefError } = await admin.from('briefs').insert(briefInsert)
@@ -131,7 +153,8 @@ export async function createProject(input: unknown): Promise<ActionResult> {
       status: 'Quote',
       amount: invoice.amount,
       currency: invoice.currency,
-      issued_at: new Date().toISOString()
+      issued_at: new Date().toISOString(),
+      account_id: accountId
     }
 
     const { error: invoiceError } = await admin.from('invoices').insert(invoiceInsert)

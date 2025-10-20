@@ -2,7 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  --tm-brand-accent: #a3ff12;
+}
 
 html, body {
   @apply bg-base-900 text-white scroll-smooth;
@@ -16,11 +19,32 @@ html, body {
 }
 
 .btn-primary {
-  @apply bg-gradient-to-br from-limeglow-500 to-limeglow-700 text-black shadow-glow hover:scale-[1.02] active:scale-95;
+  @apply bg-gradient-to-br from-limeglow-500 to-limeglow-700 text-black shadow-glow hover:scale-[1.02] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-limeglow-500;
+  background-image: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--tm-brand-accent) 95%, white 5%),
+    color-mix(in srgb, var(--tm-brand-accent) 75%, rgba(10, 11, 13, 0.25))
+  );
+  box-shadow: 0 0 40px color-mix(in srgb, var(--tm-brand-accent) 30%, transparent);
+  outline-color: var(--tm-brand-accent);
 }
 
 .btn-gradient {
   @apply bg-gradient-to-br from-limeglow-500 via-limeglow-600 to-limeglow-700 text-base-900 shadow-glow hover:scale-[1.02] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-limeglow-500;
+  background-image: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--tm-brand-accent) 94%, white 6%),
+    color-mix(in srgb, var(--tm-brand-accent) 80%, rgba(10, 11, 13, 0.2)),
+    color-mix(in srgb, var(--tm-brand-accent) 66%, rgba(10, 11, 13, 0.45))
+  );
+  box-shadow: 0 0 40px color-mix(in srgb, var(--tm-brand-accent) 30%, transparent);
+  outline-color: var(--tm-brand-accent);
+}
+
+.shadow-glow {
+  --tw-shadow: 0 0 40px color-mix(in srgb, var(--tm-brand-accent) 25%, transparent);
+  --tw-shadow-colored: 0 0 40px color-mix(in srgb, var(--tm-brand-accent) 25%, transparent);
+  box-shadow: var(--tw-shadow);
 }
 
 .card {

@@ -15,7 +15,7 @@ type WorkspaceAccountMenuProps = {
   showOnMobile?: boolean
 }
 
-type ProfileRole = Database['public']['Enums']['role']
+type AccountRole = Database['public']['Enums']['account_role']
 
 type SignOutScope = Parameters<ReturnType<typeof createBrowserClient>['auth']['signOut']>[0]
 
@@ -27,7 +27,7 @@ export function WorkspaceAccountMenu({ className, showOnMobile = false }: Worksp
   const supabase = useMemo(createBrowserClient, [])
   const [isOpen, setIsOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
-  const { profile, loading } = useActiveProfile()
+  const { profile, loading, account } = useActiveProfile()
   const containerRef = useRef<HTMLDetailsElement | null>(null)
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export function WorkspaceAccountMenu({ className, showOnMobile = false }: Worksp
     }
   }, [isOpen])
 
-  const profileRole: ProfileRole | null = profile?.role ?? null
+  const profileRole: AccountRole | null = account?.role ?? profile?.role ?? null
   const displayName = profile?.displayName ?? (loading ? 'Loading…' : 'Account')
 
   const initials = useMemo(() => {

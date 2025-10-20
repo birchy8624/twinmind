@@ -9,6 +9,61 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      account_members: {
+        Row: {
+          account_id: string
+          created_at: string | null
+          id: string
+          profile_id: string
+          role: Database['public']['Enums']['account_role']
+        }
+        Insert: {
+          account_id: string
+          created_at?: string | null
+          id?: string
+          profile_id: string
+          role?: Database['public']['Enums']['account_role']
+        }
+        Update: {
+          account_id?: string
+          created_at?: string | null
+          id?: string
+          profile_id?: string
+          role?: Database['public']['Enums']['account_role']
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'account_members_account_id_fkey'
+            columns: ['account_id']
+            referencedRelation: 'accounts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'account_members_profile_id_fkey'
+            columns: ['profile_id']
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      accounts: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           action: string
@@ -48,6 +103,7 @@ export type Database = {
       }
       briefs: {
         Row: {
+          account_id: string | null
           answers: Json
           completed: boolean | null
           created_at: string | null
@@ -56,6 +112,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          account_id?: string | null
           answers: Json
           completed?: boolean | null
           created_at?: string | null
@@ -64,6 +121,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          account_id?: string | null
           answers?: Json
           completed?: boolean | null
           created_at?: string | null
@@ -72,6 +130,12 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: 'briefs_account_id_fkey'
+            columns: ['account_id']
+            referencedRelation: 'accounts'
+            referencedColumns: ['id']
+          },
           {
             foreignKeyName: 'briefs_project_id_fkey'
             columns: ['project_id']
@@ -119,7 +183,8 @@ export type Database = {
       }
       clients: {
         Row: {
-          account_status: Database['public']['Enums']['account_status'] | null
+          account_id: string | null
+          account_status: string | null
           created_at: string | null
           id: string
           name: string
@@ -128,7 +193,8 @@ export type Database = {
           website: string | null
         }
         Insert: {
-          account_status?: Database['public']['Enums']['account_status'] | null
+          account_id?: string | null
+          account_status?: string | null
           created_at?: string | null
           id?: string
           name: string
@@ -137,7 +203,8 @@ export type Database = {
           website?: string | null
         }
         Update: {
-          account_status?: Database['public']['Enums']['account_status'] | null
+          account_id?: string | null
+          account_status?: string | null
           created_at?: string | null
           id?: string
           name?: string
@@ -145,7 +212,14 @@ export type Database = {
           updated_at?: string | null
           website?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: 'clients_account_id_fkey'
+            columns: ['account_id']
+            referencedRelation: 'accounts'
+            referencedColumns: ['id']
+          }
+        ]
       }
       comments: {
         Row: {
@@ -339,6 +413,7 @@ export type Database = {
       }
       invoices: {
         Row: {
+          account_id: string | null
           amount: number
           created_at: string | null
           currency: string
@@ -352,6 +427,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          account_id?: string | null
           amount: number
           created_at?: string | null
           currency?: string
@@ -365,6 +441,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          account_id?: string | null
           amount?: number
           created_at?: string | null
           currency?: string
@@ -378,6 +455,12 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: 'invoices_account_id_fkey'
+            columns: ['account_id']
+            referencedRelation: 'accounts'
+            referencedColumns: ['id']
+          },
           {
             foreignKeyName: 'invoices_project_id_fkey'
             columns: ['project_id']
@@ -407,6 +490,27 @@ export type Database = {
         }
         Relationships: []
       }
+      plans: {
+        Row: {
+          code: string
+          limits: Json
+          monthly_price_cents: number
+          name: string
+        }
+        Insert: {
+          code: string
+          limits: Json
+          monthly_price_cents: number
+          name: string
+        }
+        Update: {
+          code?: string
+          limits?: Json
+          monthly_price_cents?: number
+          name?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           company: string | null
@@ -416,7 +520,7 @@ export type Database = {
           gdpr_consent: boolean | null
           id: string
           phone: string | null
-          role: Database['public']['Enums']['role']
+          role: Database['public']['Enums']['account_role']
           timezone: string | null
           updated_at: string | null
         }
@@ -428,7 +532,7 @@ export type Database = {
           gdpr_consent?: boolean | null
           id: string
           phone?: string | null
-          role: Database['public']['Enums']['role']
+          role: Database['public']['Enums']['account_role']
           timezone?: string | null
           updated_at?: string | null
         }
@@ -440,7 +544,7 @@ export type Database = {
           gdpr_consent?: boolean | null
           id?: string
           phone?: string | null
-          role?: Database['public']['Enums']['role']
+          role?: Database['public']['Enums']['account_role']
           timezone?: string | null
           updated_at?: string | null
         }
@@ -488,6 +592,7 @@ export type Database = {
       }
       projects: {
         Row: {
+          account_id: string | null
           archived: boolean | null
           assignee_profile_id: string | null
           client_id: string
@@ -506,6 +611,7 @@ export type Database = {
           value_quote: number | null
         }
         Insert: {
+          account_id?: string | null
           archived?: boolean | null
           assignee_profile_id?: string | null
           client_id: string
@@ -524,6 +630,7 @@ export type Database = {
           value_quote?: number | null
         }
         Update: {
+          account_id?: string | null
           archived?: boolean | null
           assignee_profile_id?: string | null
           client_id?: string
@@ -543,6 +650,12 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: 'projects_account_id_fkey'
+            columns: ['account_id']
+            referencedRelation: 'accounts'
+            referencedColumns: ['id']
+          },
+          {
             foreignKeyName: 'projects_assignee_profile_id_fkey'
             columns: ['assignee_profile_id']
             referencedRelation: 'profiles'
@@ -556,6 +669,55 @@ export type Database = {
           }
         ]
       }
+      subscriptions: {
+        Row: {
+          account_id: string
+          created_at: string | null
+          current_period_end: string | null
+          id: string
+          plan_code: string
+          provider: string | null
+          provider_customer_id: string | null
+          provider_subscription_id: string | null
+          status: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string | null
+          current_period_end?: string | null
+          id?: string
+          plan_code: string
+          provider?: string | null
+          provider_customer_id?: string | null
+          provider_subscription_id?: string | null
+          status?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string | null
+          current_period_end?: string | null
+          id?: string
+          plan_code?: string
+          provider?: string | null
+          provider_customer_id?: string | null
+          provider_subscription_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'subscriptions_account_id_fkey'
+            columns: ['account_id']
+            referencedRelation: 'accounts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'subscriptions_plan_code_fkey'
+            columns: ['plan_code']
+            referencedRelation: 'plans'
+            referencedColumns: ['code']
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -564,7 +726,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      account_status: 'active' | 'inactive' | 'invited' | 'archived'
+      account_role: 'owner' | 'member'
       invoice_status: 'Quote' | 'Draft' | 'Sent' | 'Paid' | 'Cancelled'
       priority_enum: 'low' | 'medium' | 'high'
       project_status:
@@ -580,7 +742,6 @@ export type Database = {
         | 'Closed'
         | 'Archived'
       visibility_enum: 'both' | 'client' | 'internal'
-      role: 'owner' | 'client'
     }
     CompositeTypes: {
       [_ in never]: never
