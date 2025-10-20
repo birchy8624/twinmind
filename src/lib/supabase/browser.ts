@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClientComponentClient, type SupabaseClient } from '@supabase/auth-helpers-nextjs'
 
 import type { Database } from '@/types/supabase'
 
@@ -6,15 +6,8 @@ let browserClient: SupabaseClient<Database> | null = null
 let hasAuthListener = false
 
 export function createBrowserClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co'
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-key'
-
-  if (typeof window === 'undefined') {
-    return createClient<Database>(supabaseUrl, supabaseAnonKey)
-  }
-
   if (!browserClient) {
-    browserClient = createClient<Database>(supabaseUrl, supabaseAnonKey)
+    browserClient = createClientComponentClient<Database>()
   }
 
   if (!hasAuthListener && browserClient) {
