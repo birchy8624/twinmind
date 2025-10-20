@@ -9,6 +9,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ActiveProfileProvider, useActiveProfile } from './_components/active-profile-context'
 import { ToastProvider } from './_components/toast-context'
 import { TwinmindLogo } from './_components/twinmind-logo'
+import { ClientPortalLogo } from './_components/client-portal-logo'
 import { NotificationsMenu } from './_components/notifications-menu'
 import { WorkspaceAccountMenu } from './_components/workspace-account-menu'
 import { WorkspaceSearch } from './_components/workspace-search'
@@ -104,8 +105,8 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
             {isClient ? (
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <TwinmindLogo className="h-8 w-auto" />
-                  <p className="text-lg font-semibold text-white">{activeLabel}</p>
+                  <ClientPortalLogo className="h-8 w-auto" />
+                  <p className="text-lg font-semibold text-white">Client Portal</p>
                 </div>
                 <WorkspaceAccountMenu showOnMobile className="ml-0" />
               </div>
