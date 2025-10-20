@@ -21,6 +21,7 @@ type ActionResult = {
 }
 
 type MembershipRoleRow = Pick<Database['public']['Tables']['account_members']['Row'], 'role'>
+type ClientAccountRow = Pick<Database['public']['Tables']['clients']['Row'], 'account_id'>
 
 export async function deleteClient(input: unknown): Promise<ActionResult> {
   const parsed = deleteClientSchema.safeParse(input)
@@ -59,7 +60,7 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     return { ok: false, message: 'Only workspace owners can delete clients.' }
   }
 
-  const { data: clientRow, error: clientFetchError } = await supabase
+  const { data: clientData, error: clientFetchError } = await supabase
     .from('clients')
     .select('account_id')
     .eq('id', clientId)
@@ -69,6 +70,8 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     console.error('deleteClient client fetch error:', clientFetchError)
     return { ok: false, message: 'Unable to load client details.' }
   }
+
+  const clientRow = clientData as ClientAccountRow | null
 
   if (!clientRow || clientRow.account_id !== accountId) {
     return { ok: false, message: 'Client does not belong to this workspace.' }
