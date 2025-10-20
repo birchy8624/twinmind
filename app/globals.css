@@ -21,7 +21,7 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --color-base-950: 249 250 252;
+  --color-base-950: 255 255 255;
   --color-base-900: 242 244 248;
   --color-base-800: 232 236 244;
   --color-base-700: 217 225 236;
@@ -30,7 +30,7 @@
 }
 
 html, body {
-  @apply bg-base-900 text-white scroll-smooth;
+  @apply bg-base-950 text-white scroll-smooth;
   font-feature-settings: 'ss01' on, 'liga' on;
 }
 

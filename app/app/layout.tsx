@@ -150,7 +150,7 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
               </>
             )}
           </header>
-          <main className="flex-1 space-y-6 overflow-y-auto bg-base-900/20 p-6">{children}</main>
+          <main className="flex-1 space-y-6 overflow-y-auto bg-base-950 p-6 dark:bg-base-900/20">{children}</main>
         </div>
 
         {showNavigation ? (

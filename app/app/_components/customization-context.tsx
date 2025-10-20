@@ -21,7 +21,7 @@ type CustomizationContextValue = {
 const STORAGE_KEY = 'twinmind:customization'
 
 const DEFAULT_SETTINGS: CustomizationSettings = {
-  theme: 'system',
+  theme: 'dark',
   brandColor: '#a3ff12',
   logoUrl: null
 }

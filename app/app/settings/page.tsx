@@ -329,6 +329,10 @@ export default function SettingsPage() {
     }
 
     const normalized = normalizeHex(value)
+    if (normalized === customizationSettings.brandColor) {
+      setBrandColorInput(normalized)
+      return true
+    }
     setBrandColorInput(normalized)
     setBrandColor(normalized)
 
@@ -344,7 +348,7 @@ export default function SettingsPage() {
   }
 
   const handleBrandColorPickerChange = (event: ChangeEvent<HTMLInputElement>) => {
-    void applyBrandColor(event.target.value)
+    void applyBrandColor(event.target.value, { showToast: false })
   }
 
   const handleBrandColorInputChange = (event: ChangeEvent<HTMLInputElement>) => {
