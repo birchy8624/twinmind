@@ -25,6 +25,19 @@ const createUserSchema = z.object({
   sendInvite: z.boolean().default(true)
 })
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : 'http://localhost:3000')
+
+const setupAccountRedirect = (() => {
+  try {
+    return new URL('/app/setup-account', siteUrl).toString()
+  } catch (error) {
+    console.error('Failed to construct setup account redirect URL', error)
+    return null
+  }
+})()
+
 export async function createWorkspaceUser(input: unknown): Promise<ActionResult> {
   const parsed = createUserSchema.safeParse(input)
 
@@ -46,7 +59,8 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
         data: {
           full_name: fullName,
           role: assignedRole
-        }
+        },
+        ...(setupAccountRedirect ? { redirectTo: setupAccountRedirect } : {})
       })
 
       if (error) {
