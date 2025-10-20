@@ -9,6 +9,7 @@ import BillingPageClient from './BillingPageClient'
 
 type PlanRow = Database['public']['Tables']['plans']['Row']
 type AccountMemberRow = Database['public']['Tables']['account_members']['Row']
+type SubscriptionRow = Database['public']['Tables']['subscriptions']['Row']
 
 type PlanLimitEntry = {
   label: string
@@ -112,7 +113,7 @@ export default async function BillingPage() {
     Pick<PlanRow, 'code' | 'name' | 'monthly_price_cents' | 'limits'>
   >
 
-  const { data: subscriptionRow, error: subscriptionError } = await supabase
+  const { data: subscriptionRowData, error: subscriptionError } = await supabase
     .from('subscriptions')
     .select('plan_code, status, current_period_end')
     .eq('account_id', activeAccountId)
@@ -123,6 +124,10 @@ export default async function BillingPage() {
   if (subscriptionError) {
     console.error('Failed to load subscription:', subscriptionError)
   }
+
+  const subscriptionRow = (subscriptionRowData ?? null) as
+    | Pick<SubscriptionRow, 'plan_code' | 'status' | 'current_period_end'>
+    | null
 
   const plans = planRows.map((plan) => ({
     code: plan.code,
