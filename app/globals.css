@@ -2,10 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  --color-base-950: 10 11 13;
+  --color-base-900: 12 13 17;
+  --color-base-800: 15 17 21;
+  --color-base-700: 18 21 27;
+  --color-white: 255 255 255;
+  --color-black: 0 0 0;
+  --brand-color-100: 232 255 224;
+  --brand-color-300: 196 255 120;
+  --brand-color-500: 163 255 18;
+  --brand-color-600: 111 222 20;
+  --brand-color-700: 70 166 28;
+  --brand-color-foreground: 8 20 6;
+  --brand-color-rgb: 163 255 18;
+}
+
+.workspace-theme {
+  color-scheme: dark;
+}
+
+.workspace-theme[data-theme='light'] {
+  color-scheme: light;
+  --color-base-950: 255 255 255;
+  --color-base-900: 242 244 248;
+  --color-base-800: 232 236 244;
+  --color-base-700: 217 225 236;
+  --color-white: 23 30 45;
+  --color-black: 255 255 255;
+}
 
 html, body {
-  @apply bg-base-900 text-white scroll-smooth;
+  @apply bg-base-950 text-white scroll-smooth;
   font-feature-settings: 'ss01' on, 'liga' on;
 }
 
@@ -16,11 +45,16 @@ html, body {
 }
 
 .btn-primary {
-  @apply bg-gradient-to-br from-limeglow-500 to-limeglow-700 text-black shadow-glow hover:scale-[1.02] active:scale-95;
+  background-image: linear-gradient(135deg, rgb(var(--brand-color-300) / 1), rgb(var(--brand-color-600) / 1));
+  color: rgb(var(--brand-color-foreground) / 1);
+  @apply shadow-glow hover:scale-[1.02] active:scale-95;
 }
 
 .btn-gradient {
-  @apply bg-gradient-to-br from-limeglow-500 via-limeglow-600 to-limeglow-700 text-base-900 shadow-glow hover:scale-[1.02] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-limeglow-500;
+  background-image: linear-gradient(135deg, rgb(var(--brand-color-100) / 1), rgb(var(--brand-color-500) / 1), rgb(var(--brand-color-700) / 1));
+  color: rgb(var(--brand-color-foreground) / 1);
+  @apply shadow-glow hover:scale-[1.02] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2;
+  outline-color: rgb(var(--brand-color-500) / 1);
 }
 
 .card {
@@ -29,4 +63,14 @@ html, body {
 
 .section {
   @apply py-16 sm:py-24;
+}
+
+.brand-accent {
+  accent-color: rgb(var(--brand-color-500) / 1);
+  outline: none;
+}
+
+.brand-accent:focus-visible {
+  box-shadow: 0 0 0 4px rgb(var(--brand-color-500) / 0.35);
+  border-color: rgb(var(--brand-color-500) / 0.4);
 }
