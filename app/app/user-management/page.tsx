@@ -80,7 +80,7 @@ const toWorkspaceRecord = (user: User, profile: ProfilePreview | undefined): Wor
   const metadataRole = resolveMetadataRole(user.user_metadata)
 
   const fullName = profile?.full_name?.trim() || metadataName || user.email || 'Workspace member'
-  const role = profile?.role ?? metadataRole ?? 'client'
+  const role = profile?.role ?? metadataRole ?? 'owner'
 
   return {
     id: user.id,

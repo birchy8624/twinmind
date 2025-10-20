@@ -18,7 +18,6 @@ const BriefSchema = z.object({
 })
 
 const WizardSchema = z.object({
-  inviteClient: z.boolean().default(false),
   client: z.object({
     name: z.string().min(1),
     website: z
@@ -59,7 +58,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     return { ok: false, message: 'Invalid input.' }
   }
 
-  const { inviteClient, client, contact, project, brief } = parsed.data
+  const { client, contact, project, brief } = parsed.data
 
   const ownerClient = createServerSupabase()
   const {
@@ -81,7 +80,6 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
 
   let clientId: string | null = null
   let projectId: string | null = null
-  let invitedProfileId: string | null = null
 
   const cleanup = async () => {
     if (projectId) {
@@ -90,15 +88,8 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
       await admin.from('projects').delete().eq('id', projectId)
     }
 
-    if (invitedProfileId) {
-      await admin.from('client_members').delete().eq('profile_id', invitedProfileId)
-      await admin.from('profiles').delete().eq('id', invitedProfileId)
-      await admin.auth.admin.deleteUser(invitedProfileId)
-    }
-
     if (clientId) {
       await admin.from('contacts').delete().eq('client_id', clientId)
-      await admin.from('client_members').delete().eq('client_id', clientId)
       await admin.from('clients').delete().eq('id', clientId)
     }
   }
@@ -145,69 +136,6 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
 
   clientId = clientRow.id
 
-  if (inviteClient) {
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      (process.env.NEXT_PUBLIC_VERCEL_URL
-        ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-        : 'http://localhost:3000')
-
-    const inviteRedirect = new URL('/portal/invite', siteUrl).toString()
-
-    const { data: authResponse, error: authError } = await admin.auth.admin.inviteUserByEmail(contact.email, {
-      data: {
-        full_name: contactFullName || undefined,
-        company: client.name
-      },
-      redirectTo: inviteRedirect
-    })
-
-    if (authError) {
-      return fail('Invite client user', authError)
-    }
-
-    if (!authResponse?.user) {
-      return fail('Invite client user', { message: 'Missing created user.' })
-    }
-
-    invitedProfileId = authResponse.user.id
-
-    const profileUpsert: Database['public']['Tables']['profiles']['Insert'] = {
-      id: invitedProfileId,
-      role: 'client',
-      full_name: contactFullName || null,
-      company: client.name,
-      email: contact.email,
-      phone: contactPhone,
-      timezone: client.timezone ?? null,
-      gdpr_consent: client.gdpr_consent,
-      updated_at: new Date().toISOString()
-    }
-
-    const { error: profileError } = await admin
-      .from('profiles')
-      .upsert(profileUpsert, { onConflict: 'id' })
-
-    if (profileError) {
-      return fail('Create client profile', profileError)
-    }
-
-    const memberUpsert: Database['public']['Tables']['client_members']['Insert'] = {
-      client_id: clientId,
-      profile_id: invitedProfileId
-    }
-
-    const { error: memberError } = await admin
-      .from('client_members')
-      .upsert(memberUpsert)
-
-    if (memberError) {
-      return fail('Link client membership', memberError)
-    }
-
-    // Invitation email with portal access has been triggered by Supabase.
-  }
-
   if (!clientId) {
     return fail('Create primary contact', { message: 'Missing client id.' })
   }
@@ -221,7 +149,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     title: contactTitle,
     is_primary: true,
     gdpr_consent: client.gdpr_consent,
-    profile_id: invitedProfileId
+    profile_id: null
   }
 
   const { error: contactError } = await admin.from('contacts').insert(contactInsert)

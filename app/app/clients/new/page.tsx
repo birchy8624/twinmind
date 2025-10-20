@@ -3,14 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import {
-  Controller,
-  FormProvider,
-  useFieldArray,
-  useForm,
-  useFormContext,
-  useWatch
-} from 'react-hook-form'
+import { FormProvider, useFieldArray, useForm, useFormContext, useWatch } from 'react-hook-form'
 import { useRouter } from 'next/navigation'
 import { z } from 'zod'
 
@@ -102,8 +95,7 @@ const onboardingSchema = z.object({
   briefRisks: z
     .string()
     .trim()
-    .min(6, 'Capture known risks or assumptions'),
-  inviteClient: z.boolean()
+    .min(6, 'Capture known risks or assumptions')
 })
 
 type OnboardingForm = z.infer<typeof onboardingSchema>
@@ -182,8 +174,7 @@ const defaultValues: OnboardingForm = {
   briefTimeline: '',
   briefSuccess: '',
   competitors: [{ value: '' }],
-  briefRisks: '',
-  inviteClient: false
+  briefRisks: ''
 }
 
 function formValuesToPayload(values: OnboardingForm): WizardPayload {
@@ -195,7 +186,6 @@ function formValuesToPayload(values: OnboardingForm): WizardPayload {
   const invoiceAmount = parseCurrency(values.budget)
 
   return {
-    inviteClient: values.inviteClient,
     client: {
       name: values.clientName,
       website: website,
@@ -476,7 +466,7 @@ function ClientBasics() {
       <div>
         <h3 className="text-base font-semibold text-white">Client basics</h3>
         <p className="text-sm text-white/60">
-          Company information, primary contact details, timezone, and consent to create the account and quote.
+          Company information, primary contact details, timezone, and consent to create the quote.
         </p>
       </div>
 
@@ -660,7 +650,7 @@ function ReviewStep() {
             ['Risks & assumptions', values.briefRisks || '—']
           ]}
         />
-        <div className="flex flex-col justify-between gap-4 rounded-xl border border-white/10 bg-base-900/40 p-5">
+        <div className="flex flex-col gap-4 rounded-xl border border-white/10 bg-base-900/40 p-5">
           <div>
             <h4 className="text-sm font-semibold text-white">Automations</h4>
             <ul className="mt-2 space-y-2 text-sm text-white/65">
@@ -673,7 +663,6 @@ function ReviewStep() {
               </li>
             </ul>
           </div>
-          <InviteToggle />
         </div>
       </div>
     </section>
@@ -883,42 +872,6 @@ function SummaryCard({ title, items }: SummaryCardProps) {
         ))}
       </dl>
     </div>
-  )
-}
-
-function InviteToggle() {
-  const { control } = useFormContext<OnboardingForm>()
-
-  return (
-    <Controller
-      name="inviteClient"
-      control={control}
-      render={({ field }) => (
-        <label className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-base-900/70 px-4 py-3">
-          <div>
-            <p className="text-sm font-semibold text-white">Invite client</p>
-            <p className="text-xs text-white/60">
-              Sends an email invite and creates a client portal login on submit.
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={field.value}
-            onClick={() => field.onChange(!field.value)}
-            className={`flex h-7 w-12 items-center rounded-full border border-white/20 bg-white/10 p-1 transition ${
-              field.value ? 'bg-limeglow-400/30' : 'bg-base-900/40'
-            }`}
-          >
-            <span
-              className={`h-5 w-5 rounded-full bg-white transition-transform ${
-                field.value ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </label>
-      )}
-    />
   )
 }
 
