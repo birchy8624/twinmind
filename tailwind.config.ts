@@ -10,23 +10,27 @@ export default {
     extend: {
       colors: {
         base: {
-          900: '#0a0b0d',
-          800: '#0f1115',
-          700: '#12151b'
+          950: 'rgb(var(--color-base-950) / <alpha-value>)',
+          900: 'rgb(var(--color-base-900) / <alpha-value>)',
+          800: 'rgb(var(--color-base-800) / <alpha-value>)',
+          700: 'rgb(var(--color-base-700) / <alpha-value>)'
         },
         limeglow: {
-          100: '#e8ffe0',
-          300: '#baff7a',
-          500: '#a3ff12',
-          600: '#6BFF5E',
-          700: '#00FFA3'
-        }
+          100: 'rgb(var(--brand-color-100) / <alpha-value>)',
+          300: 'rgb(var(--brand-color-300) / <alpha-value>)',
+          500: 'rgb(var(--brand-color-500) / <alpha-value>)',
+          600: 'rgb(var(--brand-color-600) / <alpha-value>)',
+          700: 'rgb(var(--brand-color-700) / <alpha-value>)'
+        },
+        white: 'rgb(var(--color-white) / <alpha-value>)',
+        black: 'rgb(var(--color-black) / <alpha-value>)'
       },
       backgroundImage: {
-        'tw-gradient': 'radial-gradient(60% 60% at 50% 0%, rgba(163,255,18,0.12) 0%, rgba(0,255,163,0.08) 35%, rgba(10,11,13,0.0) 70%)'
+        'tw-gradient':
+          'radial-gradient(60% 60% at 50% 0%, rgb(var(--brand-color-500) / 0.12) 0%, rgb(var(--brand-color-600) / 0.08) 35%, rgb(var(--color-base-900) / 0) 70%)'
       },
       boxShadow: {
-        glow: '0 0 40px rgba(163,255,18,0.25)'
+        glow: '0 0 40px 0 rgb(var(--brand-color-500) / 0.25)'
       }
     },
   },
