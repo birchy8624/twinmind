@@ -3,7 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
+import { isAccountRoleAtLeast } from '@/lib/active-account'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
 
 type ProfilesTable = Database['public']['Tables']['profiles']
@@ -14,6 +16,7 @@ type ActionResult = {
 }
 
 const createUserSchema = z.object({
+  accountId: z.string().uuid(),
   email: z.string().email(),
   fullName: z
     .string()
@@ -45,9 +48,35 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
     return { ok: false, message: 'Invalid user details provided.' }
   }
 
-  const { email, fullName, sendInvite } = parsed.data
+  const { accountId, email, fullName, sendInvite } = parsed.data
 
-  const assignedRole: ProfilesTable['Row']['role'] = 'owner'
+  const supabase = createServerSupabase()
+  const {
+    data: { user: currentUser },
+    error: currentUserError
+  } = await supabase.auth.getUser()
+
+  if (currentUserError || !currentUser) {
+    return { ok: false, message: 'Not authenticated.' }
+  }
+
+  const { data: actorMembership, error: membershipError } = await supabase
+    .from('account_members')
+    .select('role')
+    .eq('account_id', accountId)
+    .eq('profile_id', currentUser.id)
+    .maybeSingle()
+
+  if (membershipError) {
+    console.error('createWorkspaceUser membership error:', membershipError)
+    return { ok: false, message: 'Unable to verify workspace permissions.' }
+  }
+
+  if (!isAccountRoleAtLeast(actorMembership?.role, 'owner')) {
+    return { ok: false, message: 'Only workspace owners can add members.' }
+  }
+
+  const assignedProfileRole: ProfilesTable['Row']['role'] = 'member'
 
   const admin = supabaseAdmin()
 
@@ -58,7 +87,7 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
       const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
         data: {
           full_name: fullName,
-          role: assignedRole
+          role: assignedProfileRole
         },
         ...(setupAccountRedirect ? { redirectTo: setupAccountRedirect } : {})
       })
@@ -78,7 +107,7 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
         email_confirm: false,
         user_metadata: {
           full_name: fullName,
-          role: assignedRole
+          role: assignedProfileRole
         }
       })
 
@@ -103,10 +132,25 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
 
     const profileId = createdUserId!
 
+    const { data: existingMembership, error: existingMembershipError } = await admin
+      .from('account_members')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('profile_id', profileId)
+      .maybeSingle()
+
+    if (existingMembershipError) {
+      throw existingMembershipError
+    }
+
+    if (existingMembership) {
+      return { ok: false, message: 'User is already a member of this workspace.' }
+    }
+
     const { error: profileError } = await admin.from('profiles').upsert<ProfilesTable['Insert']>(
       {
         id: profileId,
-        role: assignedRole,
+        role: assignedProfileRole,
         full_name: fullName ?? null,
         email,
         updated_at: new Date().toISOString()
@@ -116,6 +160,16 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
 
     if (profileError) {
       throw profileError
+    }
+
+    const { error: membershipInsertError } = await admin.from('account_members').insert({
+      account_id: accountId,
+      profile_id: profileId,
+      role: assignedProfileRole
+    })
+
+    if (membershipInsertError) {
+      throw membershipInsertError
     }
 
     revalidatePath('/app/user-management')
@@ -133,8 +187,9 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
 }
 
 const updateRoleSchema = z.object({
+  accountId: z.string().uuid(),
   profileId: z.string().min(1),
-  role: z.literal('owner')
+  role: z.enum(['owner', 'member'])
 })
 
 export async function updateWorkspaceUserRole(input: unknown): Promise<ActionResult> {
@@ -144,21 +199,78 @@ export async function updateWorkspaceUserRole(input: unknown): Promise<ActionRes
     return { ok: false, message: 'Invalid role update request.' }
   }
 
-  const { profileId, role } = parsed.data
+  const { accountId, profileId, role } = parsed.data
+
+  const supabase = createServerSupabase()
+  const {
+    data: { user: currentUser },
+    error: currentUserError
+  } = await supabase.auth.getUser()
+
+  if (currentUserError || !currentUser) {
+    return { ok: false, message: 'Not authenticated.' }
+  }
+
+  const { data: actorMembership, error: membershipError } = await supabase
+    .from('account_members')
+    .select('role')
+    .eq('account_id', accountId)
+    .eq('profile_id', currentUser.id)
+    .maybeSingle()
+
+  if (membershipError) {
+    console.error('updateWorkspaceUserRole membership error:', membershipError)
+    return { ok: false, message: 'Unable to verify workspace permissions.' }
+  }
+
+  if (!isAccountRoleAtLeast(actorMembership?.role, 'owner')) {
+    return { ok: false, message: 'Only workspace owners can manage roles.' }
+  }
 
   const admin = supabaseAdmin()
 
   try {
-    const { error } = await admin
-      .from('profiles')
-      .update<ProfilesTable['Update']>({
-        role,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', profileId)
+    const { error: membershipUpdateError } = await admin
+      .from('account_members')
+      .update({ role })
+      .eq('account_id', accountId)
+      .eq('profile_id', profileId)
 
-    if (error) {
-      throw error
+    if (membershipUpdateError) {
+      throw membershipUpdateError
+    }
+
+    let resolvedProfileRole: ProfilesTable['Row']['role'] | null = null
+
+    if (role === 'owner') {
+      resolvedProfileRole = 'owner'
+    } else {
+      const { data: ownerMemberships, error: ownerMembershipError } = await admin
+        .from('account_members')
+        .select('role')
+        .eq('profile_id', profileId)
+        .eq('role', 'owner')
+        .limit(1)
+
+      if (ownerMembershipError) {
+        throw ownerMembershipError
+      }
+
+      resolvedProfileRole = ownerMemberships && ownerMemberships.length > 0 ? 'owner' : 'member'
+    }
+
+    if (resolvedProfileRole) {
+      const { error: profileUpdateError } = await admin
+        .from('profiles')
+        .update<ProfilesTable['Update']>({
+          role: resolvedProfileRole,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', profileId)
+
+      if (profileUpdateError) {
+        throw profileUpdateError
+      }
     }
 
     revalidatePath('/app/user-management')

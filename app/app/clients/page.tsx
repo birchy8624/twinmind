@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
+import { useActiveProfile } from '../_components/active-profile-context'
 import { FilterDropdown } from '../_components/filter-dropdown'
 import { StatusBadge } from '../_components/status-badge'
 
@@ -59,6 +60,7 @@ function formatStatus(status: Client['account_status']) {
 }
 
 export default function ClientsPage() {
+  const { activeAccountId, loading: profileLoading } = useActiveProfile()
   const [clients, setClients] = useState<Client[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
@@ -73,12 +75,20 @@ export default function ClientsPage() {
     let isMounted = true
 
     const fetchClients = async () => {
+      if (profileLoading || !activeAccountId) {
+        if (isMounted) {
+          setLoading(false)
+        }
+        return
+      }
+
       setLoading(true)
       setError(null)
 
       const { data, error: fetchError } = await supabase
         .from(CLIENTS)
         .select('id, name, website, account_status, created_at, notes, updated_at')
+        .eq('account_id', activeAccountId)
         .order('created_at', { ascending: false })
 
       if (!isMounted) return
@@ -109,7 +119,7 @@ export default function ClientsPage() {
     return () => {
       isMounted = false
     }
-  }, [supabase])
+  }, [activeAccountId, profileLoading, supabase])
 
   const filteredClients = useMemo(() => {
     const normalizedQuery = query.toLowerCase()

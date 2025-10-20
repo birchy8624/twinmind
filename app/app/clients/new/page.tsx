@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { createClientProject, type WizardPayload } from './actions'
 
 import { useToast } from '../../_components/toast-context'
+import { useActiveProfile } from '../../_components/active-profile-context'
 
 const timezones = [
   'UTC',
@@ -223,6 +224,7 @@ function formValuesToPayload(values: OnboardingForm): WizardPayload {
 export default function NewClientPage() {
   const router = useRouter()
   const { pushToast } = useToast()
+  const { activeAccountId } = useActiveProfile()
   const [activeStep, setActiveStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [canSubmitReview, setCanSubmitReview] = useState(false)
@@ -294,8 +296,18 @@ export default function NewClientPage() {
 
     const payload = formValuesToPayload(values)
 
+    if (!activeAccountId) {
+      pushToast({
+        title: 'No workspace selected',
+        description: 'Select a workspace before creating a client project.',
+        variant: 'error'
+      })
+      setIsSubmitting(false)
+      return
+    }
+
     try {
-      const result = await createClientProject(payload)
+      const result = await createClientProject({ accountId: activeAccountId, wizard: payload })
 
       if (!result.ok) {
         pushToast({

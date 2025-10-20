@@ -55,6 +55,7 @@ type InvoiceInfo = Pick<
 >
 
 const PROJECTS = 'projects' as const
+const ACCOUNT_MEMBERS = 'account_members' as const
 const INVOICES = 'invoices' as const
 const CLIENTS = 'clients' as const
 const PROFILES = 'profiles' as const
@@ -502,8 +503,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const { pushToast } = useToast()
 
   const supabase = useMemo(createBrowserClient, [])
-  const { profile: activeProfile, clientIds, loading: profileLoading } = useActiveProfile()
-  const isClientViewer = activeProfile?.role === 'client'
+  const { profile: activeProfile, activeAccountId, loading: profileLoading } = useActiveProfile()
   const isMountedRef = useRef(true)
 
   useEffect(() => {
@@ -513,28 +513,13 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   }, [])
 
   const fetchProjectData = useCallback(async () => {
-    if (profileLoading) {
+    if (profileLoading || !activeAccountId) {
       return
     }
 
     setLoadingProject(true)
     setLoadingOptions(true)
     setError(null)
-
-    if (isClientViewer && clientIds.length === 0) {
-      setProject(null)
-      setFormState(null)
-      setStoredBriefAnswers(null)
-      setBriefFormState(createEmptyBriefFormState())
-      setInvoices([])
-      setInvoiceDetails(null)
-      setClients([])
-      setAssignees([])
-      setError('You do not have access to this project.')
-      setLoadingProject(false)
-      setLoadingOptions(false)
-      return
-    }
 
     try {
       let projectQuery = supabase
@@ -562,26 +547,33 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           `
         )
         .eq('id', params.projectId)
-
-      if (isClientViewer) {
-        projectQuery = projectQuery.in('client_id', clientIds)
-      }
+        .eq('account_id', activeAccountId)
 
       const projectPromise = projectQuery.maybeSingle()
 
-      const clientsPromise = supabase.from(CLIENTS).select('id, name').order('name', { ascending: true })
+      const clientsPromise = supabase
+        .from(CLIENTS)
+        .select('id, name')
+        .eq('account_id', activeAccountId)
+        .order('name', { ascending: true })
       const assigneesPromise = supabase
-        .from(PROFILES)
-        .select('id, full_name')
-        .order('full_name', { ascending: true })
+        .from(ACCOUNT_MEMBERS)
+        .select('profile:profile_id ( id, full_name )')
+        .eq('account_id', activeAccountId)
       const invoicesPromise = supabase
         .from(INVOICES)
         .select(
           'id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at'
         )
         .eq('project_id', params.projectId)
+        .eq('account_id', activeAccountId)
         .order('created_at', { ascending: false })
-      const briefPromise = supabase.from(BRIEFS).select('answers').eq('project_id', params.projectId).maybeSingle()
+      const briefPromise = supabase
+        .from(BRIEFS)
+        .select('answers')
+        .eq('project_id', params.projectId)
+        .eq('account_id', activeAccountId)
+        .maybeSingle()
 
       const [projectResult, clientsResult, assigneesResult, invoicesResult, briefResult] = await Promise.all([
         projectPromise,
@@ -605,7 +597,13 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       if (assigneesError) {
         console.error('Failed to load profiles', assigneesError)
       }
-      setAssignees((assigneesData ?? []) as Array<Pick<ProfileRow, 'id' | 'full_name'>>)
+      type AssigneeQuery = { profile: Pick<ProfileRow, 'id' | 'full_name'> | null }
+      const typedAssignees = (assigneesData ?? []) as AssigneeQuery[]
+      const normalizedAssignees = typedAssignees
+        .map((row) => row.profile)
+        .filter((profile): profile is Pick<ProfileRow, 'id' | 'full_name'> => Boolean(profile))
+        .sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? ''))
+      setAssignees(normalizedAssignees)
 
       const { data: invoicesData, error: invoicesError } = invoicesResult
       if (invoicesError) {
@@ -712,10 +710,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setLoadingOptions(false)
       setLoadingProject(false)
     }
-  }, [clientIds, isClientViewer, params.projectId, profileLoading, supabase])
+  }, [activeAccountId, params.projectId, profileLoading, supabase])
 
   const fetchProjectComments = useCallback(async () => {
-    if (profileLoading || (isClientViewer && clientIds.length === 0)) {
+    if (profileLoading || !activeAccountId) {
       return
     }
 
@@ -760,10 +758,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
     setComments(typedComments)
     setLoadingComments(false)
-  }, [clientIds, isClientViewer, params.projectId, profileLoading, supabase])
+  }, [activeAccountId, params.projectId, profileLoading, supabase])
 
   const fetchProjectFiles = useCallback(async () => {
-    if (profileLoading || (isClientViewer && clientIds.length === 0)) {
+    if (profileLoading || !activeAccountId) {
       return
     }
 
@@ -815,7 +813,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
     setFiles(typedFiles)
     setLoadingFiles(false)
-  }, [clientIds, isClientViewer, params.projectId, profileLoading, pushToast, supabase])
+  }, [activeAccountId, params.projectId, profileLoading, pushToast, supabase])
 
   useEffect(() => {
     void fetchProjectData()
@@ -2927,7 +2925,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                   </form>
                 ) : (
                   <p className="text-sm text-white/60">
-                    Sign in with your agency or client account to participate in the conversation.
+                    Sign in with your TwinMind account to participate in the conversation.
                   </p>
                 )}
               </section>

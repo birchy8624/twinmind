@@ -46,6 +46,11 @@ const WizardSchema = z.object({
   brief: BriefSchema
 })
 
+const ActionSchema = z.object({
+  accountId: z.string().uuid(),
+  wizard: WizardSchema
+})
+
 export type WizardPayload = z.infer<typeof WizardSchema>
 
 type ActionResult =
@@ -53,12 +58,15 @@ type ActionResult =
   | { ok: false; message: string }
 
 export async function createClientProject(input: unknown): Promise<ActionResult> {
-  const parsed = WizardSchema.safeParse(input)
+  const parsed = ActionSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, message: 'Invalid input.' }
   }
 
-  const { client, contact, project, brief } = parsed.data
+  const {
+    accountId,
+    wizard: { client, contact, project, brief }
+  } = parsed.data
 
   const ownerClient = createServerSupabase()
   const {
@@ -71,6 +79,22 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
   }
 
   const admin = supabaseAdmin()
+
+  const { data: membership, error: membershipError } = await ownerClient
+    .from('account_members')
+    .select('account_id')
+    .eq('profile_id', ownerUser.id)
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  if (membershipError) {
+    console.error('Failed to verify workspace membership:', membershipError)
+    return { ok: false, message: 'Unable to verify workspace membership.' }
+  }
+
+  if (!membership) {
+    return { ok: false, message: 'You do not have access to this workspace.' }
+  }
 
   const contactFirstName = contact.first_name.trim()
   const contactLastName = contact.last_name.trim()
@@ -114,6 +138,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
   }
 
   const clientInsert: Database['public']['Tables']['clients']['Insert'] = {
+    account_id: accountId,
     name: client.name,
     website: client.website ?? null,
     account_status: 'active'
@@ -159,6 +184,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
   }
 
   const projectInsert: Database['public']['Tables']['projects']['Insert'] = {
+    account_id: accountId,
     client_id: clientId,
     name: project.name,
     description: project.description,
@@ -184,6 +210,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
   projectId = projectRow.id
 
   const briefInsert: Database['public']['Tables']['briefs']['Insert'] = {
+    account_id: accountId,
     project_id: projectId,
     answers:
       brief as Database['public']['Tables']['briefs']['Insert']['answers'],
@@ -198,6 +225,7 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
 
   if (project.invoice_amount && project.invoice_amount > 0) {
     const invoiceInsert: Database['public']['Tables']['invoices']['Insert'] = {
+      account_id: accountId,
       project_id: projectId,
       status: 'Quote',
       amount: project.invoice_amount,

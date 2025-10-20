@@ -80,8 +80,8 @@ function formatDueDate(value: string | null) {
 }
 
 export default function ProjectsPage() {
-  const { clientIds, loading: profileLoading, profile } = useActiveProfile()
-  const isClient = profile?.role === 'client'
+  const { loading: profileLoading, profile, activeAccountId } = useActiveProfile()
+  const canCreateProject = profile?.role === 'owner'
   const [projects, setProjects] = useState<Project[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string[]>([])
@@ -97,20 +97,15 @@ export default function ProjectsPage() {
     let isMounted = true
 
     const fetchProjects = async () => {
-      if (profileLoading) {
+      if (profileLoading || !activeAccountId) {
+        if (isMounted) {
+          setLoading(false)
+        }
         return
       }
 
       setLoading(true)
       setError(null)
-
-      if (isClient && clientIds.length === 0) {
-        if (isMounted) {
-          setProjects([])
-          setLoading(false)
-        }
-        return
-      }
 
       let queryBuilder = supabase
         .from(PROJECTS)
@@ -127,10 +122,7 @@ export default function ProjectsPage() {
           `
         )
         .order('created_at', { ascending: false })
-
-      if (isClient) {
-        queryBuilder = queryBuilder.in('client_id', clientIds)
-      }
+        .eq('account_id', activeAccountId)
 
       const { data, error: fetchError } = await queryBuilder
 
@@ -166,7 +158,7 @@ export default function ProjectsPage() {
     return () => {
       isMounted = false
     }
-  }, [supabase, profileLoading, isClient, clientIds])
+  }, [activeAccountId, profileLoading, supabase])
 
   const clientFilters = useMemo(() => {
     const uniqueClients = new Set<string>()
@@ -215,7 +207,7 @@ export default function ProjectsPage() {
             Monitor project health across clients and quickly surface work that needs attention.
           </p>
         </div>
-        {!isClient ? (
+        {canCreateProject ? (
           <Link
             href="/app/projects/new"
             className="inline-flex items-center justify-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient"
@@ -228,23 +220,21 @@ export default function ProjectsPage() {
       <motion.div className="rounded-3xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
         <div className="flex flex-col gap-3 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex w-full flex-col gap-3 text-sm text-white/70 sm:flex-row">
-            {!isClient ? (
-              <label className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 focus-within:border-white/30 focus-within:text-white/80">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="h-4 w-4">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z" />
-                </svg>
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value)
-                    setPage(1)
-                  }}
-                  placeholder="Search by project, client, or owner"
-                  className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/40 focus:outline-none"
-                />
-              </label>
-            ) : null}
+            <label className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 focus-within:border-white/30 focus-within:text-white/80">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z" />
+              </svg>
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value)
+                  setPage(1)
+                }}
+                placeholder="Search by project, client, or owner"
+                className="w-full bg-transparent text-sm text-white/80 placeholder:text-white/40 focus:outline-none"
+              />
+            </label>
             <MultiSelectDropdown
               label="Status"
               values={statusFilter}
@@ -256,18 +246,16 @@ export default function ProjectsPage() {
               }}
               className="sm:w-56"
             />
-            {!isClient ? (
-              <FilterDropdown
-                label="Client"
-                value={clientFilter}
-                options={clientFilters}
-                onChange={(nextValue) => {
-                  setClientFilter(nextValue)
-                  setPage(1)
-                }}
-                className="sm:w-56"
-              />
-            ) : null}
+            <FilterDropdown
+              label="Client"
+              value={clientFilter}
+              options={clientFilters}
+              onChange={(nextValue) => {
+                setClientFilter(nextValue)
+                setPage(1)
+              }}
+              className="sm:w-56"
+            />
           </div>
         </div>
 

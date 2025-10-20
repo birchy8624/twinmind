@@ -21,8 +21,9 @@ export function ClientDeleteButton({ clientId, clientName }: ClientDeleteButtonP
   const [isPending, startTransition] = useTransition()
 
   const isOwner = profile?.role === 'owner'
+  const accountId = profile?.accountId ?? null
 
-  if (!isOwner) {
+  if (!isOwner || !accountId) {
     return null
   }
 
@@ -32,7 +33,7 @@ export function ClientDeleteButton({ clientId, clientName }: ClientDeleteButtonP
     }
 
     startTransition(async () => {
-      const result = await deleteClient({ clientId })
+      const result = await deleteClient({ clientId, accountId })
 
       if (!result.ok) {
         pushToast({

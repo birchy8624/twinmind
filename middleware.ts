@@ -23,7 +23,7 @@ export async function middleware(request: NextRequest) {
       const candidate = session?.user?.user_metadata?.role
       if (typeof candidate === 'string') {
         const normalized = candidate.trim().toLowerCase()
-        if (normalized === 'owner' || normalized === 'client') {
+        if (normalized === 'owner' || normalized === 'member') {
           return normalized as Database['public']['Enums']['role']
         }
       }
@@ -67,23 +67,9 @@ export async function middleware(request: NextRequest) {
 
   if (session && isAuthRoute) {
     const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = role === 'client' ? '/app/projects' : DASHBOARD_PATH
+    redirectUrl.pathname = DASHBOARD_PATH
     redirectUrl.search = ''
     return NextResponse.redirect(redirectUrl)
-  }
-
-  if (session && isProtectedRoute && role === 'client') {
-    const isProjectsHome = pathname === '/app/projects'
-    const isProjectDetail = /^\/app\/projects\/[\w-]+$/.test(pathname)
-    const isSettingsPath = pathname.startsWith('/app/settings')
-    const isAllowed = isProjectsHome || isProjectDetail || isSettingsPath
-
-    if (!isAllowed) {
-      const redirectUrl = request.nextUrl.clone()
-      redirectUrl.pathname = '/app/projects'
-      redirectUrl.search = ''
-      return NextResponse.redirect(redirectUrl)
-    }
   }
 
   return response

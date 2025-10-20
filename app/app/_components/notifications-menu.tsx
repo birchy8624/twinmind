@@ -45,7 +45,7 @@ type ProjectRow = Database['public']['Tables']['projects']['Row']
 
 type NotificationRecord = CommentRow & {
   author_profile: Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null
-  project: Pick<ProjectRow, 'id' | 'name' | 'client_id'> | null
+  project: Pick<ProjectRow, 'id' | 'name' | 'client_id' | 'account_id'> | null
 }
 
 type NotificationItem = {
@@ -84,7 +84,7 @@ function resolveNotificationItem(record: NotificationRecord): NotificationItem |
 
 export function NotificationsMenu({ className, triggerClassName }: NotificationsMenuProps = {}) {
   const supabase = useMemo(createBrowserClient, [])
-  const { clientIds, loading: profileLoading, profile } = useActiveProfile()
+  const { loading: profileLoading, profile, activeAccountId } = useActiveProfile()
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -92,7 +92,6 @@ export function NotificationsMenu({ className, triggerClassName }: Notifications
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set())
   const containerRef = useRef<HTMLDivElement | null>(null)
 
-  const isClient = profile?.role === 'client'
   const storageKey = profile?.id ? `${SEEN_STORAGE_PREFIX}${profile.id}` : null
 
   useEffect(() => {
@@ -135,13 +134,7 @@ export function NotificationsMenu({ className, triggerClassName }: Notifications
     setLoading(true)
     setError(null)
 
-    if (isClient && clientIds.length === 0) {
-      setNotifications([])
-      setLoading(false)
-      return
-    }
-
-    const query = supabase
+    let query = supabase
       .from(COMMENTS)
       .select(
         `
@@ -149,13 +142,17 @@ export function NotificationsMenu({ className, triggerClassName }: Notifications
           body,
           created_at,
           visibility,
-          project:project_id ( id, name, client_id ),
+          project:project_id ( id, name, client_id, account_id ),
           author_profile:author_profile_id ( id, full_name, role )
         `
       )
       .neq('author_profile_id', profile.id)
       .order('created_at', { ascending: false })
       .limit(50)
+
+    if (activeAccountId) {
+      query = query.eq('project:project_id.account_id', activeAccountId)
+    }
 
     const { data, error: fetchError } = await query
 
@@ -168,29 +165,13 @@ export function NotificationsMenu({ className, triggerClassName }: Notifications
     }
 
     const records = (data ?? []) as NotificationRecord[]
-    const filteredRecords = records.filter((record) => {
-      if (isClient) {
-        if (record.visibility === 'internal') {
-          return false
-        }
-
-        if (!record.project?.client_id) {
-          return false
-        }
-
-        return clientIds.includes(record.project.client_id)
-      }
-
-      return true
-    })
-
-    const resolved = filteredRecords
+    const resolved = records
       .map(resolveNotificationItem)
       .filter((item): item is NotificationItem => item !== null)
 
     setNotifications(resolved)
     setLoading(false)
-  }, [clientIds, isClient, profile?.id, profileLoading, supabase])
+  }, [activeAccountId, profile?.id, profileLoading, supabase])
 
   useEffect(() => {
     void fetchNotifications()

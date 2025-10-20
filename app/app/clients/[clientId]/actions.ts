@@ -3,12 +3,14 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
+import { isAccountRoleAtLeast } from '@/lib/active-account'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import type { Database } from '@/types/supabase'
 
 const deleteClientSchema = z.object({
-  clientId: z.string().min(1, 'Client identifier is required')
+  clientId: z.string().min(1, 'Client identifier is required'),
+  accountId: z.string().uuid('Workspace identifier is required')
 })
 
 const PROJECT_FILES_BUCKET = 'project-files' as const
@@ -25,7 +27,7 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     return { ok: false, message: 'Invalid client details provided.' }
   }
 
-  const { clientId } = parsed.data
+  const { clientId, accountId } = parsed.data
 
   const supabase = createServerSupabase()
   const {
@@ -37,21 +39,35 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     return { ok: false, message: 'Not authenticated.' }
   }
 
-  type ProfileRoleRow = Pick<Database['public']['Tables']['profiles']['Row'], 'role'>
-
-  const { data: profileRow, error: profileError } = await supabase
-    .from('profiles')
+  const { data: membershipRow, error: membershipError } = await supabase
+    .from('account_members')
     .select('role')
-    .eq('id', user.id)
-    .maybeSingle<ProfileRoleRow>()
+    .eq('profile_id', user.id)
+    .eq('account_id', accountId)
+    .maybeSingle()
 
-  if (profileError) {
-    console.error('deleteClient profile error:', profileError)
-    return { ok: false, message: 'Unable to verify permissions.' }
+  if (membershipError) {
+    console.error('deleteClient membership error:', membershipError)
+    return { ok: false, message: 'Unable to verify workspace permissions.' }
   }
 
-  if (profileRow?.role !== 'owner') {
+  if (!isAccountRoleAtLeast(membershipRow?.role, 'owner')) {
     return { ok: false, message: 'Only workspace owners can delete clients.' }
+  }
+
+  const { data: clientRow, error: clientFetchError } = await supabase
+    .from('clients')
+    .select('account_id')
+    .eq('id', clientId)
+    .maybeSingle()
+
+  if (clientFetchError) {
+    console.error('deleteClient client fetch error:', clientFetchError)
+    return { ok: false, message: 'Unable to load client details.' }
+  }
+
+  if (!clientRow || clientRow.account_id !== accountId) {
+    return { ok: false, message: 'Client does not belong to this workspace.' }
   }
 
   const admin = supabaseAdmin()
@@ -60,6 +76,7 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     .from('projects')
     .select('id')
     .eq('client_id', clientId)
+    .eq('account_id', accountId)
 
   if (projectQueryError) {
     console.error('deleteClient projects query error:', projectQueryError)
@@ -117,7 +134,10 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
       }
     }
 
-    const { error: projectDeleteError } = await admin.from('projects').delete().in('id', projectIds)
+    const { error: projectDeleteError } = await admin
+      .from('projects')
+      .delete()
+      .in('id', projectIds)
 
     if (projectDeleteError) {
       console.error('deleteClient projects delete error:', projectDeleteError)
@@ -147,7 +167,11 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     }
   }
 
-  const { error: clientDeleteError } = await admin.from('clients').delete().eq('id', clientId)
+  const { error: clientDeleteError } = await admin
+    .from('clients')
+    .delete()
+    .eq('id', clientId)
+    .eq('account_id', accountId)
 
   if (clientDeleteError) {
     console.error('deleteClient client delete error:', clientDeleteError)

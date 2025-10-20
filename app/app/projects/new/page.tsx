@@ -12,6 +12,7 @@ import { createProject, type ProjectWizardPayload } from './actions'
 import type { Database } from '@/types/supabase'
 import { createBrowserClient } from '@/lib/supabase/browser'
 import { useToast } from '../../_components/toast-context'
+import { useActiveProfile } from '../../_components/active-profile-context'
 
 type ClientRow = Database['public']['Tables']['clients']['Row']
 
@@ -118,6 +119,7 @@ const defaultValues: NewProjectForm = {
 export default function NewProjectPage() {
   const router = useRouter()
   const { pushToast } = useToast()
+  const { activeAccountId } = useActiveProfile()
   const [activeStep, setActiveStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [clients, setClients] = useState<ClientOption[]>([])
@@ -200,8 +202,18 @@ export default function NewProjectPage() {
 
     const payload = formValuesToPayload(values)
 
+    if (!activeAccountId) {
+      pushToast({
+        title: 'No workspace selected',
+        description: 'Select a workspace before creating a project.',
+        variant: 'error'
+      })
+      setIsSubmitting(false)
+      return
+    }
+
     try {
-      const result = await createProject(payload)
+      const result = await createProject({ accountId: activeAccountId, wizard: payload })
 
       if (!result.ok) {
         pushToast({

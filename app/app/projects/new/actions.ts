@@ -33,6 +33,11 @@ const ProjectWizardSchema = z.object({
   brief: BriefSchema
 })
 
+const ActionSchema = z.object({
+  accountId: z.string().uuid(),
+  wizard: ProjectWizardSchema
+})
+
 export type ProjectWizardPayload = z.infer<typeof ProjectWizardSchema>
 
 type ActionResult = { ok: true; projectId: string } | { ok: false; message: string }
@@ -40,16 +45,19 @@ type ActionResult = { ok: true; projectId: string } | { ok: false; message: stri
 type SupabaseActionError = { message?: string } | null
 
 export async function createProject(input: unknown): Promise<ActionResult> {
-  const parsed = ProjectWizardSchema.safeParse(input)
+  const parsed = ActionSchema.safeParse(input)
 
   if (!parsed.success) {
     return { ok: false, message: 'Invalid input.' }
   }
 
   const {
-    project: { name, description, clientId, dueDate },
-    invoice,
-    brief
+    accountId,
+    wizard: {
+      project: { name, description, clientId, dueDate },
+      invoice,
+      brief
+    }
   } = parsed.data
 
   const ownerClient = createServerSupabase()
@@ -63,6 +71,22 @@ export async function createProject(input: unknown): Promise<ActionResult> {
   }
 
   const admin = supabaseAdmin()
+
+  const { data: membership, error: membershipError } = await ownerClient
+    .from('account_members')
+    .select('account_id')
+    .eq('profile_id', ownerUser.id)
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  if (membershipError) {
+    console.error('Failed to verify workspace membership:', membershipError)
+    return { ok: false, message: 'Unable to verify workspace membership.' }
+  }
+
+  if (!membership) {
+    return { ok: false, message: 'You do not have access to this workspace.' }
+  }
 
   let projectId: string | null = null
 
@@ -89,6 +113,7 @@ export async function createProject(input: unknown): Promise<ActionResult> {
   }
 
   const projectInsert: Database['public']['Tables']['projects']['Insert'] = {
+    account_id: accountId,
     client_id: clientId,
     name,
     description,
@@ -114,6 +139,7 @@ export async function createProject(input: unknown): Promise<ActionResult> {
   projectId = projectRow.id
 
   const briefInsert: Database['public']['Tables']['briefs']['Insert'] = {
+    account_id: accountId,
     project_id: projectId,
     answers: brief as Database['public']['Tables']['briefs']['Insert']['answers'],
     completed: true
@@ -127,6 +153,7 @@ export async function createProject(input: unknown): Promise<ActionResult> {
 
   if (invoice) {
     const invoiceInsert: Database['public']['Tables']['invoices']['Insert'] = {
+      account_id: accountId,
       project_id: projectId,
       status: 'Quote',
       amount: invoice.amount,

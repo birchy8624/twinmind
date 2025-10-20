@@ -3,24 +3,30 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 
+import type { Database } from '@/types/supabase'
+
 import { createWorkspaceUser, sendWorkspacePasswordReset, updateWorkspaceUserRole } from './actions'
 import { useToast } from '../_components/toast-context'
 
 export type WorkspaceUserStatus = 'active' | 'invited'
+
+type AccountRole = Database['public']['Enums']['account_role']
 
 export type WorkspaceUserRecord = {
   id: string
   email: string
   fullName: string
   company: string | null
-  role: 'owner' | 'client'
+  role: AccountRole
   createdAt: string | null
   lastSignInAt: string | null
   status: WorkspaceUserStatus
 }
 
 type Props = {
+  accountId: string
   currentUserId: string
+  currentUserRole: AccountRole
   initialUsers: WorkspaceUserRecord[]
 }
 
@@ -30,7 +36,7 @@ type NewUserFormState = {
   sendInvite: boolean
 }
 
-type RoleFilter = 'all' | 'owner' | 'client'
+type RoleFilter = 'all' | AccountRole
 
 type StatusFilter = 'all' | WorkspaceUserStatus
 
@@ -45,9 +51,9 @@ const statusLabels: Record<WorkspaceUserStatus, string> = {
   invited: 'Invited'
 }
 
-const roleLabels: Record<'owner' | 'client', string> = {
+const roleLabels: Record<AccountRole, string> = {
   owner: 'Owner',
-  client: 'Client'
+  member: 'Member'
 }
 
 const formatDate = (value: string | null) => {
@@ -120,7 +126,7 @@ const formatRelativeTime = (value: string | null) => {
   return `${years}y ago`
 }
 
-export function UserManagementClient({ currentUserId, initialUsers }: Props) {
+export function UserManagementClient({ accountId, currentUserId, currentUserRole, initialUsers }: Props) {
   const router = useRouter()
   const { pushToast } = useToast()
   const users = initialUsers
@@ -166,9 +172,28 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
   const handleCreateUser = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
+    if (!accountId) {
+      pushToast({
+        title: 'No active workspace',
+        description: 'Select a workspace before inviting members.',
+        variant: 'error'
+      })
+      return
+    }
+
+    if (currentUserRole !== 'owner') {
+      pushToast({
+        title: 'Insufficient permissions',
+        description: 'Only workspace owners can add members.',
+        variant: 'error'
+      })
+      return
+    }
+
     const trimmedName = formState.fullName.trim()
 
     const payload = {
+      accountId,
       email: formState.email.trim(),
       fullName: trimmedName ? trimmedName : undefined,
       sendInvite: formState.sendInvite
@@ -200,10 +225,28 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
   }
 
   const handleRoleChange = (userId: string) => {
-    const targetRole: 'owner' = 'owner'
+    if (!accountId) {
+      pushToast({
+        title: 'No active workspace',
+        description: 'Select a workspace before updating roles.',
+        variant: 'error'
+      })
+      return
+    }
+
+    if (currentUserRole !== 'owner') {
+      pushToast({
+        title: 'Insufficient permissions',
+        description: 'Only workspace owners can manage roles.',
+        variant: 'error'
+      })
+      return
+    }
+
+    const targetRole: AccountRole = 'owner'
     setRoleMutationId(`${userId}-${targetRole}`)
 
-    void updateWorkspaceUserRole({ profileId: userId, role: targetRole })
+    void updateWorkspaceUserRole({ profileId: userId, role: targetRole, accountId })
       .then((result) => {
         if (!result.ok) {
           pushToast({
@@ -273,7 +316,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
             </dl>
           </div>
           <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-base-900/40 p-6 text-white/70">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">Add workspace user</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-white/60">Add workspace member</h2>
             <form onSubmit={handleCreateUser} className="mt-4 space-y-4">
               <label className="block space-y-1 text-sm">
                 <span className="text-xs uppercase tracking-wide text-white/40">Full name</span>
@@ -297,9 +340,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
                   placeholder="ada@company.com"
                 />
               </label>
-              <p className="text-xs text-white/50">
-                New users are added as workspace owners with full access to agency tools.
-              </p>
+              <p className="text-xs text-white/50">New members start with workspace access as collaborators.</p>
               <label className="flex items-center gap-3 text-sm text-white/70">
                 <input
                   type="checkbox"
@@ -338,7 +379,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
               {([
                 ['all', 'All roles'],
                 ['owner', 'Owners'],
-                ['client', 'Clients']
+                ['member', 'Members']
               ] as const).map(([value, label]) => (
                 <button
                   key={value}
@@ -390,10 +431,11 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
                   </td>
                 </tr>
               ) : (
-                  filteredUsers.map((user) => {
-                    const roleMutationKeyOwner = `${user.id}-owner`
+                filteredUsers.map((user) => {
+                  const roleMutationKeyOwner = `${user.id}-owner`
                   const isRoleLoading = roleMutationId === roleMutationKeyOwner
                   const isResetLoading = resetMutationId === user.id
+                  const canPromoteToOwner = user.role !== 'owner' && user.id !== currentUserId
 
                   return (
                     <tr key={user.id} className="transition hover:bg-white/5">
@@ -427,7 +469,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
                       <td className="py-4 text-right">
                         <div className="flex flex-col items-end gap-2">
                           <div className="inline-flex items-center gap-2">
-                            {user.role !== 'owner' ? (
+                            {canPromoteToOwner ? (
                               <button
                                 type="button"
                                 className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
