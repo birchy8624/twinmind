@@ -96,7 +96,10 @@ export default async function BillingPage() {
     redirect('/app/dashboard')
   }
 
-  const { data: planRows, error: plansError } = await supabase
+  const {
+    data: planRowsData,
+    error: plansError
+  } = await supabase
     .from('plans')
     .select('code, name, monthly_price_cents, limits')
     .order('monthly_price_cents', { ascending: true })
@@ -104,6 +107,10 @@ export default async function BillingPage() {
   if (plansError) {
     console.error('Failed to load billing plans:', plansError)
   }
+
+  const planRows = (planRowsData ?? []) as Array<
+    Pick<PlanRow, 'code' | 'name' | 'monthly_price_cents' | 'limits'>
+  >
 
   const { data: subscriptionRow, error: subscriptionError } = await supabase
     .from('subscriptions')
@@ -117,7 +124,7 @@ export default async function BillingPage() {
     console.error('Failed to load subscription:', subscriptionError)
   }
 
-  const plans = (planRows ?? []).map((plan) => ({
+  const plans = planRows.map((plan) => ({
     code: plan.code,
     name: plan.name,
     monthlyPriceCents: plan.monthly_price_cents ?? 0,
