@@ -91,11 +91,11 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
       <div
         data-workspace-root
         data-theme="dark"
-        className="workspace-theme dark relative min-h-screen overflow-hidden bg-base-950 text-white"
+        className="workspace-theme dark relative min-h-screen overflow-hidden bg-base-950 bg-tw-gradient text-white"
       >
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 bg-tw-gradient opacity-80 dark:opacity-100"
+          className="pointer-events-none absolute inset-0 -z-10 bg-tw-gradient opacity-90 blur-3xl dark:opacity-100"
         />
         {showNavigation ? (
           <aside className="hidden w-72 flex-col border-r border-white/10 bg-base-900/70 p-6 backdrop-blur lg:fixed lg:inset-y-0 lg:flex">
