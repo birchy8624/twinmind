@@ -203,7 +203,7 @@ export default function SignInForm() {
           <input
             type="checkbox"
             name="remember"
-            className="h-4 w-4 rounded border border-limeglow-500/40 bg-base-900/80 accent-limeglow-500 focus:ring-limeglow-500/40"
+            className="h-4 w-4 rounded border border-white/10 bg-base-900/80 brand-accent"
             disabled={loading}
           />
           Remember me
