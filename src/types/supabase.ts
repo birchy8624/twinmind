@@ -9,6 +9,61 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      account_members: {
+        Row: {
+          account_id: string
+          created_at: string | null
+          id: string
+          profile_id: string
+          role: Database['public']['Enums']['account_role']
+        }
+        Insert: {
+          account_id: string
+          created_at?: string | null
+          id?: string
+          profile_id: string
+          role?: Database['public']['Enums']['account_role']
+        }
+        Update: {
+          account_id?: string
+          created_at?: string | null
+          id?: string
+          profile_id?: string
+          role?: Database['public']['Enums']['account_role']
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'account_members_account_id_fkey'
+            columns: ['account_id']
+            referencedRelation: 'accounts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'account_members_profile_id_fkey'
+            columns: ['profile_id']
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      accounts: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           action: string
@@ -564,6 +619,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      account_role: 'owner' | 'member'
       account_status: 'active' | 'inactive' | 'invited' | 'archived'
       invoice_status: 'Quote' | 'Draft' | 'Sent' | 'Paid' | 'Cancelled'
       priority_enum: 'low' | 'medium' | 'high'

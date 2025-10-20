@@ -1,137 +1,169 @@
 import { redirect } from 'next/navigation'
-import type { User } from '@supabase/supabase-js'
 
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
 
-import UserManagementClient, {
-  type WorkspaceUserRecord,
-  type WorkspaceUserStatus
-} from './UserManagementClient'
+import UserManagementClient, { type AccountAccess, type AccountMember } from './UserManagementClient'
 
-type RoleEnum = Database['public']['Enums']['role']
-
+type AccountRow = Database['public']['Tables']['accounts']['Row']
+type AccountMemberRow = Database['public']['Tables']['account_members']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
-type ProfilePreview = Pick<ProfileRow, 'id' | 'full_name' | 'role' | 'email' | 'company'>
+type ProfileRole = Database['public']['Enums']['role']
 
-type MetadataRecord = Record<string, unknown> | undefined
-
-const resolveMetadataName = (metadata: MetadataRecord) => {
-  if (!metadata) {
-    return null
-  }
-
-  const candidates: unknown[] = [
-    metadata['full_name'],
-    metadata['name'],
-    metadata['first_name'],
-    metadata['last_name']
-  ]
-
-  const resolved = candidates
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
-    .filter(Boolean)
-
-  if (resolved.length === 0) {
-    return null
-  }
-
-  if (resolved[0] && resolved[1] && !resolved[0]?.includes(' ')) {
-    return `${resolved[0]} ${resolved[1]}`.trim()
-  }
-
-  return resolved[0]
+type MembershipQueryRow = Pick<AccountMemberRow, 'account_id' | 'role' | 'created_at'> & {
+  accounts: Pick<AccountRow, 'id' | 'name' | 'created_at'> | null
 }
 
-const resolveMetadataRole = (metadata: MetadataRecord): RoleEnum | null => {
-  if (!metadata) {
-    return null
-  }
-
-  const keys = ['role', 'title', 'position']
-
-  for (const key of keys) {
-    const value = metadata[key]
-    if (typeof value !== 'string') {
-      continue
-    }
-
-    const normalized = value.trim().toLowerCase()
-
-    if (normalized === 'owner' || normalized === 'client') {
-      return normalized as RoleEnum
-    }
-  }
-
-  return null
+type AccountMemberWithProfile = Pick<
+  AccountMemberRow,
+  'id' | 'account_id' | 'profile_id' | 'role' | 'created_at'
+> & {
+  profiles: Pick<ProfileRow, 'id' | 'full_name' | 'email'> | null
 }
 
-const toWorkspaceStatus = (user: User): WorkspaceUserStatus => {
-  if (user.confirmed_at || user.last_sign_in_at) {
-    return 'active'
+const resolveAccountName = (account: Pick<AccountRow, 'name'> | null | undefined) => {
+  if (!account) {
+    return 'Untitled account'
   }
 
-  return 'invited'
+  return account.name
 }
 
-const toWorkspaceRecord = (user: User, profile: ProfilePreview | undefined): WorkspaceUserRecord => {
-  const metadataName = resolveMetadataName(user.user_metadata)
-  const metadataRole = resolveMetadataRole(user.user_metadata)
+const resolveFullName = (profile: Pick<ProfileRow, 'full_name' | 'email'> | null | undefined) => {
+  const candidate = profile?.full_name?.trim()
 
-  const fullName = profile?.full_name?.trim() || metadataName || user.email || 'Workspace member'
-  const role = profile?.role ?? metadataRole ?? 'owner'
-
-  return {
-    id: user.id,
-    email: user.email ?? 'Unknown email',
-    fullName,
-    company: profile?.company ?? null,
-    role,
-    createdAt: user.created_at,
-    lastSignInAt: user.last_sign_in_at ?? null,
-    status: toWorkspaceStatus(user)
+  if (candidate && candidate.length > 0) {
+    return candidate
   }
+
+  if (profile?.email) {
+    return profile.email
+  }
+
+  return 'Unknown member'
 }
 
 export default async function UserManagementPage() {
   const supabase = createServerSupabase()
   const {
-    data: { user: currentUser }
+    data: { user }
   } = await supabase.auth.getUser()
 
-  if (!currentUser) {
+  if (!user) {
     redirect('/sign_in')
   }
 
-  const admin = supabaseAdmin()
-
-  const [{ data: userData, error: usersError }, { data: profileRows, error: profilesError }] = await Promise.all([
-    admin.auth.admin.listUsers({ perPage: 200 }),
-    admin.from('profiles').select('id, full_name, role, email, company')
+  const [{ data: profile, error: profileError }, { data: membershipRows, error: membershipError }] = await Promise.all([
+    supabase.from('profiles').select('id, role, full_name').eq('id', user.id).maybeSingle(),
+    supabase
+      .from('account_members')
+      .select('account_id, role, created_at, accounts(id, name, created_at)')
+      .eq('profile_id', user.id)
   ])
 
-  if (usersError) {
-    console.error('Failed to load Supabase users:', usersError)
+  if (profileError) {
+    console.error('Failed to load profile for user management:', profileError)
   }
 
-  if (profilesError) {
-    console.error('Failed to load workspace profiles:', profilesError)
+  if (membershipError) {
+    console.error('Failed to load account memberships:', membershipError)
   }
 
-  const profileMap = new Map<string, ProfilePreview>()
+  const membershipRowsTyped = membershipRows as MembershipQueryRow[] | null | undefined
 
-  profileRows?.forEach((row) => {
-    profileMap.set(row.id, row)
+  const membershipAccounts = (membershipRowsTyped ?? []).flatMap<AccountAccess>((row) => {
+    if (!row.accounts) {
+      return []
+    }
+
+    return [
+      {
+        id: row.accounts.id,
+        name: resolveAccountName(row.accounts),
+        createdAt: row.accounts.created_at,
+        membershipRole: row.role,
+        accessType: 'member'
+      }
+    ]
   })
 
-  const authUsers = userData?.users ?? []
+  const isPlatformOwner: boolean = profile?.role === ('owner' satisfies ProfileRole)
 
-  const workspaceUsers = authUsers
-    .map((user) => toWorkspaceRecord(user, profileMap.get(user.id)))
-    .sort((a, b) => a.fullName.localeCompare(b.fullName))
+  let accounts: AccountAccess[] = membershipAccounts
 
-  return (
-    <UserManagementClient currentUserId={currentUser.id} initialUsers={workspaceUsers} />
-  )
+  if (isPlatformOwner) {
+    const { data: allAccounts, error: allAccountsError } = await supabase
+      .from('accounts')
+      .select('id, name, created_at')
+      .order('name', { ascending: true })
+
+    if (allAccountsError) {
+      console.error('Failed to load all accounts for owner:', allAccountsError)
+    }
+
+    const combined = new Map<string, AccountAccess>()
+
+    membershipAccounts.forEach((account) => {
+      combined.set(account.id, account)
+    })
+
+    ;(allAccounts ?? []).forEach((account) => {
+      if (combined.has(account.id)) {
+        return
+      }
+
+      combined.set(account.id, {
+        id: account.id,
+        name: resolveAccountName(account),
+        createdAt: account.created_at,
+        membershipRole: null,
+        accessType: 'platform-owner'
+      })
+    })
+
+    accounts = Array.from(combined.values()).sort((a, b) => a.name.localeCompare(b.name))
+  } else {
+    accounts = [...membershipAccounts].sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  const uniqueAccountIds = Array.from(new Set(accounts.map((account) => account.id)))
+
+  let membersByAccount: Record<string, AccountMember[]> = {}
+
+  if (uniqueAccountIds.length > 0) {
+    const { data: memberRows, error: membersError } = await supabase
+      .from('account_members')
+      .select('id, account_id, profile_id, role, created_at, profiles!inner(id, full_name, email)')
+      .in('account_id', uniqueAccountIds)
+
+    if (membersError) {
+      console.error('Failed to load account members:', membersError)
+    }
+
+    membersByAccount = (memberRows as AccountMemberWithProfile[] | null | undefined)?.reduce<Record<string, AccountMember[]>>(
+      (accumulator, row) => {
+        const profileDetails = row.profiles
+        const accountId = row.account_id
+
+        if (!accumulator[accountId]) {
+          accumulator[accountId] = []
+        }
+
+        accumulator[accountId]?.push({
+          id: row.id,
+          accountId,
+          profileId: row.profile_id,
+          fullName: resolveFullName(profileDetails),
+          email: profileDetails?.email ?? '—',
+          role: row.role,
+          addedAt: row.created_at
+        })
+
+        return accumulator
+      },
+      {}
+    ) ?? {}
+  }
+
+  return <UserManagementClient accounts={accounts} membersByAccount={membersByAccount} />
 }
