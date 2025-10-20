@@ -138,12 +138,20 @@ export function WorkspaceAccountMenu({ className, showOnMobile = false }: Worksp
           View profile
         </Link>
         {isOwner ? (
-          <Link
-            href="/app/user-management"
-            className="block rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
-          >
-            User management
-          </Link>
+          <>
+            <Link
+              href="/app/billing"
+              className="block rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
+            >
+              Billing &amp; plans
+            </Link>
+            <Link
+              href="/app/user-management"
+              className="block rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
+            >
+              User management
+            </Link>
+          </>
         ) : null}
         <button
           type="button"
