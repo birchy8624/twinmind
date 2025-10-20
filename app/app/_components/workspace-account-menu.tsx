@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useActiveProfile } from './active-profile-context'
 import { useToast } from './toast-context'
@@ -28,6 +28,29 @@ export function WorkspaceAccountMenu({ className, showOnMobile = false }: Worksp
   const [isOpen, setIsOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const { profile, loading } = useActiveProfile()
+  const containerRef = useRef<HTMLDetailsElement | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current) {
+        return
+      }
+
+      if (!containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [isOpen])
 
   const profileRole: ProfileRole | null = profile?.role ?? null
   const displayName = profile?.displayName ?? (loading ? 'Loading…' : 'Account')
@@ -123,7 +146,12 @@ export function WorkspaceAccountMenu({ className, showOnMobile = false }: Worksp
   const isOwner = profileRole === 'owner'
 
   return (
-    <details className={detailsClassName} open={isOpen} onToggle={(event) => setIsOpen(event.currentTarget.open)}>
+    <details
+      ref={containerRef}
+      className={detailsClassName}
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
       <summary className="flex cursor-pointer list-none items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-3 py-1.5 text-left text-sm text-white/80 transition hover:border-white/20 hover:text-white">
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-limeglow-500 via-limeglow-600 to-limeglow-700 text-sm font-semibold text-base-900">
           {initials}
