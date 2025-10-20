@@ -43,6 +43,16 @@ type Palette = {
 
 const CustomizationContext = createContext<CustomizationContextValue | undefined>(undefined)
 
+const WORKSPACE_ROOT_SELECTOR = '[data-workspace-root]'
+
+const getWorkspaceRoot = (): HTMLElement | null => {
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  return document.querySelector<HTMLElement>(WORKSPACE_ROOT_SELECTOR)
+}
+
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
 const isHexColor = (value: string): boolean => /^#?[0-9a-fA-F]{6}$/.test(value.trim())
@@ -247,10 +257,18 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const root = document.documentElement
-    root.dataset.theme = resolvedTheme
-    root.classList.toggle('dark', resolvedTheme === 'dark')
-    root.classList.toggle('light', resolvedTheme === 'light')
+    const docRoot = document.documentElement
+    docRoot.removeAttribute('data-theme')
+    docRoot.classList.remove('dark', 'light')
+
+    const workspaceRoot = getWorkspaceRoot()
+    if (!workspaceRoot) {
+      return
+    }
+
+    workspaceRoot.dataset.theme = resolvedTheme
+    workspaceRoot.classList.toggle('dark', resolvedTheme === 'dark')
+    workspaceRoot.classList.toggle('light', resolvedTheme === 'light')
   }, [resolvedTheme])
 
   useEffect(() => {
@@ -259,15 +277,18 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     }
 
     const palette = getPalette(settings.brandColor)
-    const root = document.documentElement
+    const workspaceRoot = getWorkspaceRoot()
+    if (!workspaceRoot) {
+      return
+    }
 
-    root.style.setProperty('--brand-color-100', rgbToCss(palette[100]))
-    root.style.setProperty('--brand-color-300', rgbToCss(palette[300]))
-    root.style.setProperty('--brand-color-500', rgbToCss(palette[500]))
-    root.style.setProperty('--brand-color-600', rgbToCss(palette[600]))
-    root.style.setProperty('--brand-color-700', rgbToCss(palette[700]))
-    root.style.setProperty('--brand-color-rgb', rgbToCss(palette[500]))
-    root.style.setProperty('--brand-color-foreground', rgbToCss(palette.foreground))
+    workspaceRoot.style.setProperty('--brand-color-100', rgbToCss(palette[100]))
+    workspaceRoot.style.setProperty('--brand-color-300', rgbToCss(palette[300]))
+    workspaceRoot.style.setProperty('--brand-color-500', rgbToCss(palette[500]))
+    workspaceRoot.style.setProperty('--brand-color-600', rgbToCss(palette[600]))
+    workspaceRoot.style.setProperty('--brand-color-700', rgbToCss(palette[700]))
+    workspaceRoot.style.setProperty('--brand-color-rgb', rgbToCss(palette[500]))
+    workspaceRoot.style.setProperty('--brand-color-foreground', rgbToCss(palette.foreground))
   }, [settings.brandColor])
 
   const setTheme = useCallback((theme: ThemeSetting) => {

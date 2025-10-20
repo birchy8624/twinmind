@@ -16,6 +16,8 @@ import {
 import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
+import { useCustomization } from '../_components/customization-context'
+
 type ProjectStatus = Database['public']['Enums']['project_status']
 type InvoiceStatus = Database['public']['Enums']['invoice_status']
 
@@ -120,6 +122,7 @@ const humanizeEntityType = (entityType: string) => {
 
 export default function DashboardPage() {
   const supabase = useMemo(createBrowserClient, [])
+  const { resolvedTheme } = useCustomization()
 
   const [pipelineOverview, setPipelineOverview] = useState<PipelineOverviewItem[]>([])
   const [pipelineLoading, setPipelineLoading] = useState(true)
@@ -153,6 +156,25 @@ export default function DashboardPage() {
         maximumFractionDigits: 0,
       }),
     [],
+  )
+
+  const chartAppearance = useMemo(
+    () => {
+      const isLight = resolvedTheme === 'light'
+      return {
+        grid: isLight ? 'rgba(23,30,45,0.12)' : 'rgba(255,255,255,0.08)',
+        axis: isLight ? 'rgba(23,30,45,0.7)' : 'rgba(255,255,255,0.6)',
+        tooltip: {
+          background: isLight ? 'rgba(255,255,255,0.95)' : '#0f172a',
+          border: isLight ? '1px solid rgba(15,23,42,0.08)' : '1px solid rgba(255,255,255,0.1)',
+          color: isLight ? '#0f172a' : 'white',
+          boxShadow: isLight ? '0 18px 45px rgba(15,23,42,0.12)' : '0 18px 45px rgba(15,23,42,0.4)',
+        },
+        barCursor: isLight ? 'rgba(23,30,45,0.08)' : 'rgba(255,255,255,0.08)',
+        areaCursor: isLight ? 'rgba(23,30,45,0.2)' : 'rgba(255,255,255,0.2)',
+      }
+    },
+    [resolvedTheme],
   )
 
   useEffect(() => {
@@ -507,26 +529,27 @@ export default function DashboardPage() {
                       <stop offset="95%" stopColor="#00ffa3" stopOpacity={0.25} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartAppearance.grid} vertical={false} />
                   <XAxis
                     dataKey="stage"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 12 }}
+                    tick={{ fill: chartAppearance.axis, fontSize: 12 }}
                   />
                   <YAxis
                     allowDecimals={false}
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 12 }}
+                    tick={{ fill: chartAppearance.axis, fontSize: 12 }}
                   />
                   <Tooltip
-                    cursor={{ fill: 'rgba(255,255,255,0.08)' }}
+                    cursor={{ fill: chartAppearance.barCursor }}
                     contentStyle={{
-                      background: '#0f172a',
-                      border: '1px solid rgba(255,255,255,0.1)',
+                      background: chartAppearance.tooltip.background,
+                      border: chartAppearance.tooltip.border,
                       borderRadius: '0.75rem',
-                      color: 'white',
+                      color: chartAppearance.tooltip.color,
+                      boxShadow: chartAppearance.tooltip.boxShadow,
                     }}
                   />
                   <Bar dataKey="count" fill="url(#pipelineGradient)" radius={[6, 6, 0, 0]} />
@@ -570,27 +593,28 @@ export default function DashboardPage() {
                       <stop offset="100%" stopColor="#00ffa3" stopOpacity={0.25} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartAppearance.grid} vertical={false} />
                   <XAxis
                     dataKey="period"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 12 }}
+                    tick={{ fill: chartAppearance.axis, fontSize: 12 }}
                   />
                   <YAxis
                     tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 12 }}
+                    tick={{ fill: chartAppearance.axis, fontSize: 12 }}
                   />
                   <Tooltip
-                    cursor={{ fill: 'rgba(255,255,255,0.08)' }}
+                    cursor={{ fill: chartAppearance.barCursor }}
                     formatter={(value: number | string) => currencyFormatter.format(Number(value))}
                     contentStyle={{
-                      background: '#0f172a',
-                      border: '1px solid rgba(255,255,255,0.1)',
+                      background: chartAppearance.tooltip.background,
+                      border: chartAppearance.tooltip.border,
                       borderRadius: '0.75rem',
-                      color: 'white',
+                      color: chartAppearance.tooltip.color,
+                      boxShadow: chartAppearance.tooltip.boxShadow,
                     }}
                   />
                   <Bar dataKey="quoted" name="Quoted" fill="url(#quotedGradient)" radius={[6, 6, 0, 0]} />
@@ -628,26 +652,27 @@ export default function DashboardPage() {
                       <stop offset="95%" stopColor="#a855f7" stopOpacity={0.1} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartAppearance.grid} vertical={false} />
                   <XAxis
                     dataKey="stage"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 12 }}
+                    tick={{ fill: chartAppearance.axis, fontSize: 12 }}
                   />
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 12 }}
+                    tick={{ fill: chartAppearance.axis, fontSize: 12 }}
                   />
                   <Tooltip
-                    cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }}
+                    cursor={{ stroke: chartAppearance.areaCursor, strokeWidth: 1 }}
                     formatter={(value: number | string) => `${Number(value).toFixed(1)} days`}
                     contentStyle={{
-                      background: '#0f172a',
-                      border: '1px solid rgba(255,255,255,0.1)',
+                      background: chartAppearance.tooltip.background,
+                      border: chartAppearance.tooltip.border,
                       borderRadius: '0.75rem',
-                      color: 'white',
+                      color: chartAppearance.tooltip.color,
+                      boxShadow: chartAppearance.tooltip.boxShadow,
                     }}
                   />
                   <Area type="monotone" dataKey="days" stroke="#a855f7" fill="url(#velocityGradient)" strokeWidth={2.5} />
@@ -700,16 +725,17 @@ export default function DashboardPage() {
                       dataKey="label"
                       tickLine={false}
                       axisLine={false}
-                      tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 12 }}
+                      tick={{ fill: chartAppearance.axis, fontSize: 12 }}
                     />
                     <YAxis allowDecimals={false} hide />
                     <Tooltip
-                      cursor={{ fill: 'rgba(255,255,255,0.08)' }}
+                      cursor={{ fill: chartAppearance.barCursor }}
                       contentStyle={{
-                        background: '#0f172a',
-                        border: '1px solid rgba(255,255,255,0.1)',
+                        background: chartAppearance.tooltip.background,
+                        border: chartAppearance.tooltip.border,
                         borderRadius: '0.75rem',
-                        color: 'white',
+                        color: chartAppearance.tooltip.color,
+                        boxShadow: chartAppearance.tooltip.boxShadow,
                       }}
                     />
                     <Bar dataKey="value" fill="url(#winGradient)" radius={[6, 6, 0, 0]} />

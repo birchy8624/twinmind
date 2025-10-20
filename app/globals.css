@@ -19,7 +19,11 @@
   --brand-color-rgb: 163 255 18;
 }
 
-:root[data-theme='light'] {
+.workspace-theme {
+  color-scheme: dark;
+}
+
+.workspace-theme[data-theme='light'] {
   color-scheme: light;
   --color-base-950: 255 255 255;
   --color-base-900: 242 244 248;
