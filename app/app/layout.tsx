@@ -104,8 +104,7 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
             {isClient ? (
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <TwinmindLogo className="h-8 w-auto" />
-                  <p className="text-lg font-semibold text-white">{activeLabel}</p>
+                  <p className="text-lg font-semibold text-white">Client Portal</p>
                 </div>
                 <WorkspaceAccountMenu showOnMobile className="ml-0" />
               </div>
