@@ -88,7 +88,6 @@ type ClientPersonRow = {
   timezone: string | null
   accessLabel: string
   accessDescription: string | null
-  showInviteButton: boolean
   createdAt: string
 }
 
@@ -242,7 +241,6 @@ function buildCombinedRows({
       timezone: contact.timezone ?? null,
       accessLabel,
       accessDescription,
-      showInviteButton: !hasAccount && !matchedInvite,
       createdAt: contact.created_at
     })
   }
@@ -262,7 +260,6 @@ function buildCombinedRows({
       timezone: null,
       accessLabel: 'Client Access',
       accessDescription: member.role ? formatRole(member.role) : null,
-      showInviteButton: false,
       createdAt: member.created_at ?? '1970-01-01T00:00:00.000Z'
     })
   }
@@ -284,7 +281,6 @@ function buildCombinedRows({
       accessDescription: invite.accepted_profile_id
         ? `Accepted ${formatDate(invite.created_at)}`
         : `Expires ${formatDate(invite.expires_at)}`,
-      showInviteButton: false,
       createdAt: invite.created_at
     })
   }
@@ -661,18 +657,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
                         <div className="text-xs text-white/50">{row.accessDescription}</div>
                       ) : null}
                     </td>
-                    <td className="px-5 py-4">
-                      {row.showInviteButton ? (
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center rounded-full border border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white/80 transition hover:border-white/30 hover:text-white"
-                          >
-                            Invite
-                          </button>
-                        </div>
-                      ) : null}
-                    </td>
+                    <td className="px-5 py-4 text-right text-xs uppercase tracking-wide text-white/35">—</td>
                   </tr>
                 ))}
               </tbody>

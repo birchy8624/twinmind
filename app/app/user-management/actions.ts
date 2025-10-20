@@ -6,10 +6,6 @@ import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import type { Database } from '@/types/supabase'
 
-const roleEnum = z.enum(['owner', 'client'])
-
-type RoleEnum = z.infer<typeof roleEnum>
-
 type ProfilesTable = Database['public']['Tables']['profiles']
 
 type ActionResult = {
@@ -26,7 +22,6 @@ const createUserSchema = z.object({
     .max(120, 'Full name is too long')
     .optional()
     .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined)),
-  role: roleEnum,
   sendInvite: z.boolean().default(true)
 })
 
@@ -37,7 +32,9 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
     return { ok: false, message: 'Invalid user details provided.' }
   }
 
-  const { email, fullName, role, sendInvite } = parsed.data
+  const { email, fullName, sendInvite } = parsed.data
+
+  const assignedRole: ProfilesTable['Row']['role'] = 'owner'
 
   const admin = supabaseAdmin()
 
@@ -48,7 +45,7 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
       const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
         data: {
           full_name: fullName,
-          role
+          role: assignedRole
         }
       })
 
@@ -67,7 +64,7 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
         email_confirm: false,
         user_metadata: {
           full_name: fullName,
-          role
+          role: assignedRole
         }
       })
 
@@ -95,7 +92,7 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
     const { error: profileError } = await admin.from('profiles').upsert<ProfilesTable['Insert']>(
       {
         id: profileId,
-        role,
+        role: assignedRole,
         full_name: fullName ?? null,
         email,
         updated_at: new Date().toISOString()
@@ -123,7 +120,7 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
 
 const updateRoleSchema = z.object({
   profileId: z.string().min(1),
-  role: roleEnum
+  role: z.literal('owner')
 })
 
 export async function updateWorkspaceUserRole(input: unknown): Promise<ActionResult> {
@@ -138,23 +135,6 @@ export async function updateWorkspaceUserRole(input: unknown): Promise<ActionRes
   const admin = supabaseAdmin()
 
   try {
-    if (role === 'client') {
-      const { data: owners, error: ownersError } = await admin
-        .from('profiles')
-        .select('id')
-        .eq('role', 'owner')
-
-      if (ownersError) {
-        throw ownersError
-      }
-
-      const remainingOwners = owners?.filter((owner) => owner.id !== profileId) ?? []
-
-      if (remainingOwners.length === 0) {
-        return { ok: false, message: 'At least one workspace owner must remain.' }
-      }
-    }
-
     const { error } = await admin
       .from('profiles')
       .update<ProfilesTable['Update']>({

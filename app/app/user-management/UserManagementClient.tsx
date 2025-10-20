@@ -27,7 +27,6 @@ type Props = {
 type NewUserFormState = {
   email: string
   fullName: string
-  role: 'owner' | 'client'
   sendInvite: boolean
 }
 
@@ -38,7 +37,6 @@ type StatusFilter = 'all' | WorkspaceUserStatus
 const defaultFormState: NewUserFormState = {
   email: '',
   fullName: '',
-  role: 'client',
   sendInvite: true
 }
 
@@ -173,7 +171,6 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
     const payload = {
       email: formState.email.trim(),
       fullName: trimmedName ? trimmedName : undefined,
-      role: formState.role,
       sendInvite: formState.sendInvite
     }
 
@@ -202,7 +199,8 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
     })
   }
 
-  const handleRoleChange = (userId: string, targetRole: 'owner' | 'client') => {
+  const handleRoleChange = (userId: string) => {
+    const targetRole: 'owner' = 'owner'
     setRoleMutationId(`${userId}-${targetRole}`)
 
     void updateWorkspaceUserRole({ profileId: userId, role: targetRole })
@@ -216,7 +214,7 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
         } else {
           pushToast({
             title: 'Role updated',
-            description: targetRole === 'owner' ? 'User is now an owner.' : 'User downgraded to client access.',
+            description: 'User is now an owner.',
             variant: 'success'
           })
           router.refresh()
@@ -299,23 +297,9 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
                   placeholder="ada@company.com"
                 />
               </label>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-white/40">Workspace role</span>
-                <div className="mt-2 inline-flex w-full items-center justify-between rounded-full border border-white/10 bg-base-900/60 p-1 text-xs font-semibold text-white/60">
-                  {(['owner', 'client'] as const).map((role) => (
-                    <button
-                      key={role}
-                      type="button"
-                      onClick={() => handleInputChange('role', role)}
-                      className={`flex-1 rounded-full px-3 py-1 transition ${
-                        formState.role === role ? 'bg-white/10 text-white' : 'hover:text-white'
-                      }`}
-                    >
-                      {roleLabels[role]}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <p className="text-xs text-white/50">
+                New users are added as workspace owners with full access to agency tools.
+              </p>
               <label className="flex items-center gap-3 text-sm text-white/70">
                 <input
                   type="checkbox"
@@ -406,14 +390,10 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => {
-                  const isCurrentUser = user.id === currentUserId
-                  const roleMutationKeyOwner = `${user.id}-owner`
-                  const roleMutationKeyClient = `${user.id}-client`
-                  const isRoleLoading = roleMutationId === roleMutationKeyOwner || roleMutationId === roleMutationKeyClient
+                  filteredUsers.map((user) => {
+                    const roleMutationKeyOwner = `${user.id}-owner`
+                  const isRoleLoading = roleMutationId === roleMutationKeyOwner
                   const isResetLoading = resetMutationId === user.id
-                  const isLastOwner = user.role === 'owner' && ownerCount <= 1
-                  const disableDowngrade = isRoleLoading || isCurrentUser || isLastOwner
 
                   return (
                     <tr key={user.id} className="transition hover:bg-white/5">
@@ -451,26 +431,12 @@ export function UserManagementClient({ currentUserId, initialUsers }: Props) {
                               <button
                                 type="button"
                                 className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                onClick={() => handleRoleChange(user.id, 'owner')}
+                                onClick={() => handleRoleChange(user.id)}
                                 disabled={isRoleLoading}
                               >
                                 Make owner
                               </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                onClick={() => handleRoleChange(user.id, 'client')}
-                                disabled={disableDowngrade}
-                                title={
-                                  disableDowngrade && isLastOwner
-                                    ? 'At least one workspace owner must remain.'
-                                    : undefined
-                                }
-                              >
-                                Set as client
-                              </button>
-                            )}
+                            ) : null}
                             <button
                               type="button"
                               className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
