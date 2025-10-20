@@ -8,7 +8,6 @@ import { AnimatePresence, motion } from 'framer-motion'
 
 import { ActiveProfileProvider, useActiveProfile } from './_components/active-profile-context'
 import { ToastProvider } from './_components/toast-context'
-import { TwinmindLogo } from './_components/twinmind-logo'
 import { NotificationsMenu } from './_components/notifications-menu'
 import { WorkspaceAccountMenu } from './_components/workspace-account-menu'
 import { WorkspaceSearch } from './_components/workspace-search'
@@ -91,8 +90,8 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
         {showNavigation ? (
           <aside className="hidden w-72 flex-col border-r border-white/10 bg-base-900/70 p-6 backdrop-blur lg:fixed lg:inset-y-0 lg:flex">
             <div className="mb-8">
-              <span className="sr-only">TwinMind Studio Control Center</span>
-              <TwinmindLogo />
+              <p className="text-xs uppercase tracking-[0.3em] text-white/40">TwinMind Studio</p>
+              <p className="text-lg font-semibold text-white">Control Center</p>
             </div>
             {NavLinks}
             <div className="mt-auto pt-8" />
@@ -104,7 +103,6 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
             {isClient ? (
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <TwinmindLogo className="h-8 w-auto" />
                   <p className="text-lg font-semibold text-white">{activeLabel}</p>
                 </div>
                 <WorkspaceAccountMenu showOnMobile className="ml-0" />
