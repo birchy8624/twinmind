@@ -20,6 +20,8 @@ type ActionResult = {
   message?: string
 }
 
+type MembershipRoleRow = Pick<Database['public']['Tables']['account_members']['Row'], 'role'>
+
 export async function deleteClient(input: unknown): Promise<ActionResult> {
   const parsed = deleteClientSchema.safeParse(input)
 
@@ -39,7 +41,7 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     return { ok: false, message: 'Not authenticated.' }
   }
 
-  const { data: membershipRow, error: membershipError } = await supabase
+  const { data: membershipData, error: membershipError } = await supabase
     .from('account_members')
     .select('role')
     .eq('profile_id', user.id)
@@ -50,6 +52,8 @@ export async function deleteClient(input: unknown): Promise<ActionResult> {
     console.error('deleteClient membership error:', membershipError)
     return { ok: false, message: 'Unable to verify workspace permissions.' }
   }
+
+  const membershipRow = membershipData as MembershipRoleRow | null
 
   if (!isAccountRoleAtLeast(membershipRow?.role, 'owner')) {
     return { ok: false, message: 'Only workspace owners can delete clients.' }
