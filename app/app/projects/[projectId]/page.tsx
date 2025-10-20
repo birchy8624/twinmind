@@ -502,8 +502,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const { pushToast } = useToast()
 
   const supabase = useMemo(createBrowserClient, [])
-  const { profile: activeProfile, clientIds, loading: profileLoading } = useActiveProfile()
-  const isClientViewer = activeProfile?.role === 'client'
+  const { profile: activeProfile, account, loading: profileLoading } = useActiveProfile()
+  const accountId = account?.id ?? null
   const isMountedRef = useRef(true)
 
   useEffect(() => {
@@ -513,7 +513,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   }, [])
 
   const fetchProjectData = useCallback(async () => {
-    if (profileLoading) {
+    if (profileLoading || !accountId) {
       return
     }
 
@@ -521,23 +521,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
     setLoadingOptions(true)
     setError(null)
 
-    if (isClientViewer && clientIds.length === 0) {
-      setProject(null)
-      setFormState(null)
-      setStoredBriefAnswers(null)
-      setBriefFormState(createEmptyBriefFormState())
-      setInvoices([])
-      setInvoiceDetails(null)
-      setClients([])
-      setAssignees([])
-      setError('You do not have access to this project.')
-      setLoadingProject(false)
-      setLoadingOptions(false)
-      return
-    }
-
     try {
-      let projectQuery = supabase
+      const projectQuery = supabase
         .from(PROJECTS)
         .select(
           `
@@ -553,6 +538,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
             tags,
             priority,
             client_id,
+            account_id,
             assignee_profile_id,
             value_invoiced,
             value_paid,
@@ -562,18 +548,19 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           `
         )
         .eq('id', params.projectId)
-
-      if (isClientViewer) {
-        projectQuery = projectQuery.in('client_id', clientIds)
-      }
+        .eq('account_id', accountId)
 
       const projectPromise = projectQuery.maybeSingle()
 
-      const clientsPromise = supabase.from(CLIENTS).select('id, name').order('name', { ascending: true })
+      const clientsPromise = supabase
+        .from(CLIENTS)
+        .select('id, name')
+        .eq('account_id', accountId)
+        .order('name', { ascending: true })
       const assigneesPromise = supabase
-        .from(PROFILES)
-        .select('id, full_name')
-        .order('full_name', { ascending: true })
+        .from('account_members')
+        .select('profile:profile_id ( id, full_name )')
+        .eq('account_id', accountId)
       const invoicesPromise = supabase
         .from(INVOICES)
         .select(
@@ -603,9 +590,13 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       const { data: assigneesData, error: assigneesError } = assigneesResult
       if (assigneesError) {
-        console.error('Failed to load profiles', assigneesError)
+        console.error('Failed to load workspace members', assigneesError)
       }
-      setAssignees((assigneesData ?? []) as Array<Pick<ProfileRow, 'id' | 'full_name'>>)
+      const resolvedAssignees = (assigneesData ?? [])
+        .map((row) => (row as { profile: Pick<ProfileRow, 'id' | 'full_name'> | null }).profile)
+        .filter((profile): profile is Pick<ProfileRow, 'id' | 'full_name'> => !!profile)
+        .sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? ''))
+      setAssignees(resolvedAssignees)
 
       const { data: invoicesData, error: invoicesError } = invoicesResult
       if (invoicesError) {
@@ -712,10 +703,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setLoadingOptions(false)
       setLoadingProject(false)
     }
-  }, [clientIds, isClientViewer, params.projectId, profileLoading, supabase])
+  }, [accountId, params.projectId, profileLoading, supabase])
 
   const fetchProjectComments = useCallback(async () => {
-    if (profileLoading || (isClientViewer && clientIds.length === 0)) {
+    if (profileLoading || !accountId) {
       return
     }
 
@@ -760,10 +751,10 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
     setComments(typedComments)
     setLoadingComments(false)
-  }, [clientIds, isClientViewer, params.projectId, profileLoading, supabase])
+  }, [accountId, params.projectId, profileLoading, supabase])
 
   const fetchProjectFiles = useCallback(async () => {
-    if (profileLoading || (isClientViewer && clientIds.length === 0)) {
+    if (profileLoading || !accountId) {
       return
     }
 
@@ -815,7 +806,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
     setFiles(typedFiles)
     setLoadingFiles(false)
-  }, [clientIds, isClientViewer, params.projectId, profileLoading, pushToast, supabase])
+  }, [accountId, params.projectId, profileLoading, pushToast, supabase])
 
   useEffect(() => {
     void fetchProjectData()

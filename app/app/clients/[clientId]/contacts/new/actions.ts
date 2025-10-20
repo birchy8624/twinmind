@@ -3,9 +3,12 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
+import { getPrimaryAccountMembership } from '@/lib/accounts'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
+
+type ClientSelect = Pick<Database['public']['Tables']['clients']['Row'], 'id' | 'account_id'>
 
 const contactSchema = z.object({
   clientId: z.string().min(1),
@@ -41,14 +44,39 @@ export async function createContact(input: unknown): Promise<CreateContactResult
     return { ok: false, message: 'You must be signed in to add contacts.' }
   }
 
+  let accountId: string | null = null
+
+  try {
+    const membership = await getPrimaryAccountMembership(supabase, user.id)
+
+    if (!membership) {
+      return { ok: false, message: 'No active workspace membership found.' }
+    }
+
+    accountId = membership.accountId
+  } catch (error) {
+    console.error('createContact membership error:', error)
+    return { ok: false, message: 'Unable to verify workspace permissions.' }
+  }
+
+  if (!accountId) {
+    return { ok: false, message: 'Unable to verify workspace permissions.' }
+  }
+
   const { data: clientRow, error: clientError } = await supabase
     .from('clients')
-    .select('id')
+    .select('id, account_id')
     .eq('id', clientId)
     .single()
 
   if (clientError || !clientRow) {
     return { ok: false, message: 'Client not found or inaccessible.' }
+  }
+
+  const typedClientRow = clientRow as ClientSelect
+
+  if (typedClientRow.account_id !== accountId) {
+    return { ok: false, message: 'Client not found in this workspace.' }
   }
 
   const admin = supabaseAdmin()

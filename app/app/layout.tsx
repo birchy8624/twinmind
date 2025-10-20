@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import type { Route } from 'next'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
 import { ActiveProfileProvider, useActiveProfile } from './_components/active-profile-context'
@@ -28,36 +28,12 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { loading: profileLoading, profile } = useActiveProfile()
-
-  const isClient = profile?.role === 'client'
+  const { profile, account } = useActiveProfile()
 
   const activeLabel = useMemo(() => {
     const match = navigation.find((item) => pathname?.startsWith(item.href))
     return match?.label ?? 'Workspace'
   }, [pathname])
-
-  useEffect(() => {
-    if (!isClient) {
-      return
-    }
-
-    setMobileOpen(false)
-  }, [isClient])
-
-  useEffect(() => {
-    if (profileLoading || !isClient || !pathname) {
-      return
-    }
-
-    const isProjectsRoot = pathname === '/app/projects'
-    const isProjectDetail = /^\/app\/projects\/[^/]+$/.test(pathname)
-    const isSettings = pathname.startsWith('/app/settings')
-
-    if (!(isProjectsRoot || isProjectDetail || isSettings)) {
-      router.replace('/app/projects')
-    }
-  }, [isClient, profileLoading, pathname, router])
 
   const NavLinks = (
     <nav className="mt-10 space-y-1 text-sm">
@@ -82,7 +58,7 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
     </nav>
   )
 
-  const showNavigation = !isClient
+  const showNavigation = true
 
   return (
     <ToastProvider>
@@ -116,7 +92,7 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
                   />
                 </svg>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">TwinMind Studio</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">{account?.name ?? 'Workspace'}</p>
                   <p className="text-lg font-semibold text-white">Control Center</p>
                 </div>
               </div>
@@ -128,48 +104,37 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
 
         <div className={`flex min-h-screen flex-col ${showNavigation ? 'lg:ml-72' : ''}`}>
           <header className="sticky top-0 z-40 border-b border-white/10 bg-base-900/40 px-6 py-5 backdrop-blur">
-            {isClient ? (
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <p className="text-lg font-semibold text-white">{activeLabel}</p>
-                </div>
-                <WorkspaceAccountMenu showOnMobile className="ml-0" />
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setMobileOpen((value) => !value)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-base-900/60 text-white/70 transition hover:border-white/20 hover:text-white lg:hidden"
+                aria-label="Toggle navigation"
+              >
+                <span className="sr-only">Toggle navigation</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-5 w-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <div className="hidden lg:block">
+                <p className="text-xs uppercase tracking-[0.2em] text-white/40">Currently viewing</p>
+                <p className="text-lg font-semibold text-white">{activeLabel}</p>
               </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setMobileOpen((value) => !value)}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-base-900/60 text-white/70 transition hover:border-white/20 hover:text-white lg:hidden"
-                    aria-label="Toggle navigation"
-                  >
-                    <span className="sr-only">Toggle navigation</span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-5 w-5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-                    </svg>
-                  </button>
-                  <div className="hidden lg:block">
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/40">Currently viewing</p>
-                    <p className="text-lg font-semibold text-white">{activeLabel}</p>
-                  </div>
-                  <WorkspaceSearch
-                    wrapperClassName="ml-auto hidden w-full max-w-md md:block"
-                    inputContainerClassName="md:flex"
-                    placeholder="Search clients, projects, or assets"
-                  />
-                  <NotificationsMenu className="hidden md:inline-flex" />
-                  <WorkspaceAccountMenu />
+              <WorkspaceSearch
+                wrapperClassName="ml-auto hidden w-full max-w-md md:block"
+                inputContainerClassName="md:flex"
+                placeholder="Search clients, projects, or assets"
+              />
+              <NotificationsMenu className="hidden md:inline-flex" />
+              <WorkspaceAccountMenu showOnMobile />
+            </div>
+              <div className="mt-4 flex flex-col gap-3 md:hidden">
+                <WorkspaceSearch wrapperClassName="w-full" placeholder="Search workspace" />
+                <div className="flex items-center justify-between text-xs text-white/50">
+                  <span>Team workspace</span>
+                  <span className="font-medium text-white/70">{account?.name ?? 'Workspace'}</span>
                 </div>
-                <div className="mt-4 flex flex-col gap-3 md:hidden">
-                  <WorkspaceSearch wrapperClassName="w-full" placeholder="Search workspace" />
-                  <div className="flex items-center justify-between text-xs text-white/50">
-                    <span>Team workspace</span>
-                    <span className="font-medium text-white/70">TwinMind Studio</span>
-                  </div>
-                </div>
-              </>
-            )}
+              </div>
           </header>
           <main className="flex-1 space-y-6 overflow-y-auto bg-base-900/20 p-6">{children}</main>
         </div>
@@ -220,7 +185,7 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
                         />
                       </svg>
                       <div>
-                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">TwinMind Studio</p>
+                        <p className="text-xs uppercase tracking-[0.3em] text-white/40">{account?.name ?? 'Workspace'}</p>
                         <p className="text-sm font-semibold text-white">Menu</p>
                       </div>
                     </div>

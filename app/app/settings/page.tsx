@@ -13,7 +13,7 @@ import type { Database } from '@/types/supabase'
 
 const profileSchema = z.object({
   name: z.string().min(2, 'Name is required'),
-  role: z.enum(['owner', 'client'], {
+  role: z.enum(['owner', 'member'], {
     errorMap: () => ({ message: 'Select a workspace role' })
   }),
   email: z.string().email('Enter a valid email')
@@ -30,18 +30,18 @@ const notificationSchema = z.object({
 type NotificationFormValues = z.infer<typeof notificationSchema>
 
 type ProfileInsert = Database['public']['Tables']['profiles']['Insert']
-type RoleEnum = Database['public']['Enums']['role']
+type RoleEnum = Database['public']['Enums']['account_role']
 
 const PROFILES = 'profiles' as const
-const DEFAULT_ROLE: RoleEnum = 'client'
+const DEFAULT_ROLE: RoleEnum = 'member'
 
 const ROLE_LABELS: Record<RoleEnum, string> = {
   owner: 'Owner',
-  client: 'Client'
+  member: 'Team member'
 }
 const ROLE_OPTIONS: Array<{ value: RoleEnum; label: string }> = [
   { value: 'owner', label: ROLE_LABELS.owner },
-  { value: 'client', label: ROLE_LABELS.client }
+  { value: 'member', label: ROLE_LABELS.member }
 ]
 
 const resolveMetadataName = (metadata: Record<string, unknown> | undefined) => {
@@ -81,8 +81,8 @@ const resolveMetadataRole = (metadata: Record<string, unknown> | undefined): Rol
       return 'owner'
     }
 
-    if (normalized === 'client') {
-      return 'client'
+    if (normalized === 'member') {
+      return 'member'
     }
   }
 

@@ -37,6 +37,20 @@ const ACCOUNT_STATUS_LABELS: Record<AccountStatusOption, string> = {
   archived: 'Archived'
 }
 
+const isAccountStatusOption = (value: string): value is AccountStatusOption =>
+  ACCOUNT_STATUS_OPTIONS.some((option) => option === value)
+
+const normalizeAccountStatus = (
+  status: ClientRow['account_status'],
+  fallback: AccountStatusOption = 'active'
+): AccountStatusOption => {
+  if (typeof status !== 'string') {
+    return fallback
+  }
+
+  return isAccountStatusOption(status) ? status : fallback
+}
+
 const formSchema = z.object({
   name: z.string().trim().min(2, 'Client name is required'),
   account_status: z.enum(ACCOUNT_STATUS_OPTIONS, {
@@ -59,7 +73,7 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const defaultStatus: AccountStatusOption = (currentClient.account_status as AccountStatusOption) ?? 'active'
+  const defaultStatus = normalizeAccountStatus(currentClient.account_status)
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -131,31 +145,40 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
 
     setIsSubmitting(false)
     setIsModalOpen(false)
-    reset({
-      name: updatedClient.name ?? '',
-      account_status: updatedClient.account_status ?? 'active',
-      website: updatedClient.website ?? '',
-      notes: updatedClient.notes ?? ''
-    }, { keepDirty: false })
+    reset(
+      {
+        name: updatedClient.name ?? '',
+        account_status: normalizeAccountStatus(updatedClient.account_status),
+        website: updatedClient.website ?? '',
+        notes: updatedClient.notes ?? ''
+      },
+      { keepDirty: false }
+    )
   })
 
   const handleStartEditing = () => {
-    reset({
-      name: currentClient.name ?? '',
-      account_status: currentClient.account_status ?? 'active',
-      website: currentClient.website ?? '',
-      notes: currentClient.notes ?? ''
-    }, { keepDirty: false })
+    reset(
+      {
+        name: currentClient.name ?? '',
+        account_status: normalizeAccountStatus(currentClient.account_status),
+        website: currentClient.website ?? '',
+        notes: currentClient.notes ?? ''
+      },
+      { keepDirty: false }
+    )
     setIsModalOpen(true)
   }
 
   const handleCancelEditing = () => {
-    reset({
-      name: currentClient.name ?? '',
-      account_status: currentClient.account_status ?? 'active',
-      website: currentClient.website ?? '',
-      notes: currentClient.notes ?? ''
-    }, { keepDirty: false })
+    reset(
+      {
+        name: currentClient.name ?? '',
+        account_status: normalizeAccountStatus(currentClient.account_status),
+        website: currentClient.website ?? '',
+        notes: currentClient.notes ?? ''
+      },
+      { keepDirty: false }
+    )
     setIsModalOpen(false)
   }
 

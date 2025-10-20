@@ -10,12 +10,19 @@ import UserManagementClient, {
   type WorkspaceUserStatus
 } from './UserManagementClient'
 
-type RoleEnum = Database['public']['Enums']['role']
+type RoleEnum = Database['public']['Enums']['account_role']
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
 type ProfilePreview = Pick<ProfileRow, 'id' | 'full_name' | 'role' | 'email' | 'company'>
 
 type MetadataRecord = Record<string, unknown> | undefined
+
+type AccountMembershipSelection = {
+  account_id: string | null
+  role: RoleEnum | null
+  profile_id: string
+  profiles: ProfilePreview | null
+}
 
 const resolveMetadataName = (metadata: MetadataRecord) => {
   if (!metadata) {
@@ -59,7 +66,7 @@ const resolveMetadataRole = (metadata: MetadataRecord): RoleEnum | null => {
 
     const normalized = value.trim().toLowerCase()
 
-    if (normalized === 'owner' || normalized === 'client') {
+    if (normalized === 'owner' || normalized === 'member') {
       return normalized as RoleEnum
     }
   }
@@ -75,22 +82,36 @@ const toWorkspaceStatus = (user: User): WorkspaceUserStatus => {
   return 'invited'
 }
 
-const toWorkspaceRecord = (user: User, profile: ProfilePreview | undefined): WorkspaceUserRecord => {
-  const metadataName = resolveMetadataName(user.user_metadata)
-  const metadataRole = resolveMetadataRole(user.user_metadata)
+type MembershipRow = {
+  profile_id: string
+  role: RoleEnum
+  profiles: ProfilePreview | null
+}
 
-  const fullName = profile?.full_name?.trim() || metadataName || user.email || 'Workspace member'
-  const role = profile?.role ?? metadataRole ?? 'owner'
+const toWorkspaceRecord = (
+  membership: MembershipRow,
+  user: User | undefined
+): WorkspaceUserRecord => {
+  const profile = membership.profiles ?? undefined
+  const metadataName = user ? resolveMetadataName(user.user_metadata) : null
+  const metadataRole = user ? resolveMetadataRole(user.user_metadata) : null
+
+  const fullName = profile?.full_name?.trim() || metadataName || user?.email || profile?.email || 'Workspace member'
+  const role = membership.role ?? profile?.role ?? metadataRole ?? 'member'
+  const createdAt = user?.created_at ?? null
+  const lastSignInAt = user?.last_sign_in_at ?? null
+  const status = user ? toWorkspaceStatus(user) : 'invited'
+  const email = profile?.email?.trim() || user?.email || 'Unknown email'
 
   return {
-    id: user.id,
-    email: user.email ?? 'Unknown email',
+    id: membership.profile_id,
+    email,
     fullName,
     company: profile?.company ?? null,
     role,
-    createdAt: user.created_at,
-    lastSignInAt: user.last_sign_in_at ?? null,
-    status: toWorkspaceStatus(user)
+    createdAt,
+    lastSignInAt,
+    status
   }
 }
 
@@ -104,31 +125,72 @@ export default async function UserManagementPage() {
     redirect('/sign_in')
   }
 
+  const {
+    data: membershipRows,
+    error: membershipError
+  } = await supabase
+    .from('account_members')
+    .select('account_id, role, profile_id, created_at, profiles:profile_id ( id, full_name, role, email, company )')
+    .eq('profile_id', currentUser.id)
+    .order('created_at', { ascending: true })
+
+  if (membershipError) {
+    console.error('Failed to load current membership:', membershipError)
+    redirect('/app')
+  }
+
+  const typedMembershipRows = (membershipRows ?? []) as AccountMembershipSelection[]
+  const activeMembership = typedMembershipRows.find((row) => row.role === 'owner') ?? typedMembershipRows[0]
+
+  if (!activeMembership || activeMembership.role !== 'owner' || !activeMembership.account_id) {
+    redirect('/app')
+  }
+
+  const accountId = activeMembership.account_id
+
   const admin = supabaseAdmin()
 
-  const [{ data: userData, error: usersError }, { data: profileRows, error: profilesError }] = await Promise.all([
+  const [{ data: userData, error: usersError }, { data: accountMembersData, error: accountMembersError }] = await Promise.all([
     admin.auth.admin.listUsers({ perPage: 200 }),
-    admin.from('profiles').select('id, full_name, role, email, company')
+    admin
+      .from('account_members')
+      .select('profile_id, role, profiles:profile_id ( id, full_name, role, email, company )')
+      .eq('account_id', accountId)
   ])
 
   if (usersError) {
     console.error('Failed to load Supabase users:', usersError)
   }
 
-  if (profilesError) {
-    console.error('Failed to load workspace profiles:', profilesError)
+  if (accountMembersError) {
+    console.error('Failed to load account members:', accountMembersError)
   }
 
-  const profileMap = new Map<string, ProfilePreview>()
+  const profileMap = new Map<string, MembershipRow>()
 
-  profileRows?.forEach((row) => {
-    profileMap.set(row.id, row)
+  const typedAccountMembers = (accountMembersData ?? []) as Array<{
+    profile_id: string
+    role: RoleEnum | null
+    profiles: ProfilePreview | null
+  }>
+
+  typedAccountMembers.forEach((row) => {
+    profileMap.set(row.profile_id, {
+      profile_id: row.profile_id,
+      role: row.role ?? 'member',
+      profiles: row.profiles ?? null
+    })
   })
 
   const authUsers = userData?.users ?? []
+  const authUserMap = new Map<string, User>()
 
-  const workspaceUsers = authUsers
-    .map((user) => toWorkspaceRecord(user, profileMap.get(user.id)))
+  authUsers.forEach((user) => {
+    authUserMap.set(user.id, user)
+  })
+
+  const workspaceUsers = Array.from(profileMap.values())
+    .map((membership) => toWorkspaceRecord(membership, authUserMap.get(membership.profile_id)))
     .sort((a, b) => a.fullName.localeCompare(b.fullName))
 
   return (

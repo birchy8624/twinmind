@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { getPrimaryAccountMembership } from '@/lib/accounts'
 import type { Database } from '@/types/supabase'
 
 const BriefSchema = z.object({
@@ -70,6 +71,25 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     return { ok: false, message: 'Not authenticated.' }
   }
 
+  let accountId: string | null = null
+
+  try {
+    const membership = await getPrimaryAccountMembership(ownerClient, ownerUser.id)
+
+    if (!membership) {
+      return { ok: false, message: 'No active workspace membership found.' }
+    }
+
+    accountId = membership.accountId
+  } catch (error) {
+    console.error('Failed to resolve workspace membership', error)
+    return { ok: false, message: 'Unable to resolve workspace membership.' }
+  }
+
+  if (!accountId) {
+    return { ok: false, message: 'No active workspace membership found.' }
+  }
+
   const admin = supabaseAdmin()
 
   const contactFirstName = contact.first_name.trim()
@@ -116,7 +136,8 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
   const clientInsert: Database['public']['Tables']['clients']['Insert'] = {
     name: client.name,
     website: client.website ?? null,
-    account_status: 'active'
+    account_status: 'active',
+    account_id: accountId
   }
 
   const { data: clientRow, error: clientError } = await admin
@@ -164,7 +185,8 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     description: project.description,
     status: 'Backlog',
     due_date: project.due_date ?? null,
-    assignee_profile_id: ownerUser.id
+    assignee_profile_id: ownerUser.id,
+    account_id: accountId
   }
 
   const { data: projectRow, error: projectError } = await admin
@@ -187,7 +209,8 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     project_id: projectId,
     answers:
       brief as Database['public']['Tables']['briefs']['Insert']['answers'],
-    completed: true
+    completed: true,
+    account_id: accountId
   }
 
   const { error: briefError } = await admin.from('briefs').insert(briefInsert)
@@ -202,7 +225,8 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
       status: 'Quote',
       amount: project.invoice_amount,
       currency: project.currency ?? 'EUR',
-      issued_at: new Date().toISOString()
+      issued_at: new Date().toISOString(),
+      account_id: accountId
     }
 
     const { error: invoiceError } = await admin
