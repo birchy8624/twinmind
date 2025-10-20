@@ -15,7 +15,7 @@ type ClientRow = Database['public']['Tables']['clients']['Row']
 type ClientDetailsCardProps = {
   client: Pick<
     ClientRow,
-    'id' | 'name' | 'website' | 'notes' | 'account_status' | 'created_at' | 'updated_at'
+    'id' | 'name' | 'website' | 'notes' | 'account_status' | 'created_at' | 'updated_at' | 'account_id'
   >
 }
 
@@ -101,7 +101,7 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
       .from('clients')
       .update(payload)
       .eq('id', currentClient.id)
-      .select('id, name, website, notes, account_status, created_at, updated_at')
+      .select('id, name, website, notes, account_status, created_at, updated_at, account_id')
       .maybeSingle()
 
     if (error) {

@@ -70,6 +70,7 @@ type ClientDetails = {
   name: string
   website: string | null
   notes: string | null
+  account_id: string | null
   account_status: string | null
   created_at: string | null
   updated_at: string | null
@@ -326,6 +327,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
         name,
         website,
         notes,
+        account_id,
         account_status,
         created_at,
         updated_at,
@@ -395,6 +397,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
     name: clientRow.name,
     website: clientRow.website ?? null,
     notes: clientRow.notes ?? null,
+    account_id: clientRow.account_id ?? null,
     account_status: clientRow.account_status ?? null,
     created_at: clientRow.created_at ?? null,
     updated_at: clientRow.updated_at ?? null,
@@ -526,6 +529,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
             name: client.name,
             website: client.website,
             notes: client.notes,
+            account_id: client.account_id,
             account_status: client.account_status,
             created_at: client.created_at,
             updated_at: client.updated_at

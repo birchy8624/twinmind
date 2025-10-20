@@ -79,6 +79,14 @@ const INVOICE_STAGE_BADGE_VARIANTS: Record<InvoiceStage, string> = {
 const normalizeInvoiceStage = (
   status: Database['public']['Enums']['invoice_status'] | null | undefined
 ): InvoiceStage => {
+  if (status === 'Invoice Sent') {
+    return 'Sent'
+  }
+
+  if (status === 'Payment Made') {
+    return 'Paid'
+  }
+
   const candidate = status ?? 'Quote'
   return INVOICE_STAGE_OPTIONS.includes(candidate as InvoiceStage)
     ? (candidate as InvoiceStage)
@@ -552,6 +560,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
             tags,
             priority,
             client_id,
+            account_id,
             assignee_profile_id,
             value_invoiced,
             value_paid,
