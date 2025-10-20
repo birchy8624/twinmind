@@ -91,7 +91,7 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
       <div
         data-workspace-root
         data-theme="dark"
-        className="workspace-theme dark relative min-h-screen overflow-hidden bg-base-950 text-white"
+        className="workspace-theme dark relative min-h-screen overflow-hidden bg-base-950 bg-tw-gradient text-white"
       >
         <div
           aria-hidden
