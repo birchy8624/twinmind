@@ -10,7 +10,7 @@ import UserManagementClient, {
   type WorkspaceUserStatus
 } from './UserManagementClient'
 
-type RoleEnum = Database['public']['Enums']['role']
+type RoleEnum = Database['public']['Enums']['role_enum']
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
 type ProfilePreview = Pick<ProfileRow, 'id' | 'full_name' | 'role' | 'email' | 'company'>

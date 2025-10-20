@@ -24,7 +24,7 @@ export async function middleware(request: NextRequest) {
       if (typeof candidate === 'string') {
         const normalized = candidate.trim().toLowerCase()
         if (normalized === 'owner' || normalized === 'client') {
-          return normalized as Database['public']['Enums']['role']
+          return normalized as Database['public']['Enums']['role_enum']
         }
       }
       return null

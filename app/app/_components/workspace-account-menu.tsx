@@ -15,7 +15,7 @@ type WorkspaceAccountMenuProps = {
   showOnMobile?: boolean
 }
 
-type ProfileRole = Database['public']['Enums']['role']
+type ProfileRole = Database['public']['Enums']['role_enum']
 
 type SignOutScope = Parameters<ReturnType<typeof createBrowserClient>['auth']['signOut']>[0]
 

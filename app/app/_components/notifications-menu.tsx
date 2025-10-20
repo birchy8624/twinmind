@@ -170,7 +170,7 @@ export function NotificationsMenu({ className, triggerClassName }: Notifications
     const records = (data ?? []) as NotificationRecord[]
     const filteredRecords = records.filter((record) => {
       if (isClient) {
-        if (record.visibility === 'internal') {
+        if (record.visibility === 'owner') {
           return false
         }
 

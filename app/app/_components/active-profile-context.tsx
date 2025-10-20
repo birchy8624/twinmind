@@ -7,7 +7,7 @@ import type { Database } from '@/types/supabase'
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
 type ClientMemberRow = Database['public']['Tables']['client_members']['Row']
-type ProfileRole = Database['public']['Enums']['role']
+type ProfileRole = Database['public']['Enums']['role_enum']
 
 const PROFILES = 'profiles' as const
 const CLIENT_MEMBERS = 'client_members' as const
