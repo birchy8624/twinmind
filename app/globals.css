@@ -8,7 +8,7 @@
 }
 
 html, body {
-  @apply bg-base-900 text-white scroll-smooth;
+  @apply bg-base-950 text-white scroll-smooth;
   font-feature-settings: 'ss01' on, 'liga' on;
 }
 
@@ -53,4 +53,14 @@ html, body {
 
 .section {
   @apply py-16 sm:py-24;
+}
+
+.brand-accent {
+  accent-color: rgb(var(--brand-color-500) / 1);
+  outline: none;
+}
+
+.brand-accent:focus-visible {
+  box-shadow: 0 0 0 4px rgb(var(--brand-color-500) / 0.35);
+  border-color: rgb(var(--brand-color-500) / 0.4);
 }
