@@ -6,6 +6,7 @@ import type { Database } from '@/types/supabase'
 const DASHBOARD_PATH = '/app/dashboard'
 const SIGN_IN_PATH = '/sign_in'
 const PROTECTED_PREFIX = '/app'
+const ACCOUNT_SETUP_PATH = '/app/setup-account'
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next()
@@ -17,6 +18,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isProtectedRoute = pathname.startsWith(PROTECTED_PREFIX)
   const isAuthRoute = pathname.startsWith(SIGN_IN_PATH)
+  const isAccountSetupRoute = pathname.startsWith(ACCOUNT_SETUP_PATH)
 
   const resolveRole = async () => {
     const metadataRole = (() => {
@@ -58,7 +60,7 @@ export async function middleware(request: NextRequest) {
 
   const role = session ? await resolveRole() : null
 
-  if (!session && isProtectedRoute) {
+  if (!session && isProtectedRoute && !isAccountSetupRoute) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = SIGN_IN_PATH
     redirectUrl.search = ''
