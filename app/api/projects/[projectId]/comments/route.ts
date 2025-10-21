@@ -43,10 +43,13 @@ async function ensureProjectAccess(
     return { role }
   }
 
+  type ClientMembershipRow = Pick<Database['public']['Tables']['client_members']['Row'], 'client_id'>
+
   const { data: membershipRows, error: membershipError } = await supabase
     .from('client_members')
     .select('client_id')
     .eq('profile_id', profileId)
+    .returns<ClientMembershipRow[]>()
 
   if (membershipError) {
     console.error('comments membership error:', membershipError)

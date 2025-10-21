@@ -7,7 +7,6 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import type { Database } from '@/types/supabase'
 import type { ClientDetailsQuery } from '@/lib/api/clients'
 
-const CLIENTS = 'clients' as const
 const PROJECT_FILES_BUCKET = 'project-files' as const
 
 const ACCOUNT_STATUS_SCHEMA = z.enum(['active', 'inactive', 'invited', 'archived'])
@@ -36,7 +35,7 @@ export async function GET(
   const supabase = createServerSupabase()
 
   const { data, error } = await supabase
-    .from(CLIENTS)
+    .from('clients')
     .select(
       `
         id,
@@ -202,8 +201,10 @@ export async function PATCH(
   >
 
   const { data, error } = await supabase
-    .from(CLIENTS)
-    .update(updatePayload)
+    .from('clients')
+    // Supabase's helper infers the update payload type as `never` here despite the table generics,
+    // so cast through `never` until the upstream typings are fixed.
+    .update(updatePayload as never)
     .eq('id', context.params.clientId)
     .select('id, name, website, notes, account_status, created_at, updated_at, account_id')
     .maybeSingle<ClientUpdateRow>()

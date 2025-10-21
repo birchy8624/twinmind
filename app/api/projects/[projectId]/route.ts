@@ -73,10 +73,13 @@ async function resolveClientMemberships(
   supabase: ReturnType<typeof createServerSupabase>,
   profileId: string
 ) {
+  type ClientMembershipRow = Pick<Database['public']['Tables']['client_members']['Row'], 'client_id'>
+
   const { data, error } = await supabase
     .from('client_members')
     .select('client_id')
     .eq('profile_id', profileId)
+    .returns<ClientMembershipRow[]>()
 
   if (error) {
     console.error('resolveClientMemberships error:', error)
@@ -160,14 +163,13 @@ export async function GET(
         `
       )
       .eq('id', projectId)
-      .maybeSingle<ProjectDetailsRow>()
 
     if (profileRole === 'client') {
       projectQuery = projectQuery.in('client_id', clientMemberships)
     }
 
     const [projectResult, clientsResult, assigneesResult, invoicesResult, briefResult] = await Promise.all([
-      projectQuery,
+      projectQuery.maybeSingle<ProjectDetailsRow>(),
       profileRole === 'client'
         ? supabase.from(CLIENTS).select('id, name').in('id', clientMemberships).order('name', { ascending: true })
         : supabase.from(CLIENTS).select('id, name').order('name', { ascending: true }),

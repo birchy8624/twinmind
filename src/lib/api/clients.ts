@@ -49,8 +49,8 @@ export async function fetchClientDetails(clientId: string) {
 type UpdateClientPayload = {
   name: string
   account_status: Database['public']['Tables']['clients']['Row']['account_status']
-  website: string
-  notes?: string
+  website: string | null
+  notes?: string | null
 }
 
 type UpdateClientResponse = {

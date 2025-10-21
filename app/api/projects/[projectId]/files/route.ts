@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { createServerSupabase } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import type { Database } from '@/types/supabase'
 
 const STORAGE_BUCKET = 'project-files' as const
 
@@ -50,10 +51,13 @@ async function ensureProjectAccess(
     return
   }
 
+  type ClientMembershipRow = Pick<Database['public']['Tables']['client_members']['Row'], 'client_id'>
+
   const { data: membershipRows, error: membershipError } = await supabase
     .from('client_members')
     .select('client_id')
     .eq('profile_id', profileId)
+    .returns<ClientMembershipRow[]>()
 
   if (membershipError) {
     console.error('files membership error:', membershipError)
