@@ -133,10 +133,22 @@ function DropZone({ isActive, isDragging, onDrop, onDragOver, onDragLeave, child
   if (variant === 'empty') {
     return (
       <div
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragEnter={onDragOver}
-        onDragLeave={onDragLeave}
+        onDrop={(event) => {
+          event.stopPropagation()
+          onDrop(event)
+        }}
+        onDragOver={(event) => {
+          event.stopPropagation()
+          onDragOver(event)
+        }}
+        onDragEnter={(event) => {
+          event.stopPropagation()
+          onDragOver(event)
+        }}
+        onDragLeave={(event) => {
+          event.stopPropagation()
+          onDragLeave(event)
+        }}
         className={`${baseClasses} flex min-h-[120px] items-center justify-center bg-base-900/40 ${
           isDragging ? 'pointer-events-auto' : 'pointer-events-none'
         } ${activeClasses}`}
@@ -148,10 +160,22 @@ function DropZone({ isActive, isDragging, onDrop, onDragOver, onDragLeave, child
 
   return (
     <div
-      onDrop={onDrop}
-      onDragOver={onDragOver}
-      onDragEnter={onDragOver}
-      onDragLeave={onDragLeave}
+      onDrop={(event) => {
+        event.stopPropagation()
+        onDrop(event)
+      }}
+      onDragOver={(event) => {
+        event.stopPropagation()
+        onDragOver(event)
+      }}
+      onDragEnter={(event) => {
+        event.stopPropagation()
+        onDragOver(event)
+      }}
+      onDragLeave={(event) => {
+        event.stopPropagation()
+        onDragLeave(event)
+      }}
       className={`${baseClasses} h-2 ${isDragging ? 'pointer-events-auto my-1' : 'pointer-events-none my-0'} ${activeClasses}`}
     />
   )
@@ -743,13 +767,57 @@ export default function KanbanPage() {
 
               const visibleCount = visibleCounts.get(column.status) ?? 0
 
+              const isColumnDropTarget =
+                !!activeDrop && activeDrop.status === column.status && activeDrop.beforeId === null
+
               return (
                 <motion.div
                   key={column.status}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: columnIndex * 0.04, duration: 0.22, ease: 'easeOut' }}
-                  className="flex min-h-[280px] flex-col gap-3 rounded-3xl border border-white/10 bg-base-900/40 p-4 shadow-lg shadow-base-900/30 backdrop-blur"
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    void handleDrop(column.status, null)
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                    setActiveDrop((current) => {
+                      if (current && current.status === column.status && current.beforeId !== null) {
+                        return current
+                      }
+
+                      return { status: column.status, beforeId: null }
+                    })
+                  }}
+                  onDragEnter={(event) => {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                    setActiveDrop((current) => {
+                      if (current && current.status === column.status && current.beforeId !== null) {
+                        return current
+                      }
+
+                      return { status: column.status, beforeId: null }
+                    })
+                  }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                      setActiveDrop((current) => {
+                        if (current && current.status === column.status && current.beforeId === null) {
+                          return null
+                        }
+
+                        return current
+                      })
+                    }
+                  }}
+                  className={`flex min-h-[280px] flex-col gap-3 rounded-3xl border p-4 shadow-lg backdrop-blur transition-colors ${
+                    isColumnDropTarget
+                      ? 'border-limeglow-400/70 bg-limeglow-400/10 shadow-limeglow-500/20'
+                      : 'border-white/10 bg-base-900/40 shadow-base-900/30'
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div>
