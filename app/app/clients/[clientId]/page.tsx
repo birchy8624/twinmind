@@ -4,8 +4,9 @@ import { notFound } from 'next/navigation'
 import { StatusBadge } from '../../_components/status-badge'
 import { ClientDetailsCard } from './ClientDetailsCard'
 import { ClientDeleteButton } from './ClientDeleteButton'
-import { createServerSupabase } from '@/lib/supabase/server'
+import { fetchClientDetails } from '@/lib/api/clients'
 import type { Database } from '@/types/supabase'
+import type { ClientDetailsQuery } from '@/lib/api/clients'
 
 type ClientRow = Database['public']['Tables']['clients']['Row']
 
@@ -39,7 +40,7 @@ type ClientContact = {
   phone: string | null
   title: string | null
   is_primary: boolean | null
-  created_at: string
+  created_at: string | null
   timezone: string | null
   profile_id: string | null
 }
@@ -47,13 +48,11 @@ type ClientContact = {
 type ClientInvite = {
   id: string
   email: string
-  created_at: string
+  created_at: string | null
   expires_at: string
   accepted_profile_id: string | null
   profile: ProfileSummary | null
 }
-
-const CLIENTS = 'clients' as const
 
 type ClientProject = {
   id: string
@@ -90,28 +89,7 @@ type ClientPersonRow = {
   timezone: string | null
   accessLabel: string
   accessDescription: string | null
-  createdAt: string
-}
-
-type ClientDetailsQuery = ClientRow & {
-  client_members: Array<
-    ClientMember & {
-      profile: ProfileSummary | null
-    }
-  > | null
-  contacts:
-    | Array<
-        (ClientContact & {
-          profile: { timezone: string | null } | null
-        })
-      >
-    | null
-  invites: Array<
-    ClientInvite & {
-      profile: ProfileSummary | null
-    }
-  > | null
-  projects: ClientProject[] | null
+  createdAt: string | null
 }
 
 function formatStatus(status: string | null) {
@@ -148,6 +126,15 @@ function formatDateTime(value: string | null) {
     hour: 'numeric',
     minute: '2-digit'
   }).format(date)
+}
+
+function getTimeValue(value: string | null) {
+  if (!value) {
+    return -Infinity
+  }
+
+  const timestamp = new Date(value).getTime()
+  return Number.isNaN(timestamp) ? -Infinity : timestamp
 }
 
 function getContactName(contact: ClientContact) {
@@ -243,7 +230,7 @@ function buildCombinedRows({
       timezone: contact.timezone ?? null,
       accessLabel,
       accessDescription,
-      createdAt: contact.created_at
+      createdAt: contact.created_at ?? null
     })
   }
 
@@ -262,7 +249,7 @@ function buildCombinedRows({
       timezone: null,
       accessLabel: 'Client Access',
       accessDescription: member.role ? formatRole(member.role) : null,
-      createdAt: member.created_at ?? '1970-01-01T00:00:00.000Z'
+      createdAt: member.created_at ?? null
     })
   }
 
@@ -287,7 +274,7 @@ function buildCombinedRows({
     })
   }
 
-  return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  return rows.sort((a, b) => getTimeValue(b.createdAt) - getTimeValue(a.createdAt))
 }
 
 function normalizeEmail(value: string | null | undefined) {
@@ -306,91 +293,18 @@ function formatRole(value: string | null) {
     .join(' ')
 }
 
-function isClientDetailsRow(value: unknown): value is ClientDetailsQuery {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'id' in value &&
-    'name' in value
-  )
-}
-
 export default async function ClientOverviewPage({ params }: ClientOverviewPageProps) {
   const clientId: ClientRow['id'] = params.clientId
-  const supabase = createServerSupabase()
 
-  const { data, error } = await supabase
-    .from(CLIENTS)
-    .select(
-      `
-        id,
-        name,
-        website,
-        notes,
-        account_id,
-        account_status,
-        created_at,
-        updated_at,
-        client_members:client_members (
-          id,
-          role,
-          created_at,
-          profile:profiles!client_members_profile_id_fkey (
-            id,
-            full_name,
-            email
-          )
-        ),
-        contacts:contacts (
-          id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          title,
-          is_primary,
-          created_at,
-          profile_id,
-          profile:profiles!contacts_profile_id_fkey (
-            timezone
-          )
-        ),
-        invites:invites (
-          id,
-          email,
-          created_at,
-          expires_at,
-          accepted_profile_id,
-          profile:profiles!invites_accepted_profile_id_fkey (
-            id,
-            full_name,
-            email
-          )
-        ),
-        projects:projects (
-          id,
-          name,
-          status,
-          due_date,
-          created_at,
-          updated_at,
-          archived
-        )
-      `
-    )
-    .filter('id', 'eq', clientId)
-    .returns<ClientDetailsQuery>()
-    .maybeSingle()
+  let clientRow: ClientDetailsQuery
 
-  if (error) {
-    console.error(error)
-  }
-
-  if (!isClientDetailsRow(data)) {
+  try {
+    const response = await fetchClientDetails(clientId)
+    clientRow = response.client
+  } catch (error) {
+    console.error('Failed to load client details:', error)
     notFound()
   }
-
-  const clientRow: ClientDetailsQuery = data
 
   const client: ClientDetails = {
     id: clientRow.id,
@@ -421,14 +335,14 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
       phone: contact.phone ?? null,
       title: contact.title ?? null,
       is_primary: contact.is_primary ?? null,
-      created_at: contact.created_at,
+      created_at: contact.created_at ?? null,
       timezone: contact.profile?.timezone ?? null,
       profile_id: contact.profile_id ?? null
     })),
     invites: (clientRow.invites ?? []).map((invite) => ({
       id: invite.id,
       email: invite.email,
-      created_at: invite.created_at,
+      created_at: invite.created_at ?? null,
       expires_at: invite.expires_at,
       accepted_profile_id: invite.accepted_profile_id ?? null,
       profile: invite.profile
@@ -452,22 +366,20 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
 
   const formattedStatus = formatStatus(client.account_status)
 
-  const sortedProjects = [...(client.projects ?? [])].sort((a, b) =>
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  const sortedProjects = [...(client.projects ?? [])].sort(
+    (a, b) => getTimeValue(b.created_at) - getTimeValue(a.created_at)
   )
 
-  const sortedContacts = [...(client.contacts ?? [])].sort((a, b) =>
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  const sortedContacts = [...(client.contacts ?? [])].sort(
+    (a, b) => getTimeValue(b.created_at) - getTimeValue(a.created_at)
   )
 
-  const sortedMembers = [...(client.client_members ?? [])].sort((a, b) => {
-    const aTime = a.created_at ? new Date(a.created_at).getTime() : -Infinity
-    const bTime = b.created_at ? new Date(b.created_at).getTime() : -Infinity
-    return bTime - aTime
-  })
+  const sortedMembers = [...(client.client_members ?? [])].sort(
+    (a, b) => getTimeValue(b.created_at) - getTimeValue(a.created_at)
+  )
 
-  const sortedInvites = [...(client.invites ?? [])].sort((a, b) =>
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  const sortedInvites = [...(client.invites ?? [])].sort(
+    (a, b) => getTimeValue(b.created_at) - getTimeValue(a.created_at)
   )
 
   const combinedRows = buildCombinedRows({

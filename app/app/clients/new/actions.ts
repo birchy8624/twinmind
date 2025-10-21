@@ -2,9 +2,7 @@
 
 import { z } from 'zod'
 
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { createServerSupabase } from '@/lib/supabase/server'
-import type { Database } from '@/types/supabase'
+import { apiFetch } from '@/lib/api/fetch'
 
 const BriefSchema = z.object({
   goals: z.string().min(1),
@@ -58,165 +56,36 @@ export async function createClientProject(input: unknown): Promise<ActionResult>
     return { ok: false, message: 'Invalid input.' }
   }
 
-  const { client, contact, project, brief } = parsed.data
+  try {
+    const response = await apiFetch('/api/clients', {
+      method: 'POST',
+      body: JSON.stringify(parsed.data)
+    })
 
-  const ownerClient = createServerSupabase()
-  const {
-    data: { user: ownerUser },
-    error: ownerError
-  } = await ownerClient.auth.getUser()
+    if (!response.ok) {
+      let message = 'Unable to create client project.'
 
-  if (ownerError || !ownerUser) {
-    return { ok: false, message: 'Not authenticated.' }
-  }
+      try {
+        const body = (await response.json()) as { message?: string }
+        if (body.message) {
+          message = body.message
+        }
+      } catch (error) {
+        console.error('createClientProject parse error:', error)
+      }
 
-  const admin = supabaseAdmin()
-
-  const contactFirstName = contact.first_name.trim()
-  const contactLastName = contact.last_name.trim()
-  const contactFullName = [contactFirstName, contactLastName].filter(Boolean).join(' ')
-  const contactTitle = contact.title?.trim() || null
-  const contactPhone = contact.phone?.trim() || null
-
-  let clientId: string | null = null
-  let projectId: string | null = null
-
-  const cleanup = async () => {
-    if (projectId) {
-      await admin.from('briefs').delete().eq('project_id', projectId)
-      await admin.from('invoices').delete().eq('project_id', projectId)
-      await admin.from('projects').delete().eq('id', projectId)
+      return { ok: false, message }
     }
 
-    if (clientId) {
-      await admin.from('contacts').delete().eq('client_id', clientId)
-      await admin.from('clients').delete().eq('id', clientId)
-    }
-  }
+    const body = (await response.json()) as { projectId?: string }
 
-  type SupabaseActionError = { message?: string } | null
-
-  const fail = async (
-    context: string,
-    error: SupabaseActionError = null
-  ): Promise<ActionResult> => {
-    if (error) {
-      console.error(`${context} error:`, error)
+    if (!body.projectId) {
+      return { ok: false, message: 'Unable to create client project.' }
     }
 
-    await cleanup()
-
-    if (error?.message) {
-      return { ok: false, message: `${context}: ${error.message}` }
-    }
-
-    return { ok: false, message: context }
+    return { ok: true, projectId: body.projectId }
+  } catch (error) {
+    console.error('createClientProject request error:', error)
+    return { ok: false, message: 'Unable to create client project.' }
   }
-
-  const clientInsert: Database['public']['Tables']['clients']['Insert'] = {
-    name: client.name,
-    website: client.website ?? null,
-    account_status: 'active'
-  }
-
-  const { data: clientRow, error: clientError } = await admin
-    .from('clients')
-    .insert(clientInsert)
-    .select('id')
-    .single()
-
-  if (clientError) {
-    console.error('Create client error:', clientError)
-    return { ok: false, message: `Create client: ${clientError.message}` }
-  }
-
-  if (!clientRow) {
-    return { ok: false, message: 'Create client: Missing client row.' }
-  }
-
-  clientId = clientRow.id
-
-  if (!clientId) {
-    return fail('Create primary contact', { message: 'Missing client id.' })
-  }
-
-  const contactInsert: Database['public']['Tables']['contacts']['Insert'] = {
-    client_id: clientId,
-    first_name: contactFirstName,
-    last_name: contactLastName,
-    email: contact.email,
-    phone: contactPhone,
-    title: contactTitle,
-    is_primary: true,
-    gdpr_consent: client.gdpr_consent,
-    profile_id: null
-  }
-
-  const { error: contactError } = await admin.from('contacts').insert(contactInsert)
-
-  if (contactError) {
-    return fail('Create primary contact', contactError)
-  }
-
-  const projectInsert: Database['public']['Tables']['projects']['Insert'] = {
-    client_id: clientId,
-    name: project.name,
-    description: project.description,
-    status: 'Backlog',
-    due_date: project.due_date ?? null,
-    assignee_profile_id: ownerUser.id
-  }
-
-  const { data: projectRow, error: projectError } = await admin
-    .from('projects')
-    .insert(projectInsert)
-    .select('id')
-    .single()
-
-  if (projectError) {
-    return fail('Create project', projectError)
-  }
-
-  if (!projectRow) {
-    return fail('Create project', { message: 'Missing project row.' })
-  }
-
-  projectId = projectRow.id
-
-  const briefInsert: Database['public']['Tables']['briefs']['Insert'] = {
-    project_id: projectId,
-    answers:
-      brief as Database['public']['Tables']['briefs']['Insert']['answers'],
-    completed: true
-  }
-
-  const { error: briefError } = await admin.from('briefs').insert(briefInsert)
-
-  if (briefError) {
-    return fail('Save brief', briefError)
-  }
-
-  if (project.invoice_amount && project.invoice_amount > 0) {
-    const invoiceInsert: Database['public']['Tables']['invoices']['Insert'] = {
-      project_id: projectId,
-      status: 'Quote',
-      amount: project.invoice_amount,
-      currency: project.currency ?? 'EUR',
-      issued_at: new Date().toISOString()
-    }
-
-    const { error: invoiceError } = await admin
-      .from('invoices')
-      .insert(invoiceInsert)
-
-    if (invoiceError) {
-      return fail('Create quote', invoiceError)
-    }
-  }
-
-  if (!projectId) {
-    return fail('Create project', { message: 'Missing project id.' })
-  }
-
-  return { ok: true, projectId }
 }

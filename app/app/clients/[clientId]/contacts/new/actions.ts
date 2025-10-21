@@ -1,11 +1,8 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { createServerSupabase } from '@/lib/supabase/server'
-import type { Database } from '@/types/supabase'
+import { apiFetch } from '@/lib/api/fetch'
 
 const contactSchema = z.object({
   clientId: z.string().min(1),
@@ -30,63 +27,45 @@ export async function createContact(input: unknown): Promise<CreateContactResult
     return { ok: false, message: 'Invalid input.' }
   }
 
-  const { clientId, firstName, lastName, email, phone, title, isPrimary } = parsed.data
+  const payload = parsed.data
 
-  const supabase = createServerSupabase()
-  const {
-    data: { user }
-  } = await supabase.auth.getUser()
+  try {
+    const response = await apiFetch(`/api/clients/${payload.clientId}/contacts`, {
+      method: 'POST',
+      body: JSON.stringify({
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        email: payload.email,
+        phone: payload.phone,
+        title: payload.title,
+        isPrimary: payload.isPrimary
+      })
+    })
 
-  if (!user) {
-    return { ok: false, message: 'You must be signed in to add contacts.' }
-  }
+    if (!response.ok) {
+      let message = 'Unable to create contact.'
 
-  const { data: clientRow, error: clientError } = await supabase
-    .from('clients')
-    .select('id')
-    .eq('id', clientId)
-    .single()
+      try {
+        const body = (await response.json()) as { message?: string }
+        if (body.message) {
+          message = body.message
+        }
+      } catch (error) {
+        console.error('createContact parse error:', error)
+      }
 
-  if (clientError || !clientRow) {
-    return { ok: false, message: 'Client not found or inaccessible.' }
-  }
-
-  const admin = supabaseAdmin()
-
-  if (isPrimary) {
-    const { error: unsetPrimaryError } = await admin
-      .from('contacts')
-      .update({ is_primary: false })
-      .eq('client_id', clientId)
-
-    if (unsetPrimaryError) {
-      console.error('Unset primary contact error:', unsetPrimaryError)
-      return { ok: false, message: 'Unable to update existing contacts.' }
+      return { ok: false, message }
     }
-  }
 
-  const contactInsert: Database['public']['Tables']['contacts']['Insert'] = {
-    client_id: clientId,
-    first_name: firstName,
-    last_name: lastName,
-    email,
-    phone: phone ? phone : null,
-    title: title ? title : null,
-    is_primary: isPrimary
-  }
+    const body = (await response.json()) as { contactId?: string }
 
-  const { data: contactRow, error: contactError } = await admin
-    .from('contacts')
-    .insert(contactInsert)
-    .select('id')
-    .single()
+    if (!body.contactId) {
+      return { ok: false, message: 'Unable to create contact.' }
+    }
 
-  if (contactError || !contactRow) {
-    console.error('Create contact error:', contactError)
+    return { ok: true, contactId: body.contactId }
+  } catch (error) {
+    console.error('createContact request error:', error)
     return { ok: false, message: 'Unable to create contact.' }
   }
-
-  revalidatePath(`/app/clients/${clientId}`)
-
-  return { ok: true, contactId: contactRow.id }
 }

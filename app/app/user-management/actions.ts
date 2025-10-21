@@ -1,12 +1,8 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import type { Database } from '@/types/supabase'
-
-type ProfilesTable = Database['public']['Tables']['profiles']
+import { apiFetch } from '@/lib/api/fetch'
 
 type ActionResult = {
   ok: boolean
@@ -25,19 +21,6 @@ const createUserSchema = z.object({
   sendInvite: z.boolean().default(true)
 })
 
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : 'http://localhost:3000')
-
-const setupAccountRedirect = (() => {
-  try {
-    return new URL('/app/setup-account', siteUrl).toString()
-  } catch (error) {
-    console.error('Failed to construct setup account redirect URL', error)
-    return null
-  }
-})()
-
 export async function createWorkspaceUser(input: unknown): Promise<ActionResult> {
   const parsed = createUserSchema.safeParse(input)
 
@@ -45,89 +28,30 @@ export async function createWorkspaceUser(input: unknown): Promise<ActionResult>
     return { ok: false, message: 'Invalid user details provided.' }
   }
 
-  const { email, fullName, sendInvite } = parsed.data
-
-  const assignedRole: ProfilesTable['Row']['role'] = 'owner'
-
-  const admin = supabaseAdmin()
-
   try {
-    let createdUserId: string | null = null
+    const response = await apiFetch('/api/user-management/users', {
+      method: 'POST',
+      body: JSON.stringify(parsed.data)
+    })
 
-    if (sendInvite) {
-      const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-        data: {
-          full_name: fullName,
-          role: assignedRole
-        },
-        ...(setupAccountRedirect ? { redirectTo: setupAccountRedirect } : {})
-      })
+    if (!response.ok) {
+      let message = 'Unable to create user. Try again later.'
 
-      if (error) {
-        throw error
-      }
-
-      if (!data?.user) {
-        throw new Error('Supabase did not return a created user.')
-      }
-
-      createdUserId = data.user.id
-    } else {
-      const { data, error } = await admin.auth.admin.createUser({
-        email,
-        email_confirm: false,
-        user_metadata: {
-          full_name: fullName,
-          role: assignedRole
+      try {
+        const body = (await response.json()) as { message?: string }
+        if (body.message) {
+          message = body.message
         }
-      })
-
-      if (error) {
-        throw error
+      } catch (error) {
+        console.error('createWorkspaceUser parse error:', error)
       }
 
-      if (!data?.user) {
-        throw new Error('Supabase did not return a created user.')
-      }
-
-      createdUserId = data.user.id
+      return { ok: false, message }
     }
-
-    if (!createdUserId) {
-      throw new Error('Missing created user identifier.')
-    }
-
-    if (typeof createdUserId !== 'string' || createdUserId.length === 0) {
-      throw new Error('Missing created user identifier.')
-    }
-
-    const profileId = createdUserId!
-
-    const { error: profileError } = await admin.from('profiles').upsert<ProfilesTable['Insert']>(
-      {
-        id: profileId,
-        role: assignedRole,
-        full_name: fullName ?? null,
-        email,
-        updated_at: new Date().toISOString()
-      },
-      { onConflict: 'id' }
-    )
-
-    if (profileError) {
-      throw profileError
-    }
-
-    revalidatePath('/app/user-management')
 
     return { ok: true }
   } catch (error) {
-    console.error('createWorkspaceUser error:', error)
-
-    if (error instanceof Error && 'message' in error) {
-      return { ok: false, message: error.message }
-    }
-
+    console.error('createWorkspaceUser request error:', error)
     return { ok: false, message: 'Unable to create user. Try again later.' }
   }
 }
@@ -144,33 +68,30 @@ export async function updateWorkspaceUserRole(input: unknown): Promise<ActionRes
     return { ok: false, message: 'Invalid role update request.' }
   }
 
-  const { profileId, role } = parsed.data
-
-  const admin = supabaseAdmin()
-
   try {
-    const { error } = await admin
-      .from('profiles')
-      .update<ProfilesTable['Update']>({
-        role,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', profileId)
+    const response = await apiFetch(`/api/user-management/users/${parsed.data.profileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role: parsed.data.role })
+    })
 
-    if (error) {
-      throw error
+    if (!response.ok) {
+      let message = 'Unable to update workspace role.'
+
+      try {
+        const body = (await response.json()) as { message?: string }
+        if (body.message) {
+          message = body.message
+        }
+      } catch (error) {
+        console.error('updateWorkspaceUserRole parse error:', error)
+      }
+
+      return { ok: false, message }
     }
-
-    revalidatePath('/app/user-management')
 
     return { ok: true }
   } catch (error) {
-    console.error('updateWorkspaceUserRole error:', error)
-
-    if (error instanceof Error && 'message' in error) {
-      return { ok: false, message: error.message }
-    }
-
+    console.error('updateWorkspaceUserRole request error:', error)
     return { ok: false, message: 'Unable to update workspace role.' }
   }
 }
@@ -186,45 +107,30 @@ export async function sendWorkspacePasswordReset(input: unknown): Promise<Action
     return { ok: false, message: 'Invalid email address provided.' }
   }
 
-  const { email } = parsed.data
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    return { ok: false, message: 'Supabase credentials are not configured.' }
-  }
-
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : 'http://localhost:3000')
-
-  const redirectTo = new URL('/reset-password', siteUrl).toString()
-
   try {
-    const response = await fetch(`${supabaseUrl}/auth/v1/recover`, {
+    const response = await apiFetch('/api/user-management/password-reset', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`
-      },
-      body: JSON.stringify({ email, redirect_to: redirectTo })
+      body: JSON.stringify({ email: parsed.data.email })
     })
 
     if (!response.ok) {
-      const message = await response.text()
-      throw new Error(message || 'Failed to trigger password reset email.')
+      let message = 'Unable to send password reset email.'
+
+      try {
+        const body = (await response.json()) as { message?: string }
+        if (body.message) {
+          message = body.message
+        }
+      } catch (error) {
+        console.error('sendWorkspacePasswordReset parse error:', error)
+      }
+
+      return { ok: false, message }
     }
 
     return { ok: true }
   } catch (error) {
-    console.error('sendWorkspacePasswordReset error:', error)
-
-    if (error instanceof Error && 'message' in error) {
-      return { ok: false, message: error.message }
-    }
-
+    console.error('sendWorkspacePasswordReset request error:', error)
     return { ok: false, message: 'Unable to send password reset email.' }
   }
 }

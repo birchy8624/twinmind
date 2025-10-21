@@ -2,9 +2,7 @@
 
 import { z } from 'zod'
 
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { createServerSupabase } from '@/lib/supabase/server'
-import type { Database } from '@/types/supabase'
+import { apiFetch } from '@/lib/api/fetch'
 
 const BriefSchema = z.object({
   goals: z.string().min(1),
@@ -37,8 +35,6 @@ export type ProjectWizardPayload = z.infer<typeof ProjectWizardSchema>
 
 type ActionResult = { ok: true; projectId: string } | { ok: false; message: string }
 
-type SupabaseActionError = { message?: string } | null
-
 export async function createProject(input: unknown): Promise<ActionResult> {
   const parsed = ProjectWizardSchema.safeParse(input)
 
@@ -46,100 +42,36 @@ export async function createProject(input: unknown): Promise<ActionResult> {
     return { ok: false, message: 'Invalid input.' }
   }
 
-  const {
-    project: { name, description, clientId, dueDate },
-    invoice,
-    brief
-  } = parsed.data
+  try {
+    const response = await apiFetch('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify(parsed.data)
+    })
 
-  const ownerClient = createServerSupabase()
-  const {
-    data: { user: ownerUser },
-    error: ownerError
-  } = await ownerClient.auth.getUser()
+    if (!response.ok) {
+      let message = 'Unable to create project.'
 
-  if (ownerError || !ownerUser) {
-    return { ok: false, message: 'Not authenticated.' }
-  }
+      try {
+        const body = (await response.json()) as { message?: string }
+        if (body.message) {
+          message = body.message
+        }
+      } catch (error) {
+        console.error('createProject parse error:', error)
+      }
 
-  const admin = supabaseAdmin()
-
-  let projectId: string | null = null
-
-  const cleanup = async () => {
-    if (projectId) {
-      await admin.from('briefs').delete().eq('project_id', projectId)
-      await admin.from('invoices').delete().eq('project_id', projectId)
-      await admin.from('projects').delete().eq('id', projectId)
-    }
-  }
-
-  const fail = async (context: string, error: SupabaseActionError = null): Promise<ActionResult> => {
-    if (error) {
-      console.error(`${context} error:`, error)
+      return { ok: false, message }
     }
 
-    await cleanup()
+    const body = (await response.json()) as { projectId?: string }
 
-    if (error?.message) {
-      return { ok: false, message: `${context}: ${error.message}` }
+    if (!body.projectId) {
+      return { ok: false, message: 'Unable to create project.' }
     }
 
-    return { ok: false, message: context }
+    return { ok: true, projectId: body.projectId }
+  } catch (error) {
+    console.error('createProject request error:', error)
+    return { ok: false, message: 'Unable to create project.' }
   }
-
-  const projectInsert: Database['public']['Tables']['projects']['Insert'] = {
-    client_id: clientId,
-    name,
-    description,
-    status: 'Backlog',
-    due_date: dueDate ?? null,
-    assignee_profile_id: ownerUser.id
-  }
-
-  const { data: projectRow, error: projectError } = await admin
-    .from('projects')
-    .insert(projectInsert)
-    .select('id')
-    .single()
-
-  if (projectError) {
-    return fail('Create project', projectError)
-  }
-
-  if (!projectRow) {
-    return fail('Create project', { message: 'Missing project row.' })
-  }
-
-  projectId = projectRow.id
-
-  const briefInsert: Database['public']['Tables']['briefs']['Insert'] = {
-    project_id: projectId,
-    answers: brief as Database['public']['Tables']['briefs']['Insert']['answers'],
-    completed: true
-  }
-
-  const { error: briefError } = await admin.from('briefs').insert(briefInsert)
-
-  if (briefError) {
-    return fail('Save brief', briefError)
-  }
-
-  if (invoice) {
-    const invoiceInsert: Database['public']['Tables']['invoices']['Insert'] = {
-      project_id: projectId,
-      status: 'Quote',
-      amount: invoice.amount,
-      currency: invoice.currency,
-      issued_at: new Date().toISOString()
-    }
-
-    const { error: invoiceError } = await admin.from('invoices').insert(invoiceInsert)
-
-    if (invoiceError) {
-      return fail('Create quote', invoiceError)
-    }
-  }
-
-  return { ok: true, projectId }
 }
