@@ -1,26 +1,39 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database } from '@/types/supabase'
 
-let browserClient: SupabaseClient<Database> | null = null
+import { createDatabaseProxy } from '../api/databaseClient'
+import { createStorageProxy } from '../api/storageClient'
+import { getBrowserAuthClient } from './auth-client'
+
+type BrowserDatabaseClient = ReturnType<typeof createDatabaseProxy>
+type BrowserStorageClient = ReturnType<typeof createStorageProxy>
+
+type BrowserClient = {
+  auth: SupabaseClient<Database>['auth']
+  from: BrowserDatabaseClient['from']
+  storage: BrowserStorageClient
+}
+
+let cachedClient: BrowserClient | null = null
 let hasAuthListener = false
 
-export function createBrowserClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co'
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-key'
+export function createBrowserClient(): BrowserClient {
+  const authClient = getBrowserAuthClient()
 
-  if (typeof window === 'undefined') {
-    return createClient<Database>(supabaseUrl, supabaseAnonKey)
+  if (!cachedClient) {
+    const database = createDatabaseProxy()
+    const storage = createStorageProxy()
+
+    cachedClient = {
+      auth: authClient.auth,
+      from: database.from.bind(database),
+      storage,
+    }
   }
 
-  if (!browserClient) {
-    browserClient = createClient<Database>(supabaseUrl, supabaseAnonKey)
-  }
-
-  if (!hasAuthListener && browserClient) {
-    const client = browserClient
-
-    client.auth.onAuthStateChange((event, session) => {
+  if (typeof window !== 'undefined' && !hasAuthListener) {
+    authClient.auth.onAuthStateChange((event, session) => {
       if (event === 'INITIAL_SESSION') {
         return
       }
@@ -31,7 +44,7 @@ export function createBrowserClient() {
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
           keepalive: true,
-          body: JSON.stringify({ event })
+          body: JSON.stringify({ event }),
         })
         return
       }
@@ -42,7 +55,7 @@ export function createBrowserClient() {
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
           keepalive: true,
-          body: JSON.stringify({ event, session })
+          body: JSON.stringify({ event, session }),
         })
       }
     })
@@ -50,5 +63,5 @@ export function createBrowserClient() {
     hasAuthListener = true
   }
 
-  return browserClient
+  return cachedClient
 }
