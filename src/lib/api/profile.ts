@@ -32,15 +32,23 @@ type SetupProfile = {
   id: string
   full_name: string | null
   email: string | null
+  company: string | null
+}
+
+type SetupAccount = {
+  id: string
+  name: string
 }
 
 type SetupProfileResponse = {
   profile: SetupProfile
+  account: SetupAccount | null
 }
 
 type UpdateSetupProfilePayload = {
   fullName: string
   email: string | null
+  companyName: string | null
 }
 
 async function parseJson<T>(response: Response): Promise<T> {

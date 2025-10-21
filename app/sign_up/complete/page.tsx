@@ -1,33 +1,21 @@
-import type { Metadata } from 'next'
+'use client'
 
-import CompleteSignUpForm from './CompleteSignUpForm'
+import { useEffect } from 'react'
 
-import Footer from '@/components/Footer'
-import Navbar from '@/components/Navbar'
+export default function SignUpCompleteRedirectPage() {
+  useEffect(() => {
+    const { search, hash } = window.location
+    const nextPath = `/app/setup-account${search}${hash}`
 
-export const metadata: Metadata = {
-  title: 'Complete your TwinMinds sign up',
-  description:
-    'Confirm your email, add your name and company details, and get ready to create your first TwinMinds client.'
-}
+    if (window.location.pathname !== '/app/setup-account') {
+      window.location.replace(nextPath)
+    }
+  }, [])
 
-export default function CompleteSignUpPage() {
   return (
-    <main className="flex min-h-screen flex-col">
-      <Navbar />
-      <section className="relative flex flex-1 items-center border-y border-white/5 bg-base-900/40 py-20">
-        <div className="pointer-events-none absolute inset-x-0 top-10 -z-10 flex justify-center">
-          <div className="h-[24rem] w-[28rem] rounded-full bg-gradient-to-br from-limeglow-500/16 via-transparent to-transparent blur-3xl" />
-        </div>
-        <div className="pointer-events-none absolute inset-x-0 bottom-[-6rem] -z-10 flex justify-center">
-          <div className="h-[22rem] w-[26rem] rounded-full bg-gradient-to-t from-limeglow-700/20 via-transparent to-transparent blur-3xl" />
-        </div>
-
-        <div className="container">
-          <CompleteSignUpForm />
-        </div>
-      </section>
-      <Footer />
-    </main>
+    <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
+      <p className="text-lg font-medium text-white">Redirecting you to complete your sign-up…</p>
+      <p className="mt-2 text-sm text-white/60">If nothing happens, please <a className="underline" href="/app/setup-account">continue to account setup</a>.</p>
+    </div>
   )
 }
