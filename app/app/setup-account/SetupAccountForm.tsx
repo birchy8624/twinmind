@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import type { Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 
 import { fetchSetupProfile, updateSetupProfile } from '@/lib/api/profile'
@@ -291,14 +290,7 @@ export default function SetupAccountForm() {
         throw new Error(metadataError.message)
       }
 
-      let sessionToSync: Session | null = null
-
-      const { data: metadataSessionData } = await supabase.auth.getSession()
-      if (metadataSessionData?.session) {
-        sessionToSync = metadataSessionData.session
-      }
-
-      const { data: passwordUpdateData, error: passwordUpdateError } = await supabase.auth.updateUser({
+      const { error: passwordUpdateError } = await supabase.auth.updateUser({
         password
       })
 
@@ -312,11 +304,15 @@ export default function SetupAccountForm() {
         if (!isReusedPassword) {
           throw new Error(passwordUpdateError.message)
         }
-      } else if (passwordUpdateData?.session) {
-        sessionToSync = passwordUpdateData.session
       }
 
-      await syncSessionWithServer(sessionToSync)
+      const { data: refreshedSessionData, error: refreshedSessionError } = await supabase.auth.getSession()
+
+      if (refreshedSessionError) {
+        console.error('Failed to refresh session after account setup', refreshedSessionError)
+      } else {
+        await syncSessionWithServer(refreshedSessionData?.session ?? null)
+      }
 
       await updateSetupProfile({
         fullName: trimmedName,
