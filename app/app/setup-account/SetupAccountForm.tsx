@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import { fetchSetupProfile, updateSetupProfile } from '@/lib/api/profile'
 import { createBrowserClient } from '@/lib/supabase/browser'
 
 const MIN_PASSWORD_LENGTH = 8
+
+type SetupMode = 'invite' | 'self-service'
 
 type FormStatus = 'initializing' | 'ready' | 'submitting' | 'success' | 'error'
 
@@ -123,9 +125,19 @@ function resolveMetadataName(metadata: Record<string, unknown> | undefined): str
   return trimmed || null
 }
 
-export default function SetupAccountForm() {
+type SetupAccountFormProps = {
+  mode?: SetupMode
+}
+
+export default function SetupAccountForm({ mode }: SetupAccountFormProps = {}) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = useMemo(createBrowserClient, [])
+
+  const inferredMode: SetupMode =
+    mode ??
+    (searchParams?.get('source') === 'self-service' ? 'self-service' : 'invite')
+  const shouldCollectPassword = inferredMode !== 'self-service'
 
   const [status, setStatus] = useState<FormStatus>('initializing')
   const [error, setError] = useState<string | null>(null)
@@ -269,14 +281,16 @@ export default function SetupAccountForm() {
       return
     }
 
-    if (!password || password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`)
-      return
-    }
+    if (shouldCollectPassword) {
+      if (!password || password.length < MIN_PASSWORD_LENGTH) {
+        setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`)
+        return
+      }
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match. Please try again.')
-      return
+      if (password !== confirmPassword) {
+        setError('Passwords do not match. Please try again.')
+        return
+      }
     }
 
     try {
@@ -291,19 +305,21 @@ export default function SetupAccountForm() {
         throw new Error(metadataError.message)
       }
 
-      const { error: passwordUpdateError } = await supabase.auth.updateUser({
-        password
-      })
+      if (shouldCollectPassword) {
+        const { error: passwordUpdateError } = await supabase.auth.updateUser({
+          password
+        })
 
-      if (passwordUpdateError) {
-        const normalizedMessage = passwordUpdateError.message?.toLowerCase() ?? ''
-        const isReusedPassword =
-          normalizedMessage.includes('different from the old password') ||
-          normalizedMessage.includes('already been used') ||
-          normalizedMessage.includes('previously used')
+        if (passwordUpdateError) {
+          const normalizedMessage = passwordUpdateError.message?.toLowerCase() ?? ''
+          const isReusedPassword =
+            normalizedMessage.includes('different from the old password') ||
+            normalizedMessage.includes('already been used') ||
+            normalizedMessage.includes('previously used')
 
-        if (!isReusedPassword) {
-          throw new Error(passwordUpdateError.message)
+          if (!isReusedPassword) {
+            throw new Error(passwordUpdateError.message)
+          }
         }
       }
 
@@ -380,7 +396,9 @@ export default function SetupAccountForm() {
           <span className="text-xs font-semibold uppercase tracking-[0.3em] text-limeglow-400/70">Workspace setup</span>
           <h2 className="text-2xl font-semibold text-white">Complete your TwinMinds account</h2>
           <p className="text-sm text-white/70">
-            Set your name and choose a secure password so you can start collaborating inside the TwinMinds workspace.
+            {shouldCollectPassword
+              ? 'Set your name and choose a secure password so you can start collaborating inside the TwinMinds workspace.'
+              : 'Set your name so you can start collaborating inside the TwinMinds workspace.'}
           </p>
         </header>
 
@@ -422,33 +440,37 @@ export default function SetupAccountForm() {
             ) : null}
           </div>
 
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-white/60">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              minLength={MIN_PASSWORD_LENGTH}
-              autoComplete="new-password"
-              required
-              disabled={isSubmitting}
-              className="mt-2 w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
-            />
-            <p className="mt-1 text-xs text-white/50">Minimum {MIN_PASSWORD_LENGTH} characters.</p>
-          </div>
+          {shouldCollectPassword ? (
+            <>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-white/60">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  minLength={MIN_PASSWORD_LENGTH}
+                  autoComplete="new-password"
+                  required
+                  disabled={isSubmitting}
+                  className="mt-2 w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
+                />
+                <p className="mt-1 text-xs text-white/50">Minimum {MIN_PASSWORD_LENGTH} characters.</p>
+              </div>
 
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-white/60">Confirm password</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              autoComplete="new-password"
-              required
-              disabled={isSubmitting}
-              className="mt-2 w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
-            />
-          </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-white/60">Confirm password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  autoComplete="new-password"
+                  required
+                  disabled={isSubmitting}
+                  className="mt-2 w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
+                />
+              </div>
+            </>
+          ) : null}
 
           {error ? (
             <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{error}</p>
