@@ -421,10 +421,6 @@ export async function GET() {
     })()
 
     const activityPromise = (async (): Promise<ActivityFeedItem[]> => {
-      if (!accessibleProjectIds && !activeAccountId) {
-        return []
-      }
-
       let activityQuery = supabase
         .from('project_stage_events')
         .select(
