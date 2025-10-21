@@ -2,37 +2,35 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import type { Session } from '@supabase/supabase-js'
 
 import { completeSignUp, fetchSignUpProfile } from '@/lib/api/signUp'
 import { createBrowserClient } from '@/lib/supabase/browser'
 
 type FormStatus = 'initializing' | 'ready' | 'submitting' | 'success' | 'error'
 
-function hasAuthParamsInUrl() {
+type UrlAuthParams = {
+  code: string | null
+  accessToken: string | null
+  refreshToken: string | null
+}
+
+function getAuthParamsFromUrl(): UrlAuthParams {
   if (typeof window === 'undefined') {
-    return false
+    return { code: null, accessToken: null, refreshToken: null }
   }
 
   const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : ''
-
-  if (hash) {
-    const hashParams = new URLSearchParams(hash)
-
-    if (hashParams.get('access_token') || hashParams.get('refresh_token') || hashParams.get('code')) {
-      return true
-    }
-  }
-
   const search = window.location.search.startsWith('?') ? window.location.search.slice(1) : ''
 
-  if (!search) {
-    return false
-  }
+  const hashParams = hash ? new URLSearchParams(hash) : null
+  const searchParams = search ? new URLSearchParams(search) : null
 
-  const searchParams = new URLSearchParams(search)
-  const authKeys = ['code', 'token', 'access_token', 'refresh_token']
+  const code = searchParams?.get('code') ?? hashParams?.get('code') ?? null
+  const accessToken = hashParams?.get('access_token') ?? searchParams?.get('access_token') ?? null
+  const refreshToken = hashParams?.get('refresh_token') ?? searchParams?.get('refresh_token') ?? null
 
-  return authKeys.some((key) => searchParams.has(key))
+  return { code, accessToken, refreshToken }
 }
 
 function clearAuthParamsFromUrl() {
@@ -54,6 +52,61 @@ function clearAuthParamsFromUrl() {
   window.history.replaceState(null, document.title, cleanUrl)
 }
 
+async function syncServerAuthSession(
+  supabase: ReturnType<typeof createBrowserClient>,
+  initialSession: Session | null
+) {
+  let session = initialSession
+
+  if (!session) {
+    const { data, error } = await supabase.auth.getSession()
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    session = data.session
+  }
+
+  if (!session) {
+    throw new Error('We could not verify your email confirmation link.')
+  }
+
+  try {
+    const accessToken = session.access_token
+    const refreshToken = session.refresh_token
+
+    if (typeof accessToken !== 'string' || typeof refreshToken !== 'string') {
+      console.warn('Missing Supabase session tokens while syncing auth cookie; skipping callback sync.')
+      return
+    }
+
+    const response = await fetch('/api/auth/callback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      keepalive: true,
+      body: JSON.stringify({
+        event: 'SIGNED_IN',
+        session: {
+          ...session,
+          access_token: accessToken,
+          refresh_token: refreshToken
+        }
+      })
+    })
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => null)
+      console.error('Failed to sync auth session with server', response.status, text)
+      throw new Error('We could not verify your confirmation link. Please request a new email.')
+    }
+  } catch (error) {
+    console.error('Failed to persist auth session cookie', error)
+    throw new Error('We could not verify your confirmation link. Please request a new email.')
+  }
+}
+
 export default function CompleteSignUpForm() {
   const router = useRouter()
   const supabase = useMemo(createBrowserClient, [])
@@ -71,16 +124,34 @@ export default function CompleteSignUpForm() {
       try {
         setStatus('initializing')
 
-        if (hasAuthParamsInUrl()) {
+        const { code, accessToken, refreshToken } = getAuthParamsFromUrl()
+        let sessionFromAuth: Session | null = null
+
+        if (code) {
           const currentUrl = window.location.href
-          const { error: sessionError } = await supabase.auth.exchangeCodeForSession(currentUrl)
+          const { data, error: sessionError } = await supabase.auth.exchangeCodeForSession(currentUrl)
 
           if (sessionError && sessionError.message !== 'Auth session missing!') {
             throw new Error(sessionError.message)
           }
 
+          sessionFromAuth = data.session
+          clearAuthParamsFromUrl()
+        } else if (accessToken && refreshToken) {
+          const { data, error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          })
+
+          if (sessionError && sessionError.message !== 'Auth session missing!') {
+            throw new Error(sessionError.message)
+          }
+
+          sessionFromAuth = data.session
           clearAuthParamsFromUrl()
         }
+
+        await syncServerAuthSession(supabase, sessionFromAuth)
 
         const { data: userData, error: userError } = await supabase.auth.getUser()
 
