@@ -7,6 +7,7 @@ import { getAccessContext, HttpError } from '../_lib/access'
 const PROJECTS = 'projects' as const
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 

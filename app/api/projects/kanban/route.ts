@@ -14,6 +14,7 @@ const PIPELINE_STATUSES: Database['public']['Enums']['project_status'][] = [
 ]
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 type KanbanProjectRow = Database['public']['Tables']['projects']['Row'] & {
   clients: Pick<Database['public']['Tables']['clients']['Row'], 'id' | 'name'> | null

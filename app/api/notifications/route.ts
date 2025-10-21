@@ -7,6 +7,7 @@ import { getAccessContext, HttpError } from '../_lib/access'
 const COMMENTS = 'comments' as const
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 type NotificationRow = Database['public']['Tables']['comments']['Row'] & {
   project: Pick<Database['public']['Tables']['projects']['Row'], 'id' | 'name' | 'client_id'> | null

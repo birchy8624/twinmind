@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 
 import SetupAccountForm from '../SetupAccountForm'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: 'Finish your account setup | TwinMinds Studio',
   description:

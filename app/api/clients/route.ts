@@ -7,6 +7,7 @@ import { getAccessContext, HttpError } from '../_lib/access'
 const CLIENTS = 'clients' as const
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 type ClientRow = Database['public']['Tables']['clients']['Row']
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
 import { fetchSetupProfile, updateSetupProfile } from '@/lib/api/profile'
 import { createBrowserClient } from '@/lib/supabase/browser'
@@ -131,12 +131,9 @@ type SetupAccountFormProps = {
 
 export default function SetupAccountForm({ mode }: SetupAccountFormProps = {}) {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const supabase = useMemo(createBrowserClient, [])
 
-  const inferredMode: SetupMode =
-    mode ??
-    (searchParams?.get('source') === 'self-service' ? 'self-service' : 'invite')
+  const inferredMode: SetupMode = mode ?? 'invite'
   const shouldCollectPassword = inferredMode !== 'self-service'
 
   const [status, setStatus] = useState<FormStatus>('initializing')
