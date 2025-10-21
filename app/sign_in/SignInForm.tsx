@@ -164,7 +164,8 @@ export default function SignInForm() {
     const handleSignUpSubmit = async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
 
-      const formData = new FormData(event.currentTarget)
+      const form = event.currentTarget
+      const formData = new FormData(form)
       const email = String(formData.get('email') ?? '').trim()
       const password = String(formData.get('password') ?? '')
       const confirmPassword = String(formData.get('confirm-password') ?? '')
@@ -208,7 +209,7 @@ export default function SignInForm() {
         }
 
         setSignUpSuccess('Check your inbox to confirm your email. After confirming, you can finish setting up your account.')
-        event.currentTarget.reset()
+        form.reset()
       } catch (cause) {
         console.error('Failed to sign up', cause)
         setSignUpError(

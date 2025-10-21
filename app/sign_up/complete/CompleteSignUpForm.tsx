@@ -8,33 +8,31 @@ import { createBrowserClient } from '@/lib/supabase/browser'
 
 type FormStatus = 'initializing' | 'ready' | 'submitting' | 'success' | 'error'
 
-type SessionParams = {
-  accessToken: string
-  refreshToken: string
-}
-
-function getSessionParamsFromUrl(): SessionParams | null {
+function hasAuthParamsInUrl() {
   if (typeof window === 'undefined') {
-    return null
+    return false
   }
 
   const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : ''
+
+  if (hash) {
+    const hashParams = new URLSearchParams(hash)
+
+    if (hashParams.get('access_token') || hashParams.get('refresh_token') || hashParams.get('code')) {
+      return true
+    }
+  }
+
   const search = window.location.search.startsWith('?') ? window.location.search.slice(1) : ''
-  const rawParams = hash || search
 
-  if (!rawParams) {
-    return null
+  if (!search) {
+    return false
   }
 
-  const params = new URLSearchParams(rawParams)
-  const accessToken = params.get('access_token')
-  const refreshToken = params.get('refresh_token')
+  const searchParams = new URLSearchParams(search)
+  const authKeys = ['code', 'token', 'access_token', 'refresh_token']
 
-  if (!accessToken || !refreshToken) {
-    return null
-  }
-
-  return { accessToken, refreshToken }
+  return authKeys.some((key) => searchParams.has(key))
 }
 
 function clearAuthParamsFromUrl() {
@@ -42,8 +40,17 @@ function clearAuthParamsFromUrl() {
     return
   }
 
-  const { pathname, search } = window.location
-  const cleanUrl = `${pathname}${search}`
+  const url = new URL(window.location.href)
+
+  url.hash = ''
+
+  const authParams = ['code', 'token', 'type', 'access_token', 'refresh_token', 'error', 'error_description', 'state']
+
+  for (const param of authParams) {
+    url.searchParams.delete(param)
+  }
+
+  const cleanUrl = `${url.pathname}${url.search}`
   window.history.replaceState(null, document.title, cleanUrl)
 }
 
@@ -64,15 +71,11 @@ export default function CompleteSignUpForm() {
       try {
         setStatus('initializing')
 
-        const params = getSessionParamsFromUrl()
+        if (hasAuthParamsInUrl()) {
+          const currentUrl = window.location.href
+          const { error: sessionError } = await supabase.auth.exchangeCodeForSession(currentUrl)
 
-        if (params) {
-          const { error: sessionError } = await supabase.auth.setSession({
-            access_token: params.accessToken,
-            refresh_token: params.refreshToken
-          })
-
-          if (sessionError) {
+          if (sessionError && sessionError.message !== 'Auth session missing!') {
             throw new Error(sessionError.message)
           }
 
