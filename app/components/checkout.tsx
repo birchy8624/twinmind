@@ -3,9 +3,9 @@
 import {
   EmbeddedCheckout,
   EmbeddedCheckoutProvider,
-  type EmbeddedCheckoutProviderProps,
 } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
+import type { ComponentProps } from 'react'
 
 import { fetchClientSecret } from '../actions/stripe'
 
@@ -17,7 +17,11 @@ if (!publishableKey) {
 
 const stripePromise = loadStripe(publishableKey)
 
-const embeddedCheckoutOptions: EmbeddedCheckoutProviderProps['options'] = {
+type EmbeddedCheckoutOptions = ComponentProps<
+  typeof EmbeddedCheckoutProvider
+>['options']
+
+const embeddedCheckoutOptions: EmbeddedCheckoutOptions = {
   fetchClientSecret,
 }
 
