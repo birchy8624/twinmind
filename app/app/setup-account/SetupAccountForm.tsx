@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 
 import { fetchSetupProfile, updateSetupProfile } from '@/lib/api/profile'
