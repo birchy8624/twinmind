@@ -306,7 +306,20 @@ export async function PATCH(request: Request) {
 
   if (upsertProfileError) {
     console.error('setup profile upsert error:', upsertProfileError)
-    return NextResponse.json({ message: 'Unable to update profile.' }, { status: 500 })
+    return NextResponse.json(
+      {
+        message: 'Unable to update profile.',
+        details:
+          typeof upsertProfileError === 'object' && upsertProfileError !== null
+            ? {
+                code: (upsertProfileError as { code?: string }).code ?? null,
+                message: (upsertProfileError as { message?: string }).message ?? null,
+                hint: (upsertProfileError as { hint?: string }).hint ?? null,
+              }
+            : null,
+      },
+      { status: 500 }
+    )
   }
 
   if (accountId) {
