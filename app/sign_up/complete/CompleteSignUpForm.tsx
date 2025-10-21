@@ -149,6 +149,17 @@ export default function CompleteSignUpForm() {
 
           sessionFromAuth = data.session
           clearAuthParamsFromUrl()
+        } else if (accessToken && refreshToken) {
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          })
+
+          if (sessionError && sessionError.message !== 'Auth session missing!') {
+            throw new Error(sessionError.message)
+          }
+
+          clearAuthParamsFromUrl()
         }
 
         await syncServerAuthSession(supabase, sessionFromAuth)
