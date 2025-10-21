@@ -32,15 +32,26 @@ type SetupProfile = {
   id: string
   full_name: string | null
   email: string | null
+  company: string | null
+  role: RoleEnum | null
 }
 
 type SetupProfileResponse = {
   profile: SetupProfile
+  account: { id: string; name: string | null } | null
 }
 
 type UpdateSetupProfilePayload = {
   fullName: string
   email: string | null
+  companyName: string | null
+}
+
+type UpdateSetupProfileResponse = {
+  success: true
+  accountId: string | null
+  createdAccount: boolean
+  role: RoleEnum
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -104,6 +115,8 @@ export async function updateSetupProfile(payload: UpdateSetupProfilePayload) {
     const body = await parseJson<{ message?: string }>(response)
     throw new Error(body.message ?? 'Unable to update profile.')
   }
+
+  return parseJson<UpdateSetupProfileResponse>(response)
 }
 
 export type {
@@ -114,4 +127,5 @@ export type {
   SetupProfile,
   SetupProfileResponse,
   UpdateSetupProfilePayload,
+  UpdateSetupProfileResponse,
 }

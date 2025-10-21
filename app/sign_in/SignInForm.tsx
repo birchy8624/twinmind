@@ -195,7 +195,7 @@ export default function SignInForm() {
 
         const emailRedirectTo =
           typeof window !== 'undefined'
-            ? new URL('/sign_up/complete', window.location.origin).toString()
+            ? new URL('/app/setup-account', window.location.origin).toString()
             : undefined
 
         const { error: signUpResultError } = await supabase.auth.signUp({

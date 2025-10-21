@@ -5,7 +5,7 @@ import SetupAccountForm from './SetupAccountForm'
 export const metadata: Metadata = {
   title: 'Complete your account | TwinMinds Studio',
   description:
-    'Verify your TwinMinds Studio invitation, set your name, and choose a password to access the workspace dashboard.'
+    'Verify your TwinMinds Studio invitation or sign-up, add your details, and finish preparing your workspace.'
 }
 
 export default function SetupAccountPage() {
