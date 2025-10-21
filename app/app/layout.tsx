@@ -146,7 +146,7 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
                     placeholder="Search clients, projects, or assets"
                   />
                   <NotificationsMenu className="hidden md:inline-flex" />
-                  <WorkspaceAccountMenu />
+                  <WorkspaceAccountMenu showOnMobile className="ml-auto md:ml-2" />
                 </div>
                 <div className="mt-4 flex flex-col gap-3 md:hidden">
                   <WorkspaceSearch wrapperClassName="w-full" placeholder="Search workspace" />
