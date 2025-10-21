@@ -1,14 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
+import { listNotifications } from '@/lib/api/notifications'
 
 import { useActiveProfile } from './active-profile-context'
-
-const COMMENTS = 'comments' as const
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
@@ -83,7 +81,6 @@ function resolveNotificationItem(record: NotificationRecord): NotificationItem |
 }
 
 export function NotificationsMenu({ className, triggerClassName }: NotificationsMenuProps = {}) {
-  const supabase = useMemo(createBrowserClient, [])
   const { clientIds, loading: profileLoading, profile } = useActiveProfile()
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -127,7 +124,7 @@ export function NotificationsMenu({ className, triggerClassName }: Notifications
     }
   }, [storageKey])
 
-  const fetchNotifications = useCallback(async () => {
+  const loadNotifications = useCallback(async () => {
     if (profileLoading || !profile?.id) {
       return
     }
@@ -141,66 +138,33 @@ export function NotificationsMenu({ className, triggerClassName }: Notifications
       return
     }
 
-    const query = supabase
-      .from(COMMENTS)
-      .select(
-        `
-          id,
-          body,
-          created_at,
-          visibility,
-          project:project_id ( id, name, client_id ),
-          author_profile:author_profile_id ( id, full_name, role )
-        `
-      )
-      .neq('author_profile_id', profile.id)
-      .order('created_at', { ascending: false })
-      .limit(50)
+    try {
+      const { notifications: notificationRows } = await listNotifications()
 
-    const { data, error: fetchError } = await query
+      const resolved = notificationRows
+        .map(resolveNotificationItem)
+        .filter((item): item is NotificationItem => item !== null)
 
-    if (fetchError) {
-      console.error('Failed to load notifications', fetchError)
+      setNotifications(resolved)
+      setError(null)
+    } catch (cause) {
+      console.error('Failed to load notifications', cause)
       setNotifications([])
       setError('We could not load notifications. Please try again soon.')
+    } finally {
       setLoading(false)
-      return
     }
-
-    const records = (data ?? []) as NotificationRecord[]
-    const filteredRecords = records.filter((record) => {
-      if (isClient) {
-        if (record.visibility === 'owner') {
-          return false
-        }
-
-        if (!record.project?.client_id) {
-          return false
-        }
-
-        return clientIds.includes(record.project.client_id)
-      }
-
-      return true
-    })
-
-    const resolved = filteredRecords
-      .map(resolveNotificationItem)
-      .filter((item): item is NotificationItem => item !== null)
-
-    setNotifications(resolved)
-    setLoading(false)
-  }, [clientIds, isClient, profile?.id, profileLoading, supabase])
+  }, [clientIds, isClient, profile?.id, profileLoading])
 
   useEffect(() => {
-    void fetchNotifications()
-  }, [fetchNotifications])
+    void loadNotifications()
+  }, [loadNotifications])
 
   useEffect(() => {
     if (open) {
-      void fetchNotifications()
+      void loadNotifications()
     }
-  }, [fetchNotifications, open])
+  }, [loadNotifications, open])
 
   useEffect(() => {
     if (!open || !storageKey || notifications.length === 0) {

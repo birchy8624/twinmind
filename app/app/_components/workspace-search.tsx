@@ -1,13 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import { createBrowserClient } from '@/lib/supabase/browser'
-import type { Database } from '@/types/supabase'
+import { searchWorkspace, type WorkspaceClientSummary, type WorkspaceProjectSummary } from '@/lib/api/search'
 
-type Client = Pick<Database['public']['Tables']['clients']['Row'], 'id' | 'name'>
-type Project = Pick<Database['public']['Tables']['projects']['Row'], 'id' | 'name'>
+type Client = WorkspaceClientSummary
+type Project = WorkspaceProjectSummary
 
 type WorkspaceSearchProps = {
   wrapperClassName?: string
@@ -23,14 +22,6 @@ type SearchResults = {
 const MIN_QUERY_LENGTH = 2
 const MAX_RESULTS = 6
 
-function escapeForILike(value: string) {
-  return value.replace(/[%_]/g, '\\$&')
-}
-
-function isLikelyUuid(value: string) {
-  return /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(value.trim())
-}
-
 export function WorkspaceSearch({
   wrapperClassName = '',
   inputContainerClassName = '',
@@ -44,8 +35,6 @@ export function WorkspaceSearch({
 
   const requestIdRef = useRef(0)
   const containerRef = useRef<HTMLDivElement | null>(null)
-
-  const supabase = useMemo(createBrowserClient, [])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -79,96 +68,18 @@ export function WorkspaceSearch({
     setLoading(true)
     setError(null)
 
-    const escapedQuery = escapeForILike(trimmedQuery)
-    const pattern = `%${escapedQuery}%`
-
-    const fetchClients = async () => {
-      const { data: nameMatches, error: nameError } = await supabase
-        .from('clients')
-        .select('id, name')
-        .ilike('name', pattern)
-        .order('name', { ascending: true })
-        .limit(MAX_RESULTS)
-
-      if (nameError) {
-        throw nameError
-      }
-
-      let combined = [...(nameMatches ?? [])]
-
-      if (isLikelyUuid(trimmedQuery)) {
-        const { data: idMatch, error: idError } = await supabase
-          .from('clients')
-          .select('id, name')
-          .eq('id', trimmedQuery)
-          .limit(1)
-
-        if (idError) {
-          throw idError
-        }
-
-        if (idMatch && idMatch.length > 0) {
-          const existing = new Set(combined.map((client) => client.id))
-          for (const client of idMatch) {
-            if (!existing.has(client.id)) {
-              combined.unshift(client)
-            }
-          }
-        }
-      }
-
-      return combined.slice(0, MAX_RESULTS)
-    }
-
-    const fetchProjects = async () => {
-      const { data: nameMatches, error: nameError } = await supabase
-        .from('projects')
-        .select('id, name')
-        .ilike('name', pattern)
-        .order('name', { ascending: true })
-        .limit(MAX_RESULTS)
-
-      if (nameError) {
-        throw nameError
-      }
-
-      let combined = [...(nameMatches ?? [])]
-
-      if (isLikelyUuid(trimmedQuery)) {
-        const { data: idMatch, error: idError } = await supabase
-          .from('projects')
-          .select('id, name')
-          .eq('id', trimmedQuery)
-          .limit(1)
-
-        if (idError) {
-          throw idError
-        }
-
-        if (idMatch && idMatch.length > 0) {
-          const existing = new Set(combined.map((project) => project.id))
-          for (const project of idMatch) {
-            if (!existing.has(project.id)) {
-              combined.unshift(project)
-            }
-          }
-        }
-      }
-
-      return combined.slice(0, MAX_RESULTS)
-    }
-
-    Promise.all([fetchClients(), fetchProjects()])
-      .then(([clients, projects]) => {
+    searchWorkspace(trimmedQuery)
+      .then(({ clients, projects }) => {
         if (requestIdRef.current !== currentRequestId) {
           return
         }
-        setResults({ clients, projects })
+        setResults({ clients: clients.slice(0, MAX_RESULTS), projects: projects.slice(0, MAX_RESULTS) })
         setLoading(false)
         setIsOpen(true)
+        setError(null)
       })
-      .catch((fetchError: Error) => {
-        console.error(fetchError)
+      .catch((cause: Error) => {
+        console.error('Workspace search failed', cause)
         if (requestIdRef.current !== currentRequestId) {
           return
         }
@@ -177,7 +88,7 @@ export function WorkspaceSearch({
         setLoading(false)
         setIsOpen(true)
       })
-  }, [query, supabase])
+  }, [query])
 
   const hasResults = results.clients.length > 0 || results.projects.length > 0
 

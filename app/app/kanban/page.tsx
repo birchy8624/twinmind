@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
-import { createBrowserClient } from '@/lib/supabase/browser'
+import { fetchKanbanProjects, updateProjectStatus, type KanbanProject as ApiKanbanProject } from '@/lib/api/projects'
 import type { Database } from '@/types/supabase'
 
 import { FilterDropdown } from '../_components/filter-dropdown'
@@ -18,38 +18,9 @@ const PIPELINE_COLUMNS = [
   { status: 'Closed', title: 'Closed' }
 ] as const
 
-const PROJECTS = 'projects' as const
-
-const KANBAN_DEBUG_ENABLED = process.env.NEXT_PUBLIC_DEBUG === '1'
-
-type PostgrestDebugMetadata = {
-  url?: string
-  headers?: Record<string, string>
-}
-
-function extractPostgrestDebugMetadata(builder: unknown): PostgrestDebugMetadata {
-  if (!builder || typeof builder !== 'object') {
-    return {}
-  }
-
-  const potentialUrl = (builder as { url?: unknown }).url
-  const url = potentialUrl instanceof URL ? potentialUrl.toString() : undefined
-
-  const headers = (builder as { headers?: unknown }).headers
-  const normalizedHeaders =
-    headers && typeof headers === 'object'
-      ? (headers as Record<string, string>)
-      : undefined
-
-  return { url, headers: normalizedHeaders }
-}
-
 type ColumnStatus = (typeof PIPELINE_COLUMNS)[number]['status']
 
-type ProjectRow = Database['public']['Tables']['projects']['Row']
-type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProfileLite = Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'full_name'>
-type ProjectUpdate = Database['public']['Tables']['projects']['Update']
 type ProjectStatus = Database['public']['Enums']['project_status']
 
 const statusMap: Record<ColumnStatus, ProjectStatus> = {
@@ -202,121 +173,25 @@ export default function KanbanPage() {
 
   const { pushToast } = useToast()
 
-  const supabase = useMemo(createBrowserClient, [])
-
   useEffect(() => {
     let isMounted = true
 
-    const fetchProjects = async () => {
+    const loadProjects = async () => {
       setLoading(true)
       setError(null)
       setUpdateError(null)
 
-      let query = supabase
-        .from(PROJECTS)
-        .select(
-          `
-            id,
-            name,
-            status,
-            value_quote,
-            due_date,
-            created_at,
-            labels,
-            tags,
-            clients:client_id ( id, name ),
-            assignee_profile:assignee_profile_id ( id, full_name )
-          `
-        )
-        .order('created_at', { ascending: false })
+      try {
+        const { projects: fetchedProjects } = await fetchKanbanProjects()
 
-      const pipelineStatuses = PIPELINE_COLUMNS.map((column) => column.status) as ColumnStatus[]
-
-      if (pipelineStatuses.length > 0) {
-        query = query.in('status', pipelineStatuses)
-      }
-
-      const postgrestDebugMetadata = KANBAN_DEBUG_ENABLED
-        ? extractPostgrestDebugMetadata(query)
-        : undefined
-
-      let sessionUserId: string | null = null
-      let sessionLookupError: unknown = null
-
-      if (KANBAN_DEBUG_ENABLED) {
-        try {
-          const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-          sessionLookupError = sessionError ?? null
-          sessionUserId = sessionData?.session?.user?.id ?? null
-        } catch (error) {
-          sessionLookupError = error
+        if (!isMounted) {
+          return
         }
-      }
-
-      const { data, error: fetchError } = await query
-
-      if (KANBAN_DEBUG_ENABLED) {
-        const projectUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-        let projectRef: string | null = null
-        let projectUrlParseError: unknown = null
-
-        if (projectUrl) {
-          try {
-            const host = new URL(projectUrl).hostname
-            projectRef = host.split('.')[0] ?? null
-          } catch (error) {
-            projectUrlParseError = error
-          }
-        }
-
-        console.groupCollapsed('[Kanban Debug] fetchProjects')
-        console.debug('Supabase project', {
-          url: projectUrl ?? null,
-          projectRef,
-          parseError: projectUrlParseError
-        })
-
-        if (sessionLookupError) {
-          console.debug('Auth identity lookup error', sessionLookupError)
-        }
-
-        console.debug('Auth identity', {
-          userId: sessionUserId
-        })
-
-        console.debug('PostgREST request', {
-          url: postgrestDebugMetadata?.url ?? null,
-          headers: postgrestDebugMetadata?.headers ?? null
-        })
-
-        if (fetchError) {
-          console.error('Supabase/PostgREST error', fetchError)
-        }
-
-        console.groupEnd()
-      }
-
-      if (!isMounted) return
-
-      if (fetchError) {
-        if (!KANBAN_DEBUG_ENABLED) {
-          console.error(fetchError)
-        }
-        setError('We ran into an issue loading projects. Please try again.')
-        setProjects(new Map())
-        setColumnOrders(createEmptyOrders())
-      } else {
-        type ProjectQuery = ProjectRow & {
-          clients: Pick<ClientRow, 'id' | 'name'> | null
-          assignee_profile: ProfileLite | null
-        }
-
-        const typedProjects = (data ?? []) as ProjectQuery[]
 
         const projectMap = new Map<string, KanbanProject>()
         const orders = createEmptyOrders()
 
-        for (const project of typedProjects) {
+        for (const project of fetchedProjects as ApiKanbanProject[]) {
           if (!isColumnStatus(project.status)) {
             continue
           }
@@ -337,13 +212,13 @@ export default function KanbanPage() {
             id: project.id,
             name: project.name,
             status: project.status,
-            client: project.clients ?? null,
-            assignee: project.assignee_profile ?? null,
+            client: project.client ?? null,
+            assignee: project.assignee ?? null,
             value_quote: typeof project.value_quote === 'number' ? project.value_quote : null,
             due_date: project.due_date,
             labels,
             tags,
-            created_at: project.created_at
+            created_at: project.created_at ?? null,
           }
 
           projectMap.set(project.id, normalized)
@@ -352,17 +227,28 @@ export default function KanbanPage() {
 
         setProjects(projectMap)
         setColumnOrders(orders)
+      } catch (cause) {
+        console.error('Failed to load Kanban projects', cause)
+        if (!isMounted) {
+          return
+        }
+        setError('We ran into an issue loading projects. Please try again.')
+        setProjects(new Map())
+        setColumnOrders(createEmptyOrders())
+      } finally {
+        if (!isMounted) {
+          return
+        }
+        setLoading(false)
       }
-
-      setLoading(false)
     }
 
-    void fetchProjects()
+    void loadProjects()
 
     return () => {
       isMounted = false
     }
-  }, [supabase])
+  }, [])
 
   const projectList = useMemo(() => Array.from(projects.values()), [projects])
 
@@ -545,28 +431,28 @@ export default function KanbanPage() {
       }
 
       const nextStatus = statusMap[targetStatus]
-      const patch: ProjectUpdate = { status: nextStatus }
 
-      const { error: updateStatusError } = await supabase
-        .from(PROJECTS)
-        .update(patch)
-        .eq('id', projectId)
+      try {
+        await updateProjectStatus(projectId, nextStatus)
+        setUpdateError(null)
+      } catch (cause) {
+        const message =
+          cause instanceof Error && cause.message
+            ? cause.message
+            : 'We could not update the project status. Please try again.'
 
-      if (updateStatusError) {
-        console.error(updateStatusError)
+        console.error('Failed to update project status', cause)
         setUpdateError('We could not update the project status. Please try again.')
         pushToast({
           title: 'Failed to update project status',
-          description: updateStatusError.message,
+          description: message,
           variant: 'error'
         })
         setProjects(previousProjects)
         setColumnOrders(previousOrders)
-      } else {
-        setUpdateError(null)
       }
     },
-    [columnOrders, dragState, projects, supabase, pushToast]
+    [columnOrders, dragState, projects, pushToast]
   )
 
   const visibleCounts = useMemo(() => {

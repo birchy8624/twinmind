@@ -41,6 +41,10 @@ type ClientListResponse = {
   >
 }
 
+type ClientOptionSummary = Pick<Database['public']['Tables']['clients']['Row'], 'id' | 'name'>
+
+type ClientOptionsResponse = { clients: ClientOptionSummary[] }
+
 async function parseJson<T>(response: Response): Promise<T> {
   const text = await response.text()
 
@@ -75,6 +79,17 @@ export async function listClients() {
   return parseJson<ClientListResponse>(response)
 }
 
+export async function listClientOptions() {
+  const response = await apiFetch('/api/clients/options')
+
+  if (!response.ok) {
+    const body = await parseJson<{ message?: string }>(response)
+    throw new Error(body.message ?? 'Unable to load clients.')
+  }
+
+  return parseJson<ClientOptionsResponse>(response)
+}
+
 type UpdateClientPayload = {
   name: string
   account_status: Database['public']['Tables']['clients']['Row']['account_status']
@@ -103,4 +118,4 @@ export async function updateClientDetails(clientId: string, payload: UpdateClien
   return parseJson<UpdateClientResponse>(response)
 }
 
-export type { ClientListItem, ClientListResponse }
+export type { ClientListItem, ClientListResponse, ClientOptionSummary, ClientOptionsResponse }

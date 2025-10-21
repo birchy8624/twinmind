@@ -4,14 +4,27 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 
-import type { FileObject } from '@supabase/storage-js'
-
 import { useActiveProfile } from '../../_components/active-profile-context'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
-import { fetchProjectComments as fetchProjectCommentsApi, fetchProjectDetails, listProjectFiles } from '@/lib/api/projects'
-import { createBrowserClient } from '@/lib/supabase/browser'
+import {
+  createProjectComment as createProjectCommentApi,
+  createProjectFileDownloadUrl,
+  deleteProjectBrief,
+  deleteProjectFile,
+  deleteProjectInvoice,
+  fetchProjectComments as fetchProjectCommentsApi,
+  fetchProjectDetails,
+  listProjectFiles,
+  saveProjectBrief,
+  saveProjectInvoice,
+  updateProjectDetails,
+  uploadProjectFile,
+  type CreateCommentPayload,
+  type ProjectUpdatePayload,
+  type SaveInvoicePayload
+} from '@/lib/api/projects'
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
 type ClientRow = Database['public']['Tables']['clients']['Row']
@@ -55,19 +68,7 @@ type InvoiceInfo = Pick<
   'id' | 'amount' | 'currency' | 'status' | 'issued_at' | 'due_at' | 'external_url' | 'paid_at' | 'created_at' | 'updated_at'
 >
 
-const PROJECTS = 'projects' as const
-const INVOICES = 'invoices' as const
-const CLIENTS = 'clients' as const
-const PROFILES = 'profiles' as const
-const COMMENTS = 'comments' as const
-const BRIEFS = 'briefs' as const
-const STORAGE_BUCKET = 'project-files' as const
-
-type ProjectUpdate = Database['public']['Tables']['projects']['Update']
 type ProjectStatus = Database['public']['Enums']['project_status']
-type InvoiceUpdate = Database['public']['Tables']['invoices']['Update']
-type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
-
 const INVOICE_STAGE_OPTIONS = ['Quote', 'Sent', 'Paid'] as const
 type InvoiceStage = (typeof INVOICE_STAGE_OPTIONS)[number]
 
@@ -503,14 +504,23 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
-  const [currentProfile, setCurrentProfile] = useState<Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null>(null)
-  const [loadingProfile, setLoadingProfile] = useState(true)
   const [submittingComment, setSubmittingComment] = useState(false)
 
   const { pushToast } = useToast()
 
-  const supabase = useMemo(createBrowserClient, [])
   const { profile: activeProfile, clientIds, loading: profileLoading } = useActiveProfile()
+  const currentProfile = useMemo(() => {
+    if (!activeProfile) {
+      return null
+    }
+
+    return {
+      id: activeProfile.id,
+      full_name: activeProfile.fullName ?? activeProfile.displayName,
+      role: activeProfile.role ?? null
+    }
+  }, [activeProfile])
+  const loadingProfile = profileLoading
   const isClientViewer = activeProfile?.role === 'client'
   const isMountedRef = useRef(true)
 
@@ -712,61 +722,6 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   }, [fetchProjectFiles])
 
   useEffect(() => {
-    let isCancelled = false
-
-    const loadProfile = async () => {
-      try {
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-        if (sessionError) {
-          console.error('Failed to fetch session', sessionError)
-        }
-
-        const userId = sessionData?.session?.user?.id ?? null
-
-        if (!userId) {
-          if (!isCancelled && isMountedRef.current) {
-            setCurrentProfile(null)
-            setLoadingProfile(false)
-          }
-          return
-        }
-
-        const { data: profileData, error: profileError } = await supabase
-          .from(PROFILES)
-          .select('id, full_name, role')
-          .eq('id', userId)
-          .maybeSingle()
-
-        if (!isMountedRef.current || isCancelled) {
-          return
-        }
-
-        if (profileError) {
-          console.error('Failed to load profile', profileError)
-          setCurrentProfile(null)
-        } else {
-          setCurrentProfile((profileData ?? null) as Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null)
-        }
-      } catch (cause) {
-        console.error('Unexpected error loading profile', cause)
-        if (!isCancelled && isMountedRef.current) {
-          setCurrentProfile(null)
-        }
-      } finally {
-        if (!isCancelled && isMountedRef.current) {
-          setLoadingProfile(false)
-        }
-      }
-    }
-
-    void loadProfile()
-
-    return () => {
-      isCancelled = true
-    }
-  }, [supabase])
-
-  useEffect(() => {
     if (currentProfile?.role !== 'owner' && commentVisibility === 'owner') {
       setCommentVisibility('both')
     }
@@ -873,7 +828,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         setTimeout(resolve, 300)
       })
 
-      const projectPatch: ProjectUpdate = {
+      const projectPatch: ProjectUpdatePayload = {
         name: trimmedName,
         description: trimmedDescription,
         status: selectedStatus as ProjectStatus,
@@ -887,104 +842,38 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         tags: normalizedTags
       }
 
-      const { error: projectUpdateError } = await supabase
-        .from(PROJECTS)
-        .update(projectPatch)
-        .eq('id', params.projectId)
-
-      if (projectUpdateError) {
-        console.error('Failed to update project in Supabase', projectUpdateError)
-        throw new Error(projectUpdateError.message)
-      }
+      const { project: updatedProject } = await updateProjectDetails(params.projectId, projectPatch)
 
       let nextInvoiceDetails: InvoiceInfo | null = invoiceDetails
 
       if (parsedBudget) {
-        if (invoiceDetails?.id) {
-          const invoiceUpdate: InvoiceUpdate = {
-            amount: parsedBudget.amount,
-            currency: parsedBudget.currency
-          }
-
-          const { data: updatedInvoice, error: invoiceUpdateError } = await supabase
-            .from(INVOICES)
-            .update(invoiceUpdate)
-            .eq('id', invoiceDetails.id)
-            .select('id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at')
-            .maybeSingle()
-
-          if (invoiceUpdateError) {
-            console.error('Failed to update invoice in Supabase', invoiceUpdateError)
-            throw new Error(invoiceUpdateError.message)
-          }
-
-          nextInvoiceDetails = updatedInvoice ?? {
-            id: invoiceDetails.id,
-            amount: parsedBudget.amount,
-            currency: parsedBudget.currency,
-            status: invoiceDetails.status,
-            issued_at: invoiceDetails.issued_at,
-            due_at: invoiceDetails.due_at,
-            external_url: invoiceDetails.external_url,
-            paid_at: invoiceDetails.paid_at,
-            created_at: invoiceDetails.created_at,
-            updated_at: invoiceDetails.updated_at
-          }
-        } else {
-          const invoiceInsert: InvoiceInsert = {
-            project_id: params.projectId,
-            amount: parsedBudget.amount,
-            currency: parsedBudget.currency
-          }
-
-          const { data: createdInvoice, error: invoiceInsertError } = await supabase
-            .from(INVOICES)
-            .insert(invoiceInsert)
-            .select('id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at')
-            .single()
-
-          if (invoiceInsertError) {
-            console.error('Failed to create invoice in Supabase', invoiceInsertError)
-            throw new Error(invoiceInsertError.message)
-          }
-
-          nextInvoiceDetails = createdInvoice
+        const invoicePayload: SaveInvoicePayload = {
+          invoiceId: invoiceDetails?.id,
+          amount: parsedBudget.amount,
+          currency: parsedBudget.currency,
+          status: invoiceDetails?.status ?? null,
+          issued_at: invoiceDetails?.issued_at ?? null,
+          due_at: invoiceDetails?.due_at ?? null,
+          external_url: invoiceDetails?.external_url ?? null,
+          paid_at: invoiceDetails?.paid_at ?? null
         }
+
+        const { invoice } = await saveProjectInvoice(params.projectId, invoicePayload)
+        nextInvoiceDetails = invoice
       } else if (invoiceDetails?.id) {
-        const { error: invoiceDeleteError } = await supabase.from(INVOICES).delete().eq('id', invoiceDetails.id)
-
-        if (invoiceDeleteError) {
-          console.error('Failed to delete invoice in Supabase', invoiceDeleteError)
-          throw new Error(invoiceDeleteError.message)
-        }
-
+        await deleteProjectInvoice(params.projectId, invoiceDetails.id)
         nextInvoiceDetails = null
       }
 
       if (normalizedBriefAnswers) {
-        const { error: briefUpsertError } = await supabase
-          .from(BRIEFS)
-          .upsert({ project_id: params.projectId, answers: normalizedBriefAnswers })
-
-        if (briefUpsertError) {
-          console.error('Failed to store brief answers', briefUpsertError)
-          throw new Error(briefUpsertError.message)
-        }
+        await saveProjectBrief(params.projectId, normalizedBriefAnswers)
       } else {
-        const { error: briefDeleteError } = await supabase
-          .from(BRIEFS)
-          .delete()
-          .eq('project_id', params.projectId)
-
-        if (briefDeleteError) {
-          console.error('Failed to clear brief answers', briefDeleteError)
-          throw new Error(briefDeleteError.message)
-        }
+        await deleteProjectBrief(params.projectId)
       }
 
-      const updatedClient = clients.find((client) => client.id === selectedClientId) ?? null
+      const updatedClient = clients.find((client) => client.id === selectedClientId) ?? updatedProject.client ?? null
       const updatedAssignee = assigneeValue
-        ? assignees.find((assignee) => assignee.id === assigneeValue) ?? null
+        ? assignees.find((assignee) => assignee.id === assigneeValue) ?? updatedProject.assignee ?? null
         : null
       const formattedBudget = nextInvoiceDetails
         ? formatBudgetFromInvoice(nextInvoiceDetails.amount, nextInvoiceDetails.currency)
@@ -1006,17 +895,13 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         return nextInvoices
       })
 
-      setProject((previous) => {
-        const reference = previous ?? project
-        if (!reference) return previous
+      setProject(() => {
+        if (!updatedProject) {
+          return project
+        }
+
         return {
-          ...reference,
-          name: trimmedName,
-          description: trimmedDescription,
-          status: selectedStatus as ProjectStatus,
-          due_date: normalizedDueDate,
-          client_id: selectedClientId,
-          assignee_profile_id: assigneeValue,
+          ...updatedProject,
           client: updatedClient,
           assignee: updatedAssignee,
           budget: formattedBudget,
@@ -1024,8 +909,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           value_invoiced: parsedValueInvoiced,
           value_paid: parsedValuePaid,
           labels: normalizedLabels,
-          tags: normalizedTags,
-          updated_at: new Date().toISOString()
+          tags: normalizedTags
         }
       })
 
@@ -1083,14 +967,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
     try {
       const uploads = Array.from(selectedFiles).map(async (file) => {
-        const filePath = `${params.projectId}/${file.name}`
-        const { error: uploadError } = await supabase.storage
-          .from(STORAGE_BUCKET)
-          .upload(filePath, file, { upsert: true })
-
-        if (uploadError) {
-          throw uploadError
-        }
+        await uploadProjectFile(params.projectId, file)
       })
 
       const results = await Promise.allSettled(uploads)
@@ -1125,42 +1002,40 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   }
 
   const handleDownloadFile = async (file: ProjectFileObject) => {
-    const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(file.path, 60)
+    try {
+      const { url } = await createProjectFileDownloadUrl(params.projectId, file.path)
 
-    if (error || !data?.signedUrl) {
-      console.error('Failed to create download URL', error)
+      if (typeof window !== 'undefined') {
+        window.open(url, '_blank')
+      }
+    } catch (cause) {
+      console.error('Failed to create download URL', cause)
       pushToast({
         title: 'Download failed',
         description: 'We could not download this file. Please try again.',
         variant: 'error'
       })
-      return
-    }
-
-    if (typeof window !== 'undefined') {
-      window.open(data.signedUrl, '_blank')
     }
   }
 
   const handleDeleteFile = async (file: ProjectFileObject) => {
-    const { error } = await supabase.storage.from(STORAGE_BUCKET).remove([file.path])
+    try {
+      await deleteProjectFile(params.projectId, file.path)
 
-    if (error) {
-      console.error('Failed to delete file', error)
+      setFiles((previous) => previous.filter((item) => item.path !== file.path))
+      pushToast({
+        title: 'File deleted',
+        description: `${file.name} has been removed.`,
+        variant: 'success'
+      })
+    } catch (cause) {
+      console.error('Failed to delete file', cause)
       pushToast({
         title: 'Could not delete file',
         description: 'We were unable to remove this file. Please try again.',
         variant: 'error'
       })
-      return
     }
-
-    setFiles((previous) => previous.filter((item) => item.path !== file.path))
-    pushToast({
-      title: 'File deleted',
-      description: `${file.name} has been removed.`,
-      variant: 'success'
-    })
   }
 
   const openInvoiceModal = (invoice: InvoiceInfo) => {
@@ -1243,30 +1118,18 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           ? activeInvoice.paid_at ?? new Date().toISOString()
           : null
 
-      const invoiceUpdate: InvoiceUpdate = {
+      const invoicePayload: SaveInvoicePayload = {
+        invoiceId: activeInvoice.id,
         amount: parsedAmount,
         currency: trimmedCurrency,
         status: invoiceEditor.stage,
         due_at: normalizedDueDate,
-        paid_at: nextPaidAt
+        paid_at: nextPaidAt,
+        issued_at: activeInvoice.issued_at ?? null,
+        external_url: activeInvoice.external_url ?? null
       }
 
-      const { data: updatedInvoice, error: invoiceUpdateError } = await supabase
-        .from(INVOICES)
-        .update(invoiceUpdate)
-        .eq('id', activeInvoice.id)
-        .select(
-          'id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at'
-        )
-        .single()
-
-      if (invoiceUpdateError) {
-        throw new Error(invoiceUpdateError.message)
-      }
-
-      if (!updatedInvoice) {
-        throw new Error('Invoice update did not return a record.')
-      }
+      const { invoice: updatedInvoice } = await saveProjectInvoice(params.projectId, invoicePayload)
 
       const formattedBudget = formatBudgetFromInvoice(updatedInvoice.amount, updatedInvoice.currency)
 
@@ -1703,35 +1566,12 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
     try {
       setSubmittingComment(true)
 
-      const { data, error } = await supabase
-        .from(COMMENTS)
-        .insert({
-          project_id: params.projectId,
-          body: trimmedBody,
-          visibility,
-          author_profile_id: currentProfile.id
-        })
-        .select(
-          `
-            id,
-            body,
-            created_at,
-            visibility,
-            author_profile:author_profile_id ( id, full_name, role )
-          `
-        )
-        .single()
-
-      if (error) {
-        console.error('Failed to submit comment', error)
-        throw new Error(error.message)
+      const payload: CreateCommentPayload = {
+        body: trimmedBody,
+        visibility
       }
 
-      type InsertedComment = Database['public']['Tables']['comments']['Row'] & {
-        author_profile: Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null
-      }
-
-      const inserted = data as InsertedComment
+      const { comment: inserted } = await createProjectCommentApi(params.projectId, payload)
 
       setComments((previous) => [
         {
@@ -1739,7 +1579,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
           body: inserted.body,
           created_at: inserted.created_at,
           visibility: inserted.visibility,
-          author: inserted.author_profile ?? {
+          author: inserted.author ?? {
             id: currentProfile.id,
             full_name: currentProfile.full_name,
             role: currentProfile.role

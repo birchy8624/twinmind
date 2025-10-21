@@ -21,6 +21,11 @@ type CommentResponse = {
   >
 }
 
+type CreateCommentPayload = {
+  body: string
+  visibility: Database['public']['Enums']['visibility_enum']
+}
+
 async function ensureProjectAccess(
   supabase: ReturnType<typeof createServerSupabase>,
   projectId: string,
@@ -147,4 +152,92 @@ export async function GET(
   }
 
   return NextResponse.json(response)
+}
+
+export async function POST(
+  request: Request,
+  context: { params: { projectId: string } }
+) {
+  const supabase = createServerSupabase()
+
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    return NextResponse.json({ message: 'Not authenticated.' }, { status: 401 })
+  }
+
+  let access: { role: Database['public']['Enums']['role_enum'] | null }
+  try {
+    access = await ensureProjectAccess(supabase, context.params.projectId, user.id)
+  } catch (error) {
+    if (error instanceof Error && 'status' in error) {
+      const status = typeof (error as { status?: number }).status === 'number' ? (error as { status?: number }).status : 500
+      return NextResponse.json({ message: error.message }, { status })
+    }
+
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : 'Unable to verify access.' },
+      { status: 500 }
+    )
+  }
+
+  let payload: CreateCommentPayload
+  try {
+    payload = (await request.json()) as CreateCommentPayload
+  } catch (error) {
+    console.error('create comment parse error:', error)
+    return NextResponse.json({ message: 'Invalid request body.' }, { status: 400 })
+  }
+
+  const trimmedBody = payload.body?.trim()
+
+  if (!trimmedBody) {
+    return NextResponse.json({ message: 'Comment body is required.' }, { status: 400 })
+  }
+
+  const visibility =
+    access.role === 'owner'
+      ? payload.visibility
+      : payload.visibility === 'owner'
+        ? 'both'
+        : payload.visibility
+
+  const { data, error } = await supabase
+    .from(COMMENTS)
+    .insert({
+      project_id: context.params.projectId,
+      body: trimmedBody,
+      visibility,
+      author_profile_id: user.id
+    })
+    .select(
+      `
+        id,
+        body,
+        created_at,
+        updated_at,
+        visibility,
+        author_profile:author_profile_id ( id, full_name, role )
+      `
+    )
+    .maybeSingle<CommentRow>()
+
+  if (error) {
+    console.error('project comment insert error:', error)
+    return NextResponse.json({ message: 'Unable to post comment.' }, { status: 500 })
+  }
+
+  if (!data) {
+    return NextResponse.json({ message: 'Unable to post comment.' }, { status: 500 })
+  }
+
+  const comment = {
+    ...data,
+    author: data.author_profile ?? null
+  }
+
+  return NextResponse.json({ comment })
 }
