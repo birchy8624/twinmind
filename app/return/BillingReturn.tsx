@@ -2,7 +2,15 @@ import { redirect } from 'next/navigation'
 
 import { stripe } from '@/lib/stripe'
 
-export default async function Return({ searchParams }) {
+type BillingReturnProps = {
+  searchParams?: {
+    session_id?: string
+  }
+}
+
+export default async function BillingReturn({
+  searchParams,
+}: BillingReturnProps) {
   const sessionId = searchParams?.session_id
 
   if (!sessionId) {
@@ -17,7 +25,7 @@ export default async function Return({ searchParams }) {
   const customerEmail = session.customer_details?.email
 
   if (status === 'open') {
-    return redirect('/app/billing')
+    redirect('/app/billing')
   }
 
   if (status === 'complete') {
@@ -32,5 +40,5 @@ export default async function Return({ searchParams }) {
     )
   }
 
-  return redirect('/app/billing')
+  redirect('/app/billing')
 }
