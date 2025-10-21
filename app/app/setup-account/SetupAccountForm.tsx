@@ -134,7 +134,6 @@ export default function SetupAccountForm({ mode }: SetupAccountFormProps = {}) {
   const supabase = useMemo(createBrowserClient, [])
 
   const inferredMode: SetupMode = mode ?? 'invite'
-  const shouldCollectPassword = inferredMode !== 'self-service'
 
   const [status, setStatus] = useState<FormStatus>('initializing')
   const [error, setError] = useState<string | null>(null)
@@ -146,6 +145,7 @@ export default function SetupAccountForm({ mode }: SetupAccountFormProps = {}) {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null)
   const [hasExistingAccount, setHasExistingAccount] = useState(false)
   const [requiresAccountSetup, setRequiresAccountSetup] = useState(false)
+  const [shouldCollectPassword, setShouldCollectPassword] = useState(inferredMode !== 'self-service')
 
   useEffect(() => {
     let isMounted = true
@@ -190,6 +190,11 @@ export default function SetupAccountForm({ mode }: SetupAccountFormProps = {}) {
           throw new Error('Invitation session is missing user information.')
         }
 
+        const metadataSignupMode = (() => {
+          const rawMode = user.user_metadata?.signup_mode
+          return typeof rawMode === 'string' ? rawMode : null
+        })()
+
         let derivedName = resolveMetadataName(user.user_metadata)
 
         try {
@@ -232,6 +237,7 @@ export default function SetupAccountForm({ mode }: SetupAccountFormProps = {}) {
             return ''
           })
           setEmail((previous) => previous || resolvedEmail)
+          setShouldCollectPassword(inferredMode !== 'self-service' && metadataSignupMode !== 'self-service')
           setStatus('ready')
           setError(null)
         }
@@ -256,7 +262,7 @@ export default function SetupAccountForm({ mode }: SetupAccountFormProps = {}) {
     return () => {
       isMounted = false
     }
-  }, [supabase])
+  }, [supabase, inferredMode])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()

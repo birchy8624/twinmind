@@ -10,10 +10,18 @@ export const metadata: Metadata = {
     'Verify your TwinMinds Studio invitation, set your name, and choose a password to access the workspace dashboard.'
 }
 
-export default function SetupAccountPage() {
+type SetupAccountPageProps = {
+  searchParams: Record<string, string | string[] | undefined>
+}
+
+export default function SetupAccountPage({ searchParams }: SetupAccountPageProps) {
+  const searchMode = typeof searchParams?.mode === 'string' ? searchParams.mode : null
+  const searchSource = typeof searchParams?.source === 'string' ? searchParams.source : null
+  const mode = searchMode === 'self-service' || searchSource === 'self-service' ? 'self-service' : 'invite'
+
   return (
     <div className="flex min-h-[60vh] items-center justify-center">
-      <SetupAccountForm mode="invite" />
+      <SetupAccountForm mode={mode} />
     </div>
   )
 }

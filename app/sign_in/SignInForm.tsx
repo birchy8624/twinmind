@@ -193,15 +193,36 @@ export default function SignInForm() {
         setSignUpError(null)
         setSignUpSuccess(null)
 
-        const emailRedirectTo =
-          typeof window !== 'undefined'
-            ? new URL('/app/setup-account/self-service?source=self-service', window.location.origin).toString()
-            : undefined
+        const resolveSiteOrigin = () => {
+          if (typeof window !== 'undefined') {
+            return window.location.origin
+          }
+
+          const envSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+
+          if (typeof envSiteUrl === 'string' && envSiteUrl.trim().length > 0) {
+            try {
+              return new URL(envSiteUrl).origin
+            } catch (error) {
+              console.error('Invalid NEXT_PUBLIC_SITE_URL while constructing sign-up redirect', error)
+            }
+          }
+
+          return null
+        }
+
+        const siteOrigin = resolveSiteOrigin()
+        const emailRedirectTo = siteOrigin
+          ? new URL('/app/setup-account?mode=self-service', siteOrigin).toString()
+          : undefined
 
         const { error: signUpResultError } = await supabase.auth.signUp({
           email,
           password,
-          options: emailRedirectTo ? { emailRedirectTo } : undefined
+          options: {
+            ...(emailRedirectTo ? { emailRedirectTo } : {}),
+            data: { signup_mode: 'self-service' }
+          }
         })
 
         if (signUpResultError) {
