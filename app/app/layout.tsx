@@ -113,7 +113,9 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
           </aside>
         ) : null}
 
-        <div className={`flex min-h-screen flex-col ${showNavigation ? 'lg:ml-72' : ''}`}>
+        <div
+          className={`flex min-h-0 min-h-screen h-dvh flex-col ${showNavigation ? 'lg:ml-72' : ''}`}
+        >
           <header className="sticky top-0 z-40 border-b border-white/10 bg-base-900/40 px-6 py-5 backdrop-blur">
             {isClient ? (
               <div className="flex items-center justify-between gap-4">
@@ -158,7 +160,9 @@ function AppShellLayoutInner({ children }: AppShellLayoutProps) {
               </>
             )}
           </header>
-          <main className="flex-1 space-y-6 overflow-y-auto bg-base-950 p-6 dark:bg-base-900/20">{children}</main>
+          <main className="flex-1 min-h-0 space-y-6 overflow-y-auto bg-base-950 p-6 dark:bg-base-900/20">
+            {children}
+          </main>
         </div>
 
         {showNavigation ? (
