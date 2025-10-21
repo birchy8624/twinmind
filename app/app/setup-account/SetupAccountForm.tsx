@@ -73,9 +73,12 @@ export default function SetupAccountForm() {
   const [error, setError] = useState<string | null>(null)
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
+  const [companyName, setCompanyName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null)
+  const [hasExistingAccount, setHasExistingAccount] = useState(false)
+  const [requiresAccountSetup, setRequiresAccountSetup] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -114,6 +117,7 @@ export default function SetupAccountForm() {
         try {
           const response = await fetchSetupProfile()
           const profileRow = response.profile
+          const accountRow = response.account
 
           const profileName = typeof profileRow.full_name === 'string' ? profileRow.full_name.trim() : ''
           if (profileName) {
@@ -124,6 +128,14 @@ export default function SetupAccountForm() {
           if (profileEmail) {
             setEmail(profileEmail)
           }
+
+          const accountName = typeof accountRow?.name === 'string' ? accountRow.name.trim() : ''
+          const profileCompany = typeof profileRow.company === 'string' ? profileRow.company.trim() : ''
+          const derivedCompany = accountName || profileCompany
+
+          setCompanyName(derivedCompany)
+          setHasExistingAccount(Boolean(accountRow))
+          setRequiresAccountSetup(!accountRow)
         } catch (profileError) {
           console.error('Failed to load profile details while preparing setup form', profileError)
         }
@@ -168,9 +180,15 @@ export default function SetupAccountForm() {
     }
 
     const trimmedName = fullName.trim()
+    const trimmedCompany = companyName.trim()
 
     if (!trimmedName) {
       setError('Please enter your full name to continue.')
+      return
+    }
+
+    if (requiresAccountSetup && !trimmedCompany) {
+      setError('Please enter your company name to continue.')
       return
     }
 
@@ -199,11 +217,13 @@ export default function SetupAccountForm() {
 
       await updateSetupProfile({
         fullName: trimmedName,
-        email: email.trim() || null
+        email: email.trim() || null,
+        companyName: trimmedCompany || null
       })
 
       setStatus('success')
-      router.replace('/app/dashboard')
+      const nextPath = requiresAccountSetup ? '/app/clients/new' : '/app/dashboard'
+      router.replace(nextPath)
       router.refresh()
     } catch (cause) {
       console.error('Failed to complete account setup', cause)
@@ -288,6 +308,21 @@ export default function SetupAccountForm() {
           </div>
 
           <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-white/60">Company name</label>
+            <input
+              type="text"
+              value={companyName}
+              onChange={(event) => setCompanyName(event.target.value)}
+              required={requiresAccountSetup}
+              disabled={isSubmitting || (hasExistingAccount && !requiresAccountSetup)}
+              className="mt-2 w-full rounded-lg border border-white/10 bg-base-900/60 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
+            />
+            {requiresAccountSetup ? (
+              <p className="mt-1 text-xs text-white/50">We&apos;ll create a workspace account using this company name.</p>
+            ) : null}
+          </div>
+
+          <div>
             <label className="text-xs font-semibold uppercase tracking-wide text-white/60">Password</label>
             <input
               type="password"
@@ -326,7 +361,9 @@ export default function SetupAccountForm() {
 
         {status === 'success' ? (
           <div className="mt-6 rounded-lg border border-limeglow-400/30 bg-limeglow-400/10 px-4 py-3 text-sm text-limeglow-100">
-            Account saved! Redirecting you to your dashboard…
+            {requiresAccountSetup
+              ? 'Account saved! Redirecting you to create your first client…'
+              : 'Account saved! Redirecting you to your dashboard…'}
           </div>
         ) : null}
       </div>
