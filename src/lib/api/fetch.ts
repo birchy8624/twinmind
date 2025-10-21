@@ -1,14 +1,4 @@
-import { cookies, headers } from 'next/headers'
-
-function resolveBaseUrl() {
-  const headerList = headers()
-  const host = headerList.get('x-forwarded-host') ?? headerList.get('host')
-  const protocol = headerList.get('x-forwarded-proto') ?? 'https'
-
-  if (host) {
-    return `${protocol}://${host}`
-  }
-
+function resolveBaseUrlFromEnv() {
   const envSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
   if (envSiteUrl) {
     try {
@@ -27,25 +17,8 @@ function resolveBaseUrl() {
   return 'http://localhost:3000'
 }
 
-function resolveCookieHeader() {
-  const store = cookies()
-  const entries = store.getAll()
-
-  if (entries.length === 0) {
-    return null
-  }
-
-  return entries.map(({ name, value }) => `${name}=${value}`).join('; ')
-}
-
-export async function apiFetch(path: string, init: RequestInit = {}) {
-  const url = new URL(path, resolveBaseUrl())
+function ensureHeaders(init: RequestInit) {
   const headersInit = new Headers(init.headers ?? {})
-
-  const cookieHeader = resolveCookieHeader()
-  if (cookieHeader && !headersInit.has('cookie')) {
-    headersInit.set('cookie', cookieHeader)
-  }
 
   if (init.body && typeof init.body === 'string' && !headersInit.has('content-type')) {
     headersInit.set('content-type', 'application/json')
@@ -55,10 +28,50 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
     headersInit.set('accept', 'application/json')
   }
 
-  return fetch(url.toString(), {
+  return headersInit
+}
+
+async function serverFetch(path: string, init: RequestInit) {
+  const { headers, cookies } = await import('next/headers')
+
+  const headerList = headers()
+  const host = headerList.get('x-forwarded-host') ?? headerList.get('host')
+  const protocol = headerList.get('x-forwarded-proto') ?? 'https'
+  const baseUrl = host ? `${protocol}://${host}` : resolveBaseUrlFromEnv()
+
+  const headersInit = ensureHeaders(init)
+
+  const cookieStore = cookies()
+  const cookieEntries = cookieStore.getAll()
+  if (cookieEntries.length > 0 && !headersInit.has('cookie')) {
+    headersInit.set(
+      'cookie',
+      cookieEntries.map(({ name, value }) => `${name}=${value}`).join('; ')
+    )
+  }
+
+  return fetch(new URL(path, baseUrl).toString(), {
     ...init,
     headers: headersInit,
     cache: 'no-store',
     credentials: 'include'
   })
+}
+
+function clientFetch(path: string, init: RequestInit) {
+  const headersInit = ensureHeaders(init)
+
+  return fetch(path, {
+    ...init,
+    headers: headersInit,
+    credentials: init.credentials ?? 'include'
+  })
+}
+
+export async function apiFetch(path: string, init: RequestInit = {}) {
+  if (typeof window === 'undefined') {
+    return serverFetch(path, init)
+  }
+
+  return clientFetch(path, init)
 }

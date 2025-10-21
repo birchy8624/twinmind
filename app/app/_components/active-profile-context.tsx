@@ -2,15 +2,11 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
+import { fetchActiveProfile } from '@/lib/api/profile'
 import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
 
-type ProfileRow = Database['public']['Tables']['profiles']['Row']
-type ClientMemberRow = Database['public']['Tables']['client_members']['Row']
 type ProfileRole = Database['public']['Enums']['role_enum']
-
-const PROFILES = 'profiles' as const
-const CLIENT_MEMBERS = 'client_members' as const
 
 type ActiveProfileDetails = {
   id: string
@@ -91,74 +87,37 @@ export function ActiveProfileProvider({ children }: ActiveProfileProviderProps) 
       }
 
       try {
-        const {
-          data: { user },
-          error: userError
-        } = await supabase.auth.getUser()
+        const response = await fetchActiveProfile()
 
-        if (userError) {
-          throw userError
-        }
-
-        if (!user) {
-          if (isMounted) {
-            setState({ loading: false, profile: null, clientIds: [] })
-          }
+        if (!isMounted) {
           return
         }
 
-        const metadataRole = resolveMetadataRole(user.user_metadata)
-        const metadataName = resolveMetadataName(user.user_metadata)
-
-        const { data: profileRow, error: profileError } = await supabase
-          .from(PROFILES)
-          .select('id, full_name, email, role')
-          .eq('id', user.id)
-          .maybeSingle()
-
-        if (profileError) {
-          throw profileError
+        if (!response) {
+          setState({ loading: false, profile: null, clientIds: [] })
+          return
         }
 
-        const typedProfile = (profileRow ?? null) as Pick<ProfileRow, 'id' | 'full_name' | 'email' | 'role'> | null
+        const metadataRole = resolveMetadataRole(response.metadata ?? undefined)
+        const metadataName = resolveMetadataName(response.metadata ?? undefined)
 
-        const profileFullName = typedProfile?.full_name?.trim() || ''
-        const profileEmail = typedProfile?.email?.trim() || (typeof user.email === 'string' ? user.email.trim() : '')
-        const resolvedRole = typedProfile?.role ?? metadataRole ?? null
+        const profileFullName = response.profile.full_name?.trim() || ''
+        const resolvedEmail = response.profile.email?.trim() || response.userEmail?.trim() || ''
+        const resolvedRole = response.profile.role ?? metadataRole ?? null
         const resolvedFullName = profileFullName || metadataName || null
-        const resolvedDisplayName = resolvedFullName ?? profileEmail ?? 'Account'
+        const displayName = resolvedFullName ?? resolvedEmail || 'Account'
 
-        let clientIds: string[] = []
-
-        if (resolvedRole === 'client') {
-          const { data: membershipRows, error: membershipError } = await supabase
-            .from(CLIENT_MEMBERS)
-            .select('client_id')
-            .eq('profile_id', user.id)
-
-          if (membershipError) {
-            throw membershipError
+        setState({
+          loading: false,
+          clientIds: response.clientIds,
+          profile: {
+            id: response.profile.id,
+            role: resolvedRole,
+            fullName: resolvedFullName,
+            email: resolvedEmail ? resolvedEmail : null,
+            displayName
           }
-
-          const typedMemberships = (membershipRows ?? []) as Array<Pick<ClientMemberRow, 'client_id'>>
-          clientIds = typedMemberships
-            .map((membership) => membership.client_id)
-            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-        }
-
-        if (isMounted) {
-          setState({
-            loading: false,
-            clientIds,
-            profile: {
-              id: user.id,
-              role: resolvedRole,
-              fullName: resolvedFullName,
-              email: profileEmail || null,
-              displayName: resolvedDisplayName
-            }
-          })
-        }
+        })
       } catch (error) {
         console.error('Failed to load active profile', error)
         if (isMounted) {
