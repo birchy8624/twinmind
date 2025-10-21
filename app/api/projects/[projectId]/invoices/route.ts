@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 import type { Database } from '@/types/supabase'
 
-import { getAccessContext, HttpError } from '../../../_lib/access'
+import { getAccessContext, HttpError, type ServerSupabaseClient } from '../../../_lib/access'
 
 const INVOICES = 'invoices' as const
 const PROJECTS = 'projects' as const
@@ -40,7 +42,7 @@ type DeleteInvoicePayload = {
 }
 
 async function ensureProjectAccess(
-  supabase: Awaited<ReturnType<typeof getAccessContext>>['supabase'],
+  supabase: ServerSupabaseClient,
   projectId: string,
   role: Database['public']['Enums']['role_enum'] | null,
   clientMemberships: string[],
@@ -49,7 +51,9 @@ async function ensureProjectAccess(
     return
   }
 
-  const { data, error } = await supabase
+  const typedSupabase = supabase as unknown as SupabaseClient<Database>
+
+  const { data, error } = await typedSupabase
     .from(PROJECTS)
     .select('client_id')
     .eq('id', projectId)
@@ -77,6 +81,8 @@ export async function POST(
     const access = await getAccessContext()
     await ensureProjectAccess(access.supabase, context.params.projectId, access.role, access.clientMemberships)
 
+    const supabase = access.supabase as unknown as SupabaseClient<Database>
+
     let payload: SaveInvoicePayload
     try {
       payload = (await request.json()) as SaveInvoicePayload
@@ -96,17 +102,22 @@ export async function POST(
     const normalizedCurrency = sanitizeCurrency(payload.currency)
 
     if (payload.invoiceId) {
-      const { data, error } = await access.supabase
+      const updatePayload: Database['public']['Tables']['invoices']['Update'] = {
+        amount: payload.amount,
+        currency: normalizedCurrency,
+        issued_at: payload.issued_at ?? null,
+        due_at: payload.due_at ?? null,
+        external_url: payload.external_url ?? null,
+        paid_at: payload.paid_at ?? null,
+      }
+
+      if (payload.status) {
+        updatePayload.status = payload.status
+      }
+
+      const { data, error } = await supabase
         .from(INVOICES)
-        .update({
-          amount: payload.amount,
-          currency: normalizedCurrency,
-          status: payload.status ?? null,
-          issued_at: payload.issued_at ?? null,
-          due_at: payload.due_at ?? null,
-          external_url: payload.external_url ?? null,
-          paid_at: payload.paid_at ?? null,
-        })
+        .update(updatePayload)
         .eq('id', payload.invoiceId)
         .eq('project_id', context.params.projectId)
         .select(
@@ -126,18 +137,23 @@ export async function POST(
       return NextResponse.json({ invoice: data })
     }
 
-    const { data, error } = await access.supabase
+    const insertPayload: Database['public']['Tables']['invoices']['Insert'] = {
+      project_id: context.params.projectId,
+      amount: payload.amount,
+      currency: normalizedCurrency,
+      issued_at: payload.issued_at ?? null,
+      due_at: payload.due_at ?? null,
+      external_url: payload.external_url ?? null,
+      paid_at: payload.paid_at ?? null,
+    }
+
+    if (payload.status) {
+      insertPayload.status = payload.status
+    }
+
+    const { data, error } = await supabase
       .from(INVOICES)
-      .insert({
-        project_id: context.params.projectId,
-        amount: payload.amount,
-        currency: normalizedCurrency,
-        status: payload.status ?? null,
-        issued_at: payload.issued_at ?? null,
-        due_at: payload.due_at ?? null,
-        external_url: payload.external_url ?? null,
-        paid_at: payload.paid_at ?? null,
-      })
+      .insert(insertPayload)
       .select('id, project_id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at')
       .maybeSingle<InvoiceRow>()
 
@@ -169,6 +185,8 @@ export async function DELETE(
     const access = await getAccessContext()
     await ensureProjectAccess(access.supabase, context.params.projectId, access.role, access.clientMemberships)
 
+    const supabase = access.supabase as unknown as SupabaseClient<Database>
+
     let payload: DeleteInvoicePayload
     try {
       payload = (await request.json()) as DeleteInvoicePayload
@@ -181,7 +199,7 @@ export async function DELETE(
       return NextResponse.json({ message: 'Invoice ID is required.' }, { status: 400 })
     }
 
-    const { error } = await access.supabase
+    const { error } = await supabase
       .from(INVOICES)
       .delete()
       .eq('id', payload.invoiceId)

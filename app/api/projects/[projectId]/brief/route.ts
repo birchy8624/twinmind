@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 import type { Database } from '@/types/supabase'
 
-import { getAccessContext, HttpError } from '../../../_lib/access'
+import { getAccessContext, HttpError, type ServerSupabaseClient } from '../../../_lib/access'
 
 const BRIEFS = 'briefs' as const
 const PROJECTS = 'projects' as const
@@ -16,7 +18,7 @@ type BriefPayload = {
 }
 
 async function ensureProjectAccess(
-  supabase: Awaited<ReturnType<typeof getAccessContext>>['supabase'],
+  supabase: ServerSupabaseClient,
   projectId: string,
   role: Database['public']['Enums']['role_enum'] | null,
   clientMemberships: string[],
@@ -25,7 +27,9 @@ async function ensureProjectAccess(
     return
   }
 
-  const { data, error } = await supabase
+  const typedSupabase = supabase as unknown as SupabaseClient<Database>
+
+  const { data, error } = await typedSupabase
     .from(PROJECTS)
     .select('client_id')
     .eq('id', projectId)
@@ -49,6 +53,8 @@ export async function PUT(
     const access = await getAccessContext()
     await ensureProjectAccess(access.supabase, context.params.projectId, access.role, access.clientMemberships)
 
+    const supabase = access.supabase as unknown as SupabaseClient<Database>
+
     let payload: BriefPayload
     try {
       payload = (await request.json()) as BriefPayload
@@ -57,7 +63,7 @@ export async function PUT(
       return NextResponse.json({ message: 'Invalid request body.' }, { status: 400 })
     }
 
-    const { error } = await access.supabase
+    const { error } = await supabase
       .from(BRIEFS)
       .upsert({ project_id: context.params.projectId, answers: payload.answers })
 
@@ -85,7 +91,9 @@ export async function DELETE(
     const access = await getAccessContext()
     await ensureProjectAccess(access.supabase, context.params.projectId, access.role, access.clientMemberships)
 
-    const { error } = await access.supabase
+    const supabase = access.supabase as unknown as SupabaseClient<Database>
+
+    const { error } = await supabase
       .from(BRIEFS)
       .delete()
       .eq('project_id', context.params.projectId)

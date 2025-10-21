@@ -1573,17 +1573,22 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
       const { comment: inserted } = await createProjectCommentApi(params.projectId, payload)
 
+      const fallbackAuthor: Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null = inserted.author
+        ?? (currentProfile
+          ? {
+              id: currentProfile.id,
+              full_name: currentProfile.full_name,
+              role: (currentProfile.role ?? 'owner') as ProfileRow['role']
+            }
+          : null)
+
       setComments((previous) => [
         {
           id: inserted.id,
           body: inserted.body,
           created_at: inserted.created_at,
           visibility: inserted.visibility,
-          author: inserted.author ?? {
-            id: currentProfile.id,
-            full_name: currentProfile.full_name,
-            role: currentProfile.role
-          }
+          author: fallbackAuthor
         },
         ...previous
       ])

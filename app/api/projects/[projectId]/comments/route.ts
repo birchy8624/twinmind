@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
 
@@ -31,7 +33,9 @@ async function ensureProjectAccess(
   projectId: string,
   profileId: string
 ) {
-  const { data: profileRow, error: profileError } = await supabase
+  const typedSupabase = supabase as unknown as SupabaseClient<Database>
+
+  const { data: profileRow, error: profileError } = await typedSupabase
     .from(PROFILES)
     .select('role')
     .eq('id', profileId)
@@ -50,7 +54,7 @@ async function ensureProjectAccess(
 
   type ClientMembershipRow = Pick<Database['public']['Tables']['client_members']['Row'], 'client_id'>
 
-  const { data: membershipRows, error: membershipError } = await supabase
+  const { data: membershipRows, error: membershipError } = await typedSupabase
     .from('client_members')
     .select('client_id')
     .eq('profile_id', profileId)
@@ -69,7 +73,7 @@ async function ensureProjectAccess(
     throw Object.assign(new Error('Project not found.'), { status: 404 })
   }
 
-  const { data: projectRow, error: projectError } = await supabase
+  const { data: projectRow, error: projectError } = await typedSupabase
     .from(PROJECTS)
     .select('id, client_id')
     .eq('id', projectId)
@@ -116,7 +120,9 @@ export async function GET(
     )
   }
 
-  const { data, error } = await supabase
+  const typedSupabase = supabase as unknown as SupabaseClient<Database>
+
+  const { data, error } = await typedSupabase
     .from(COMMENTS)
     .select(
       `
@@ -132,6 +138,7 @@ export async function GET(
     )
     .eq('project_id', context.params.projectId)
     .order('created_at', { ascending: false })
+    .returns<CommentRow[]>()
 
   if (error) {
     console.error('project comments fetch error:', error)
@@ -139,8 +146,7 @@ export async function GET(
   }
 
   const typedComments = (data ?? []).map((row) => {
-    const comment = row as CommentRow
-    const { author_profile, ...rest } = comment
+    const { author_profile, ...rest } = row
     return {
       ...rest,
       author: author_profile ?? null
@@ -205,7 +211,9 @@ export async function POST(
         ? 'both'
         : payload.visibility
 
-  const { data, error } = await supabase
+  const typedSupabase = supabase as unknown as SupabaseClient<Database>
+
+  const { data, error } = await typedSupabase
     .from(COMMENTS)
     .insert({
       project_id: context.params.projectId,

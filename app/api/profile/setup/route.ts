@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
 
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+import type { Database } from '@/types/supabase'
 import { createServerSupabase } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
+
+const PROFILES = 'profiles' as const
 
 type SetupProfile = {
   id: string
@@ -31,8 +36,10 @@ export async function GET() {
     return NextResponse.json({ message: 'Not authenticated.' }, { status: 401 })
   }
 
-  const { data, error } = await supabase
-    .from('profiles')
+  const typedSupabase = supabase as unknown as SupabaseClient<Database>
+
+  const { data, error } = await typedSupabase
+    .from(PROFILES)
     .select('id, full_name, email')
     .eq('id', user.id)
     .maybeSingle<SetupProfile>()
@@ -73,13 +80,17 @@ export async function PATCH(request: Request) {
   const trimmedName = payload.fullName.trim()
   const trimmedEmail = payload.email ? payload.email.trim() : null
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({
-      full_name: trimmedName,
-      email: trimmedEmail,
-      updated_at: new Date().toISOString()
-    })
+  const updatePayload: Database['public']['Tables']['profiles']['Update'] = {
+    full_name: trimmedName,
+    email: trimmedEmail,
+    updated_at: new Date().toISOString()
+  }
+
+  const typedSupabase = supabase as unknown as SupabaseClient<Database>
+
+  const { error } = await typedSupabase
+    .from(PROFILES)
+    .update(updatePayload)
     .eq('id', user.id)
 
   if (error) {
