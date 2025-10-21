@@ -7,8 +7,6 @@ import { createBrowserClient } from '@/lib/supabase/browser'
 
 type AuthMode = 'sign-in' | 'sign-up' | 'reset'
 
-const MIN_PASSWORD_LENGTH = 8
-
 export default function SignInForm() {
   const router = useRouter()
   const supabase = useMemo(createBrowserClient, [])
@@ -166,24 +164,11 @@ export default function SignInForm() {
 
       const form = event.currentTarget
       const formData = new FormData(form)
+      const fullName = String(formData.get('full-name') ?? '').trim()
       const email = String(formData.get('email') ?? '').trim()
-      const password = String(formData.get('password') ?? '')
-      const confirmPassword = String(formData.get('confirm-password') ?? '')
 
-      if (!email || !password || !confirmPassword) {
-        setSignUpError('Please complete all fields to continue.')
-        setSignUpSuccess(null)
-        return
-      }
-
-      if (password.length < MIN_PASSWORD_LENGTH) {
-        setSignUpError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`)
-        setSignUpSuccess(null)
-        return
-      }
-
-      if (password !== confirmPassword) {
-        setSignUpError('Passwords do not match. Please try again.')
+      if (!fullName || !email) {
+        setSignUpError('Please enter your full name and email address to continue.')
         setSignUpSuccess(null)
         return
       }
@@ -198,17 +183,20 @@ export default function SignInForm() {
             ? new URL('/app/setup-account', window.location.origin).toString()
             : undefined
 
-        const { error: signUpResultError } = await supabase.auth.signUp({
+        const { error: signUpResultError } = await supabase.auth.signInWithOtp({
           email,
-          password,
-          options: emailRedirectTo ? { emailRedirectTo } : undefined
+          options: {
+            shouldCreateUser: true,
+            data: { full_name: fullName },
+            ...(emailRedirectTo ? { emailRedirectTo } : {}),
+          },
         })
 
         if (signUpResultError) {
           throw new Error(signUpResultError.message)
         }
 
-        setSignUpSuccess('Check your inbox to confirm your email. After confirming, you can finish setting up your account.')
+        setSignUpSuccess('Check your email for a secure sign-in link. Once confirmed, you can finish setting up your account.')
         form.reset()
       } catch (cause) {
         console.error('Failed to sign up', cause)
@@ -227,9 +215,24 @@ export default function SignInForm() {
         <div className="space-y-1">
           <h2 className="text-xl font-semibold text-white">Create your TwinMinds account</h2>
           <p className="text-sm text-white/70">
-            Enter your email and choose a secure password. We&apos;ll send a confirmation email so you can finish setting up
-            your workspace.
+            Tell us who you are and we&apos;ll email you a secure link so you can finish setting up your workspace.
           </p>
+        </div>
+
+        <div>
+          <label htmlFor="sign-up-full-name" className="block text-sm text-white/80">
+            Full name
+          </label>
+          <input
+            id="sign-up-full-name"
+            name="full-name"
+            type="text"
+            autoComplete="name"
+            required
+            className="mt-2 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base text-white ring-1 ring-white/10 outline-none transition focus:ring-2 focus:ring-limeglow-500/40"
+            placeholder="Taylor Morgan"
+            disabled={signUpLoading}
+          />
         </div>
 
         <div>
@@ -248,40 +251,6 @@ export default function SignInForm() {
           />
         </div>
 
-        <div>
-          <label htmlFor="sign-up-password" className="block text-sm text-white/80">
-            Password
-          </label>
-          <input
-            id="sign-up-password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            minLength={MIN_PASSWORD_LENGTH}
-            required
-            className="mt-2 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base text-white ring-1 ring-white/10 outline-none transition focus:ring-2 focus:ring-limeglow-500/40"
-            placeholder="Create a password"
-            disabled={signUpLoading}
-          />
-          <p className="mt-1 text-xs text-white/50">Minimum {MIN_PASSWORD_LENGTH} characters.</p>
-        </div>
-
-        <div>
-          <label htmlFor="sign-up-confirm-password" className="block text-sm text-white/80">
-            Confirm password
-          </label>
-          <input
-            id="sign-up-confirm-password"
-            name="confirm-password"
-            type="password"
-            autoComplete="new-password"
-            required
-            className="mt-2 w-full rounded-xl bg-base-700/60 px-4 py-3 text-base text-white ring-1 ring-white/10 outline-none transition focus:ring-2 focus:ring-limeglow-500/40"
-            placeholder="Re-enter your password"
-            disabled={signUpLoading}
-          />
-        </div>
-
         {signUpError ? (
           <p className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{signUpError}</p>
         ) : null}
@@ -293,7 +262,7 @@ export default function SignInForm() {
         ) : null}
 
         <button type="submit" className="btn btn-primary w-full" disabled={signUpLoading}>
-          {signUpLoading ? 'Creating your account…' : 'Create account'}
+          {signUpLoading ? 'Sending magic link…' : 'Send magic link'}
         </button>
 
         <button
