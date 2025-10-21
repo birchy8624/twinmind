@@ -5,28 +5,16 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { createBrowserClient } from '@/lib/supabase/browser'
-import type { Database } from '@/types/supabase'
+import { listProjects, type ProjectListItem } from '@/lib/api/projects'
 
 import { useActiveProfile } from '../_components/active-profile-context'
 import { FilterDropdown } from '../_components/filter-dropdown'
 import { MultiSelectDropdown } from '../_components/multi-select-dropdown'
 import { StatusBadge } from '../_components/status-badge'
 
-type ProjectRow = Database['public']['Tables']['projects']['Row']
-type ClientRow = Database['public']['Tables']['clients']['Row']
-type ProfileRow = Database['public']['Tables']['profiles']['Row']
-
-type Project = ProjectRow & {
-  client: Pick<ClientRow, 'id' | 'name'> | null
-  assignee: Pick<ProfileRow, 'id' | 'full_name'> | null
-}
-
 const PAGE_SIZE = 8
 const statusFilters = ['Backlog', 'Call Arranged', 'Brief Gathered', 'Build', 'Closed']
 const ALL_CLIENTS = 'All clients'
-const PROJECTS = 'projects' as const
-
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
 const relativeTimeDivisions: { amount: number; unit: Intl.RelativeTimeFormatUnit }[] = [
@@ -56,7 +44,7 @@ function formatRelativeTimeFromNow(value: string | Date | null) {
   return 'Unknown'
 }
 
-function formatStatus(status: ProjectRow['status'] | null) {
+function formatStatus(status: ProjectListItem['status'] | null) {
   if (!status) return 'Unknown'
 
   return status
@@ -80,9 +68,10 @@ function formatDueDate(value: string | null) {
 }
 
 export default function ProjectsPage() {
-  const { clientIds, loading: profileLoading, profile } = useActiveProfile()
+  const { profile, loading: profileLoading } = useActiveProfile()
   const isClient = profile?.role === 'client'
-  const [projects, setProjects] = useState<Project[]>([])
+  const showOwnerControls = !profileLoading && !isClient
+  const [projects, setProjects] = useState<ProjectListItem[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [clientFilter, setClientFilter] = useState(ALL_CLIENTS)
@@ -90,75 +79,30 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const supabase = useMemo(createBrowserClient, [])
   const router = useRouter()
 
   useEffect(() => {
     let isMounted = true
 
     const fetchProjects = async () => {
-      if (profileLoading) {
-        return
-      }
-
       setLoading(true)
       setError(null)
 
-      if (isClient && clientIds.length === 0) {
-        if (isMounted) {
-          setProjects([])
-          setLoading(false)
-        }
-        return
-      }
-
-      let queryBuilder = supabase
-        .from(PROJECTS)
-        .select(
-          `
-            id,
-            name,
-            status,
-            description,
-            due_date,
-            created_at,
-            clients:client_id ( id, name ),
-            assignee_profile:assignee_profile_id ( id, full_name )
-          `
-        )
-        .order('created_at', { ascending: false })
-
-      if (isClient) {
-        queryBuilder = queryBuilder.in('client_id', clientIds)
-      }
-
-      const { data, error: fetchError } = await queryBuilder
-
-      if (!isMounted) return
-
-      if (fetchError) {
+      try {
+        const response = await listProjects()
+        if (!isMounted) return
+        setProjects(response.projects)
+        setError(null)
+      } catch (fetchError) {
         console.error(fetchError)
+        if (!isMounted) return
         setError('We ran into an issue loading projects. Please try again.')
         setProjects([])
-      } else {
-        type ProjectQuery = ProjectRow & {
-          clients: Pick<ClientRow, 'id' | 'name'> | null
-          assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
+      } finally {
+        if (isMounted) {
+          setLoading(false)
         }
-
-        const typedProjects = (data ?? []) as ProjectQuery[]
-        const normalizedProjects: Project[] = typedProjects.map(
-          ({ clients, assignee_profile, ...rest }) => ({
-            ...rest,
-            client: clients ?? null,
-            assignee: assignee_profile ?? null
-          })
-        )
-
-        setProjects(normalizedProjects)
       }
-
-      setLoading(false)
     }
 
     void fetchProjects()
@@ -166,7 +110,7 @@ export default function ProjectsPage() {
     return () => {
       isMounted = false
     }
-  }, [supabase, profileLoading, isClient, clientIds])
+  }, [])
 
   const clientFilters = useMemo(() => {
     const uniqueClients = new Set<string>()
@@ -215,7 +159,7 @@ export default function ProjectsPage() {
             Monitor project health across clients and quickly surface work that needs attention.
           </p>
         </div>
-        {!isClient ? (
+        {showOwnerControls ? (
           <Link
             href="/app/projects/new"
             className="inline-flex items-center justify-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition btn-gradient"
@@ -228,7 +172,7 @@ export default function ProjectsPage() {
       <motion.div className="rounded-3xl border border-white/10 bg-base-900/40 p-6 shadow-lg shadow-base-900/30 backdrop-blur">
         <div className="flex flex-col gap-3 border-b border-white/10 pb-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex w-full flex-col gap-3 text-sm text-white/70 sm:flex-row">
-            {!isClient ? (
+            {showOwnerControls ? (
               <label className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-base-900/60 px-4 py-2 focus-within:border-white/30 focus-within:text-white/80">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="h-4 w-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z" />
@@ -256,7 +200,7 @@ export default function ProjectsPage() {
               }}
               className="sm:w-56"
             />
-            {!isClient ? (
+            {showOwnerControls ? (
               <FilterDropdown
                 label="Client"
                 value={clientFilter}

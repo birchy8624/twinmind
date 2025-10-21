@@ -32,6 +32,15 @@ type ProjectDetailsPayload = {
   briefAnswers: BriefAnswers
 }
 
+type ProjectListItem = Pick<ProjectRow, 'id' | 'name' | 'status' | 'description' | 'due_date' | 'created_at'> & {
+  client: ClientOption | null
+  assignee: AssigneeOption | null
+}
+
+type ProjectListResponse = {
+  projects: ProjectListItem[]
+}
+
 type CommentRow = Database['public']['Tables']['comments']['Row'] & {
   author: Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'full_name' | 'role'> | null
 }
@@ -74,6 +83,17 @@ export async function fetchProjectDetails(projectId: string) {
   return parseJson<ProjectDetailsPayload>(response)
 }
 
+export async function listProjects() {
+  const response = await apiFetch('/api/projects')
+
+  if (!response.ok) {
+    const body = await parseJson<{ message?: string }>(response)
+    throw new Error(body.message ?? 'Unable to load projects.')
+  }
+
+  return parseJson<ProjectListResponse>(response)
+}
+
 export async function fetchProjectComments(projectId: string) {
   const response = await apiFetch(`/api/projects/${projectId}/comments`)
 
@@ -96,4 +116,10 @@ export async function listProjectFiles(projectId: string) {
   return parseJson<ProjectFilesResponse>(response)
 }
 
-export type { ProjectDetailsPayload, CommentRow as ProjectComment, ProjectFilesResponse }
+export type {
+  ProjectDetailsPayload,
+  CommentRow as ProjectComment,
+  ProjectFilesResponse,
+  ProjectListItem,
+  ProjectListResponse,
+}

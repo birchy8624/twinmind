@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { motion } from 'framer-motion'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type JSX } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type JSX } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
@@ -10,7 +10,7 @@ import { ConfirmModal } from '../_components/confirm-modal'
 import { useToast } from '../_components/toast-context'
 import { useCustomization } from '../_components/customization-context'
 import { WorkspaceBrandmark } from '../_components/workspace-brandmark'
-import { createBrowserClient } from '@/lib/supabase/browser'
+import { fetchActiveProfile, updateProfile } from '@/lib/api/profile'
 import type { Database } from '@/types/supabase'
 
 const profileSchema = z.object({
@@ -23,10 +23,8 @@ const profileSchema = z.object({
 
 type ProfileFormValues = z.infer<typeof profileSchema>
 
-type ProfileInsert = Database['public']['Tables']['profiles']['Insert']
 type RoleEnum = Database['public']['Enums']['role_enum']
 
-const PROFILES = 'profiles' as const
 const DEFAULT_ROLE: RoleEnum = 'client'
 const DEFAULT_BRAND_COLOR = '#a3ff12'
 const LOGO_SIZE_LIMIT_BYTES = 1.5 * 1024 * 1024
@@ -89,7 +87,6 @@ const toRoleLabel = (role: RoleEnum) => ROLE_LABELS[role]
 
 export default function SettingsPage() {
   const { pushToast } = useToast()
-  const supabase = useMemo(createBrowserClient, [])
   const [resetModalOpen, setResetModalOpen] = useState(false)
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null)
@@ -121,50 +118,42 @@ export default function SettingsPage() {
       }
 
       try {
-        const {
-          data: { user },
-          error: userError
-        } = await supabase.auth.getUser()
+        const response = await fetchActiveProfile()
 
-        if (userError) {
-          throw userError
-        }
-
-        if (!user) {
-          if (isMounted) {
-            setActiveProfileId(null)
-          }
+        if (!isMounted) {
           return
         }
 
-        const metadataName = resolveMetadataName(user.user_metadata)
-        const metadataRole = resolveMetadataRole(user.user_metadata)
-
-        const { data: profile, error: profileError } = await supabase
-          .from(PROFILES)
-          .select('id, full_name, role, email')
-          .eq('id', user.id)
-          .maybeSingle()
-
-        if (profileError) {
-          throw profileError
-        }
-
-        const resolvedName = profile?.full_name?.trim() || metadataName || user.email || ''
-        const resolvedRole = profile?.role ?? metadataRole ?? DEFAULT_ROLE
-        const resolvedEmail = profile?.email?.trim() || user.email || ''
-
-        if (isMounted) {
-          setActiveProfileId(user.id)
+        if (!response) {
+          setActiveProfileId(null)
           profileForm.reset(
             {
-              name: resolvedName,
-              role: resolvedRole,
-              email: resolvedEmail
+              name: '',
+              role: DEFAULT_ROLE,
+              email: ''
             },
             { keepDirty: false }
           )
+          return
         }
+
+        const metadataName = resolveMetadataName(response.metadata ?? undefined)
+        const metadataRole = resolveMetadataRole(response.metadata ?? undefined)
+
+        const resolvedName =
+          response.profile.full_name?.trim() || metadataName || response.userEmail || ''
+        const resolvedRole = response.profile.role ?? metadataRole ?? DEFAULT_ROLE
+        const resolvedEmail = response.profile.email?.trim() || response.userEmail || ''
+
+        setActiveProfileId(response.profile.id)
+        profileForm.reset(
+          {
+            name: resolvedName,
+            role: resolvedRole,
+            email: resolvedEmail
+          },
+          { keepDirty: false }
+        )
       } catch (error) {
         console.error('Failed to load profile', error)
 
@@ -188,7 +177,7 @@ export default function SettingsPage() {
     return () => {
       isMounted = false
     }
-  }, [profileForm, pushToast, supabase])
+  }, [profileForm, pushToast])
 
   const handleProfileSubmit = profileForm.handleSubmit(
     async (values) => {
@@ -208,22 +197,11 @@ export default function SettingsPage() {
       const role = values.role
 
       try {
-        const payload: ProfileInsert = {
-          id: userId,
-          full_name: trimmedName,
+        await updateProfile({
+          name: trimmedName,
           role,
-          email: trimmedEmail,
-          updated_at: new Date().toISOString()
-        }
-
-        const { error } = await supabase
-          .from(PROFILES)
-          .upsert(payload)
-          .eq('id', userId)
-
-        if (error) {
-          throw error
-        }
+          email: trimmedEmail
+        })
 
         profileForm.reset(
           {

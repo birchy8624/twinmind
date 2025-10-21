@@ -23,6 +23,24 @@ export type ClientDetailsQuery = Database['public']['Tables']['clients']['Row'] 
 
 export type ClientDetailsResponse = { client: ClientDetailsQuery }
 
+type ClientListItem = Pick<
+  Database['public']['Tables']['clients']['Row'],
+  'id' | 'name' | 'website' | 'account_status' | 'created_at' | 'notes' | 'updated_at' | 'account_id'
+>
+
+type ClientListResponse = {
+  clients: Array<
+    Omit<ClientListItem, 'website' | 'notes' | 'account_status' | 'created_at' | 'updated_at' | 'account_id'> & {
+      website: string | null
+      notes: string | null
+      account_status: ClientListItem['account_status'] | null
+      created_at: string | null
+      updated_at: string | null
+      account_id: string | null
+    }
+  >
+}
+
 async function parseJson<T>(response: Response): Promise<T> {
   const text = await response.text()
 
@@ -44,6 +62,17 @@ export async function fetchClientDetails(clientId: string) {
   }
 
   return parseJson<ClientDetailsResponse>(response)
+}
+
+export async function listClients() {
+  const response = await apiFetch('/api/clients')
+
+  if (!response.ok) {
+    const body = await parseJson<{ message?: string }>(response)
+    throw new Error(body.message ?? 'Unable to load clients.')
+  }
+
+  return parseJson<ClientListResponse>(response)
 }
 
 type UpdateClientPayload = {
@@ -73,3 +102,5 @@ export async function updateClientDetails(clientId: string, payload: UpdateClien
 
   return parseJson<UpdateClientResponse>(response)
 }
+
+export type { ClientListItem, ClientListResponse }

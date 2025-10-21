@@ -5,22 +5,12 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { createBrowserClient } from '@/lib/supabase/browser'
-import type { Database } from '@/types/supabase'
+import { listClients, type ClientListItem } from '@/lib/api/clients'
 
 import { FilterDropdown } from '../_components/filter-dropdown'
 import { StatusBadge } from '../_components/status-badge'
 
-type ClientRow = Database['public']['Tables']['clients']['Row']
-type Client = ClientRow
-type ClientSelection = Pick<
-  ClientRow,
-  'id' | 'name' | 'website' | 'account_status' | 'created_at' | 'notes' | 'updated_at' | 'account_id'
->
-
 const PAGE_SIZE = 8
-const CLIENTS = 'clients' as const
-
 const statuses = ['All statuses', 'Active', 'Inactive', 'Invited', 'Archived']
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
@@ -52,7 +42,7 @@ function formatRelativeTimeFromNow(value: string | null) {
   return 'Unknown'
 }
 
-function formatStatus(status: Client['account_status']) {
+function formatStatus(status: ClientListItem['account_status']) {
   if (!status) return 'Unknown'
 
   return status
@@ -63,14 +53,13 @@ function formatStatus(status: Client['account_status']) {
 }
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<Client[]>([])
+  const [clients, setClients] = useState<ClientListItem[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const supabase = useMemo(createBrowserClient, [])
   const router = useRouter()
 
   useEffect(() => {
@@ -80,33 +69,21 @@ export default function ClientsPage() {
       setLoading(true)
       setError(null)
 
-      const { data, error: fetchError } = await supabase
-        .from(CLIENTS)
-        .select('id, name, website, account_status, created_at, notes, updated_at, account_id')
-        .order('created_at', { ascending: false })
-
-      if (!isMounted) return
-
-      if (fetchError) {
+      try {
+        const response = await listClients()
+        if (!isMounted) return
+        setClients(response.clients)
+        setError(null)
+      } catch (fetchError) {
         console.error(fetchError)
+        if (!isMounted) return
         setError('We ran into an issue loading clients. Please try again.')
         setClients([])
-      } else {
-        const selected = (data ?? []) as ClientSelection[]
-        const rows: Client[] = selected.map((row) => ({
-          id: row.id,
-          name: row.name,
-          website: row.website ?? null,
-          account_status: row.account_status ?? null,
-          created_at: row.created_at ?? null,
-          notes: row.notes ?? null,
-          updated_at: row.updated_at ?? null,
-          account_id: row.account_id ?? null
-        }))
-        setClients(rows)
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+        }
       }
-
-      setLoading(false)
     }
 
     void fetchClients()
@@ -114,7 +91,7 @@ export default function ClientsPage() {
     return () => {
       isMounted = false
     }
-  }, [supabase])
+  }, [])
 
   const filteredClients = useMemo(() => {
     const normalizedQuery = query.toLowerCase()

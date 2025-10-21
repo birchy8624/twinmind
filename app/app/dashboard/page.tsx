@@ -13,115 +13,19 @@ import {
   YAxis,
 } from 'recharts'
 
-import { createBrowserClient } from '@/lib/supabase/browser'
-import type { Database } from '@/types/supabase'
+import {
+  fetchDashboardSummary,
+  type ActivityFeedItem,
+  type PipelineOverviewItem,
+  type RevenuePerformanceItem,
+  type UpcomingProject,
+  type VelocityItem,
+  type WinRate,
+} from '@/lib/api/dashboard'
 
 import { useCustomization } from '../_components/customization-context'
 
-type ProjectStatus = Database['public']['Enums']['project_status']
-type InvoiceStatus = Database['public']['Enums']['invoice_status']
-
-type PipelineOverviewItem = {
-  stage: string
-  count: number
-}
-
-type RevenuePerformanceItem = {
-  period: string
-  quoted: number
-  invoiced: number
-  paid: number
-}
-
-type VelocityItem = {
-  stage: string
-  days: number
-}
-
-type UpcomingProject = {
-  id: string
-  name: string
-  client: string
-  dueIn: number | null
-}
-
-type ActivityFeedItem = {
-  id: string
-  author: string
-  description: string
-  timeAgo: string
-}
-
-const MS_IN_DAY = 1000 * 60 * 60 * 24
-
-const ACTIVE_PIPELINE_STATUSES: ProjectStatus[] = [
-  'Backlog',
-  'Call Arranged',
-  'Brief Gathered',
-  'UI Stage',
-  'DB Stage',
-  'Auth Stage',
-  'Build',
-  'QA',
-  'Handover',
-]
-
-const invoiceStatusToBucket = (status: InvoiceStatus) => {
-  if (status === 'Quote') {
-    return 'quoted' as const
-  }
-
-  if (status === 'Sent' || status === 'Invoice Sent') {
-    return 'invoiced' as const
-  }
-
-  if (status === 'Paid' || status === 'Payment Made') {
-    return 'paid' as const
-  }
-
-  return null
-}
-
-const formatTimeAgo = (input: Date) => {
-  const now = new Date()
-  const diffMs = now.getTime() - input.getTime()
-
-  if (diffMs < 0) {
-    return 'Just now'
-  }
-
-  const diffMinutes = Math.floor(diffMs / (1000 * 60))
-  if (diffMinutes < 1) {
-    return 'Just now'
-  }
-  if (diffMinutes < 60) {
-    return `${diffMinutes}m ago`
-  }
-
-  const diffHours = Math.floor(diffMinutes / 60)
-  if (diffHours < 24) {
-    return `${diffHours}h ago`
-  }
-
-  const diffDays = Math.floor(diffHours / 24)
-  if (diffDays < 7) {
-    return `${diffDays}d ago`
-  }
-
-  return input.toLocaleDateString()
-}
-
-const humanizeEntityType = (entityType: string) => {
-  const normalized = entityType.replace(/_/g, ' ').trim()
-  if (!normalized) {
-    return 'Activity'
-  }
-
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1)
-}
-
 export default function DashboardPage() {
-  const supabase = useMemo(createBrowserClient, [])
   const { resolvedTheme } = useCustomization()
 
   const [pipelineOverview, setPipelineOverview] = useState<PipelineOverviewItem[]>([])
@@ -136,7 +40,7 @@ export default function DashboardPage() {
   const [velocityLoading, setVelocityLoading] = useState(true)
   const [velocityError, setVelocityError] = useState<string | null>(null)
 
-  const [winRate, setWinRate] = useState<{ quotes: number; paid: number } | null>(null)
+  const [winRate, setWinRate] = useState<WinRate | null>(null)
   const [winRateLoading, setWinRateLoading] = useState(true)
   const [winRateError, setWinRateError] = useState<string | null>(null)
 
@@ -186,301 +90,69 @@ export default function DashboardPage() {
     setWinRateLoading(true)
     setUpcomingLoading(true)
     setActivityLoading(true)
-
-    const fetchPipelineData = async (): Promise<PipelineOverviewItem[]> => {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('status')
-        .eq('archived', false)
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      const counts = (data ?? []).reduce((acc, project) => {
-        const status = project.status as ProjectStatus | null
-        if (!status || !ACTIVE_PIPELINE_STATUSES.includes(status)) {
-          return acc
+    fetchDashboardSummary()
+      .then((data) => {
+        if (!isMounted) {
+          return
         }
 
-        acc[status] = (acc[status] ?? 0) + 1
-        return acc
-      }, {} as Record<ProjectStatus, number>)
-
-      return ACTIVE_PIPELINE_STATUSES.map((status) => ({
-        stage: status,
-        count: counts[status] ?? 0,
-      })).filter((item) => item.count > 0)
-    }
-
-    const fetchRevenueAndWinRate = async (): Promise<{
-      revenue: RevenuePerformanceItem[]
-      winRate: { quotes: number; paid: number }
-    }> => {
-      const { data, error } = await supabase
-        .from('invoices')
-        .select('status, amount, issued_at')
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      const now = new Date()
-      const currentMonthAnchor = new Date(now.getFullYear(), now.getMonth(), 1)
-      const lastMonthAnchor = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const monthsElapsed = now.getMonth() + 1
-
-      const sumByPeriod = {
-        thisMonth: { quoted: 0, invoiced: 0, paid: 0 },
-        lastMonth: { quoted: 0, invoiced: 0, paid: 0 },
-        ytdTotals: { quoted: 0, invoiced: 0, paid: 0 },
-      }
-
-      let quotesCount = 0
-      let paidCount = 0
-
-      for (const invoice of data ?? []) {
-        const bucket = invoiceStatusToBucket(invoice.status as InvoiceStatus)
-        const amount = Number(invoice.amount ?? 0)
-        const issuedAt = invoice.issued_at ? new Date(invoice.issued_at) : null
-
-        if (bucket) {
-          quotesCount += 1
-          if (invoice.status === 'Paid' || invoice.status === 'Payment Made') {
-            paidCount += 1
-          }
-        }
-
-        if (!bucket || !issuedAt) {
-          continue
-        }
-
-        if (
-          issuedAt.getFullYear() === currentMonthAnchor.getFullYear() &&
-          issuedAt.getMonth() === currentMonthAnchor.getMonth()
-        ) {
-          sumByPeriod.thisMonth[bucket] += amount
-        }
-
-        if (
-          issuedAt.getFullYear() === lastMonthAnchor.getFullYear() &&
-          issuedAt.getMonth() === lastMonthAnchor.getMonth()
-        ) {
-          sumByPeriod.lastMonth[bucket] += amount
-        }
-
-        if (issuedAt.getFullYear() === currentMonthAnchor.getFullYear()) {
-          sumByPeriod.ytdTotals[bucket] += amount
-        }
-      }
-
-      const ytdAverageFactor = monthsElapsed > 0 ? monthsElapsed : 1
-
-      const revenue: RevenuePerformanceItem[] = [
-        { period: 'This Month', ...sumByPeriod.thisMonth },
-        { period: 'Last Month', ...sumByPeriod.lastMonth },
-        {
-          period: 'YTD Avg',
-          quoted: sumByPeriod.ytdTotals.quoted / ytdAverageFactor,
-          invoiced: sumByPeriod.ytdTotals.invoiced / ytdAverageFactor,
-          paid: sumByPeriod.ytdTotals.paid / ytdAverageFactor,
-        },
-      ]
-
-      return {
-        revenue,
-        winRate: {
-          quotes: quotesCount,
-          paid: paidCount,
-        },
-      }
-    }
-
-    const fetchVelocityData = async (): Promise<VelocityItem[]> => {
-      const { data, error } = await supabase
-        .from('project_stage_events')
-        .select('project_id, from_status, to_status, changed_at')
-        .not('changed_at', 'is', null)
-        .order('project_id', { ascending: true })
-        .order('changed_at', { ascending: true })
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      const lastStageByProject = new Map<string, { stage: ProjectStatus; changedAt: Date }>()
-      const transitionTotals = new Map<string, { totalMs: number; count: number }>()
-
-      for (const event of data ?? []) {
-        const projectId = event.project_id
-        const toStatus = event.to_status as ProjectStatus | null
-        const fromStatus = event.from_status as ProjectStatus | null
-        const changedAt = event.changed_at ? new Date(event.changed_at) : null
-
-        if (!projectId || !toStatus || !changedAt) {
-          continue
-        }
-
-        const previous = lastStageByProject.get(projectId)
-        if (previous && fromStatus && previous.stage === fromStatus) {
-          const diffMs = changedAt.getTime() - previous.changedAt.getTime()
-          if (diffMs > 0) {
-            const key = `${fromStatus}→${toStatus}`
-            const current = transitionTotals.get(key) ?? { totalMs: 0, count: 0 }
-            current.totalMs += diffMs
-            current.count += 1
-            transitionTotals.set(key, current)
-          }
-        }
-
-        lastStageByProject.set(projectId, { stage: toStatus, changedAt })
-      }
-
-      const transitions = Array.from(transitionTotals.entries())
-        .map(([key, stats]) => {
-          const avgDays = stats.totalMs / stats.count / MS_IN_DAY
-          const [fromStatus, toStatus] = key.split('→')
-          return {
-            stage: `${fromStatus} → ${toStatus}`,
-            days: Number(avgDays.toFixed(1)),
-            count: stats.count,
-          }
-        })
-        .sort((a, b) => b.count - a.count)
-
-      return transitions.slice(0, 5).map(({ stage, days }) => ({ stage, days }))
-    }
-
-    const fetchUpcomingProjects = async (): Promise<UpcomingProject[]> => {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('id, name, due_date, clients:client_id(name)')
-        .not('due_date', 'is', null)
-        .eq('archived', false)
-        .order('due_date', { ascending: true })
-        .limit(6)
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      const now = new Date()
-
-      return (data ?? []).map((project) => {
-        const dueDate = project.due_date ? new Date(project.due_date) : null
-        let dueIn: number | null = null
-
-        if (dueDate) {
-          const diffDays = Math.ceil((dueDate.getTime() - now.getTime()) / MS_IN_DAY)
-          dueIn = diffDays < 0 ? 0 : diffDays
-        }
-
-        return {
-          id: project.id,
-          name: project.name,
-          client: project.clients?.name ?? 'Unknown client',
-          dueIn,
-        }
-      })
-    }
-
-    const fetchActivityFeed = async (): Promise<ActivityFeedItem[]> => {
-      const { data, error } = await supabase
-        .from('audit_log')
-        .select('id, action, entity_type, created_at, profiles:actor_profile_id(full_name)')
-        .order('created_at', { ascending: false })
-        .limit(6)
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      return (data ?? []).map((entry) => {
-        const createdAt = entry.created_at ? new Date(entry.created_at) : null
-        const actor = entry.profiles?.full_name?.trim()
-
-        return {
-          id: entry.id,
-          author: actor && actor.length > 0 ? actor : 'System',
-          description: `${humanizeEntityType(entry.entity_type)} · ${entry.action}`,
-          timeAgo: createdAt ? formatTimeAgo(createdAt) : 'Unknown time',
-        }
-      })
-    }
-
-    Promise.allSettled([
-      fetchPipelineData(),
-      fetchRevenueAndWinRate(),
-      fetchVelocityData(),
-      fetchUpcomingProjects(),
-      fetchActivityFeed(),
-    ]).then((results) => {
-      if (!isMounted) {
-        return
-      }
-
-      const [pipelineResult, revenueResult, velocityResult, upcomingResult, activityResult] = results
-
-      if (pipelineResult.status === 'fulfilled') {
-        setPipelineOverview(pipelineResult.value)
+        setPipelineOverview(data.pipelineOverview)
         setPipelineError(null)
-      } else {
-        console.error('Failed to load pipeline data', pipelineResult.reason)
+
+        setRevenuePerformance(data.revenuePerformance)
+        setRevenueError(null)
+        setWinRate(data.winRate)
+        setWinRateError(null)
+
+        setVelocityByStage(data.velocityByStage)
+        setVelocityError(null)
+
+        setUpcomingProjects(data.upcomingProjects)
+        setUpcomingError(null)
+
+        setActivityFeed(data.activityFeed)
+        setActivityError(null)
+      })
+      .catch((error) => {
+        console.error('Failed to load dashboard data', error)
+        if (!isMounted) {
+          return
+        }
+
         setPipelineOverview([])
         setPipelineError('Unable to load pipeline data right now.')
-      }
-      setPipelineLoading(false)
 
-      if (revenueResult.status === 'fulfilled') {
-        setRevenuePerformance(revenueResult.value.revenue)
-        setRevenueError(null)
-        setWinRate(revenueResult.value.winRate)
-        setWinRateError(null)
-      } else {
-        console.error('Failed to load revenue data', revenueResult.reason)
         setRevenuePerformance([])
         setRevenueError('Unable to load revenue performance.')
         setWinRate(null)
         setWinRateError('Unable to load win rate.')
-      }
-      setRevenueLoading(false)
-      setWinRateLoading(false)
 
-      if (velocityResult.status === 'fulfilled') {
-        setVelocityByStage(velocityResult.value)
-        setVelocityError(null)
-      } else {
-        console.error('Failed to load velocity data', velocityResult.reason)
         setVelocityByStage([])
         setVelocityError('Unable to load velocity data.')
-      }
-      setVelocityLoading(false)
 
-      if (upcomingResult.status === 'fulfilled') {
-        setUpcomingProjects(upcomingResult.value)
-        setUpcomingError(null)
-      } else {
-        console.error('Failed to load upcoming projects', upcomingResult.reason)
         setUpcomingProjects([])
         setUpcomingError('Unable to load upcoming projects.')
-      }
-      setUpcomingLoading(false)
 
-      if (activityResult.status === 'fulfilled') {
-        setActivityFeed(activityResult.value)
-        setActivityError(null)
-      } else {
-        console.error('Failed to load activity feed', activityResult.reason)
         setActivityFeed([])
         setActivityError('Unable to load activity feed.')
-      }
-      setActivityLoading(false)
-    })
+      })
+      .finally(() => {
+        if (!isMounted) {
+          return
+        }
+
+        setPipelineLoading(false)
+        setRevenueLoading(false)
+        setVelocityLoading(false)
+        setWinRateLoading(false)
+        setUpcomingLoading(false)
+        setActivityLoading(false)
+      })
 
     return () => {
       isMounted = false
     }
-  }, [supabase])
+  }, [])
 
   const pipelineTotal = pipelineOverview.reduce((total, item) => total + item.count, 0)
   const hasPipelineData = pipelineOverview.length > 0
