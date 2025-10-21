@@ -35,7 +35,10 @@ export async function GET() {
 
   const typedSupabase = supabase as unknown as SupabaseClient<Database>
 
-  const [{ data: profile, error: profileError }, { data: accountMembership, error: membershipError }] = await Promise.all([
+  const [
+    { data: profileData, error: profileError },
+    { data: accountMembership, error: membershipError }
+  ] = await Promise.all([
     typedSupabase
       .from('profiles')
       .select('id, full_name, email, company, role')
@@ -43,9 +46,13 @@ export async function GET() {
       .maybeSingle<ProfileRow>(),
     typedSupabase
       .from('account_members')
-      .select('account_id, accounts ( id, name )')
+      .select('account_id, role, accounts ( id, name )')
       .eq('profile_id', user.id)
-      .maybeSingle<{ account_id: AccountMemberRow['account_id']; accounts: AccountRow | null }>()
+      .maybeSingle<{
+        account_id: AccountMemberRow['account_id']
+        role: AccountMemberRow['role']
+        accounts: AccountRow | null
+      }>()
   ])
 
   if (profileError) {
@@ -58,8 +65,39 @@ export async function GET() {
     return NextResponse.json({ message: 'Unable to load account membership.' }, { status: 500 })
   }
 
+  let profile = profileData
+
   if (!profile) {
-    return NextResponse.json({ message: 'Profile not found.' }, { status: 404 })
+    const metadataRole = typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : null
+    const metadataFullName =
+      typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name.trim() : ''
+    const metadataCompany =
+      typeof user.user_metadata?.company === 'string' ? user.user_metadata.company.trim() : ''
+
+    const normalizedRole = metadataRole?.toLowerCase()
+    const inferredRole: ProfileRow['role'] = normalizedRole === 'client' ? 'client' : 'owner'
+
+    const defaultProfilePayload: Database['public']['Tables']['profiles']['Insert'] = {
+      id: user.id,
+      role: inferredRole,
+      full_name: metadataFullName.length > 0 ? metadataFullName : null,
+      email: user.email ?? null,
+      company: metadataCompany.length > 0 ? metadataCompany : null,
+      updated_at: new Date().toISOString()
+    }
+
+    const { data: insertedProfile, error: createProfileError } = await typedSupabase
+      .from('profiles')
+      .upsert(defaultProfilePayload, { onConflict: 'id' })
+      .select('id, full_name, email, company, role')
+      .single<ProfileRow>()
+
+    if (createProfileError || !insertedProfile) {
+      console.error('sign-up completion missing profile create error:', createProfileError)
+      return NextResponse.json({ message: 'Unable to prepare profile.' }, { status: 500 })
+    }
+
+    profile = insertedProfile
   }
 
   const account = accountMembership?.accounts ?? null
