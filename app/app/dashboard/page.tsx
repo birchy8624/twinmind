@@ -458,7 +458,7 @@ export default function DashboardPage() {
               <p className="text-xs text-white/60">Latest collaboration across the team</p>
             </div>
             <span className="text-xs text-white/60">
-              {activityLoading ? 'Loading…' : 'Updated from audit trail'}
+              {activityLoading ? 'Loading…' : 'Updated from project history'}
             </span>
           </header>
           {activityError ? (
