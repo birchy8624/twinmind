@@ -8,6 +8,7 @@ const CLIENTS = 'clients' as const
 const PROFILES = 'profiles' as const
 const INVOICES = 'invoices' as const
 const BRIEFS = 'briefs' as const
+const PROJECT_STAGE_EVENTS = 'project_stage_events' as const
 
 export const runtime = 'nodejs'
 
@@ -298,6 +299,28 @@ export async function PATCH(
     return NextResponse.json({ message: 'Invalid request body.' }, { status: 400 })
   }
 
+  let projectLookup = supabase.from(PROJECTS).select('id, status').eq('id', context.params.projectId)
+
+  if (profileRole === 'client') {
+    projectLookup = projectLookup.in('client_id', clientMemberships)
+  }
+
+  const { data: existingProject, error: existingProjectError } = await projectLookup.maybeSingle<{
+    id: string
+    status: Database['public']['Enums']['project_status']
+  }>()
+
+  if (existingProjectError) {
+    console.error('project update status lookup error:', existingProjectError)
+    return NextResponse.json({ message: 'Unable to update project.' }, { status: 500 })
+  }
+
+  if (!existingProject) {
+    return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+  }
+
+  const previousStatus = existingProject.status
+
   const updatePatch: Database['public']['Tables']['projects']['Update'] = {
     name: payload.name,
     description: payload.description,
@@ -351,6 +374,20 @@ export async function PATCH(
 
   if (!data) {
     return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+  }
+
+  if (payload.status && previousStatus !== data.status) {
+    const { error: stageEventError } = await supabase.from(PROJECT_STAGE_EVENTS).insert({
+      project_id: data.id,
+      from_status: previousStatus,
+      to_status: data.status,
+      changed_by_profile_id: user.id,
+    })
+
+    if (stageEventError) {
+      console.error('project update stage event error:', stageEventError)
+      return NextResponse.json({ message: 'Unable to update project.' }, { status: 500 })
+    }
   }
 
   const { clients, assignee_profile, ...rest } = data

@@ -5,6 +5,7 @@ import type { Database } from '@/types/supabase'
 import { getAccessContext, HttpError } from '../../../_lib/access'
 
 const PROJECTS = 'projects' as const
+const PROJECT_STAGE_EVENTS = 'project_stage_events' as const
 
 const PIPELINE_STATUSES: Database['public']['Enums']['project_status'][] = [
   'Backlog',
@@ -48,7 +49,29 @@ export async function PATCH(request: Request, context: { params: { projectId: st
   }
 
   try {
-    const { supabase, role, clientMemberships } = await getAccessContext()
+    const { supabase, role, clientMemberships, userId } = await getAccessContext()
+
+    let projectLookup = supabase.from(PROJECTS).select('id, status').eq('id', projectId)
+
+    if (role === 'client') {
+      projectLookup = projectLookup.in('client_id', clientMemberships)
+    }
+
+    const { data: existingProject, error: existingProjectError } = await projectLookup.maybeSingle<{
+      id: string
+      status: Database['public']['Enums']['project_status']
+    }>()
+
+    if (existingProjectError) {
+      console.error('project status lookup error:', existingProjectError)
+      return NextResponse.json({ message: 'Unable to update project.' }, { status: 500 })
+    }
+
+    if (!existingProject) {
+      return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+    }
+
+    const previousStatus = existingProject.status
 
     let updateQuery = supabase
       .from(PROJECTS)
@@ -70,6 +93,20 @@ export async function PATCH(request: Request, context: { params: { projectId: st
 
     if (!data) {
       return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+    }
+
+    if (previousStatus !== data.status) {
+      const { error: stageEventError } = await supabase.from(PROJECT_STAGE_EVENTS).insert({
+        project_id: data.id,
+        from_status: previousStatus,
+        to_status: data.status,
+        changed_by_profile_id: userId,
+      })
+
+      if (stageEventError) {
+        console.error('project stage event insert error:', stageEventError)
+        return NextResponse.json({ message: 'Unable to update project.' }, { status: 500 })
+      }
     }
 
     return NextResponse.json<UpdatedProjectResponse>({ project: data })
