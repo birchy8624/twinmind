@@ -213,7 +213,15 @@ export default function SetupAccountForm() {
 
         if (isMounted) {
           setActiveProfileId(user.id)
-          setFullName(derivedName ?? resolvedEmail)
+          setFullName((previous) => {
+            if (previous && previous.trim().length > 0) {
+              return previous
+            }
+            if (derivedName) {
+              return derivedName
+            }
+            return ''
+          })
           setEmail((previous) => previous || resolvedEmail)
           setStatus('ready')
           setError(null)
@@ -275,14 +283,40 @@ export default function SetupAccountForm() {
       setStatus('submitting')
       setError(null)
 
-      const { error: updateError } = await supabase.auth.updateUser({
-        password,
+      const { error: metadataError } = await supabase.auth.updateUser({
         data: { full_name: trimmedName }
       })
 
-      if (updateError) {
-        throw new Error(updateError.message)
+      if (metadataError) {
+        throw new Error(metadataError.message)
       }
+
+      let sessionToSync: Session | null = null
+
+      const { data: metadataSessionData } = await supabase.auth.getSession()
+      if (metadataSessionData?.session) {
+        sessionToSync = metadataSessionData.session
+      }
+
+      const { data: passwordUpdateData, error: passwordUpdateError } = await supabase.auth.updateUser({
+        password
+      })
+
+      if (passwordUpdateError) {
+        const normalizedMessage = passwordUpdateError.message?.toLowerCase() ?? ''
+        const isReusedPassword =
+          normalizedMessage.includes('different from the old password') ||
+          normalizedMessage.includes('already been used') ||
+          normalizedMessage.includes('previously used')
+
+        if (!isReusedPassword) {
+          throw new Error(passwordUpdateError.message)
+        }
+      } else if (passwordUpdateData?.session) {
+        sessionToSync = passwordUpdateData.session
+      }
+
+      await syncSessionWithServer(sessionToSync)
 
       await updateSetupProfile({
         fullName: trimmedName,
