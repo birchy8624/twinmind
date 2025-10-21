@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
 import { fetchKanbanProjects, updateProjectStatus, type KanbanProject as ApiKanbanProject } from '@/lib/api/projects'
@@ -49,6 +49,69 @@ type ColumnOrders = Record<ColumnStatus, string[]>
 type DragState = {
   projectId: string
   fromStatus: ColumnStatus
+}
+
+type LabelColors = Record<string, string>
+
+const LABEL_COLOR_STORAGE_KEY = 'twinmind-kanban-label-colors'
+const PRESET_LABEL_COLORS = ['#F97316', '#F59E0B', '#10B981', '#3B82F6', '#A855F7'] as const
+const DEFAULT_LABEL_COLOR = '#334155'
+
+function normalizeHexColor(value: string | null | undefined): string {
+  if (typeof value !== 'string') {
+    return DEFAULT_LABEL_COLOR
+  }
+
+  let hex = value.trim()
+  if (!hex) {
+    return DEFAULT_LABEL_COLOR
+  }
+
+  if (hex.startsWith('#')) {
+    hex = hex.slice(1)
+  }
+
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((char) => `${char}${char}`)
+      .join('')
+  }
+
+  const isValid = /^[0-9A-Fa-f]{6}$/.test(hex)
+  if (!isValid) {
+    return DEFAULT_LABEL_COLOR
+  }
+
+  return `#${hex.toUpperCase()}`
+}
+
+function getReadableTextColor(value: string): string {
+  const hex = normalizeHexColor(value)
+  const red = Number.parseInt(hex.slice(1, 3), 16)
+  const green = Number.parseInt(hex.slice(3, 5), 16)
+  const blue = Number.parseInt(hex.slice(5, 7), 16)
+
+  if ([red, green, blue].some((component) => Number.isNaN(component))) {
+    return '#F8FAFC'
+  }
+
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255
+  return luminance > 0.6 ? '#0F172A' : '#F8FAFC'
+}
+
+function getDefaultColorForLabel(label: string): string {
+  if (!label) {
+    return DEFAULT_LABEL_COLOR
+  }
+
+  let hash = 0
+  const normalized = label.toLowerCase()
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = (hash + normalized.charCodeAt(index)) % PRESET_LABEL_COLORS.length
+  }
+
+  return PRESET_LABEL_COLORS[hash % PRESET_LABEL_COLORS.length]
 }
 
 function createEmptyOrders(): ColumnOrders {
@@ -181,6 +244,119 @@ function DropZone({ isActive, isDragging, onDrop, onDragOver, onDragLeave, child
   )
 }
 
+type LabelBadgeProps = {
+  label: string
+  color: string
+  onColorChange: (color: string) => void
+}
+
+function LabelBadge({ label, color, onColorChange }: LabelBadgeProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined
+    }
+
+    const handlePointer = (event: MouseEvent) => {
+      if (containerRef.current && containerRef.current.contains(event.target as Node)) {
+        return
+      }
+      setIsOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointer)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointer)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen])
+
+  const normalizedColor = normalizeHexColor(color)
+  const textColor = getReadableTextColor(normalizedColor)
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium uppercase tracking-wide shadow-sm transition hover:shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+        style={{ backgroundColor: normalizedColor, color: textColor }}
+        onClick={() => setIsOpen((current) => !current)}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+      >
+        <span className="leading-none">{label}</span>
+        <svg className="h-2.5 w-2.5 opacity-80" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M4 6.5 8 10.5 12 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {isOpen ? (
+        <div className="absolute left-1/2 top-full z-20 mt-2 w-48 -translate-x-1/2 rounded-xl border border-white/10 bg-base-900/95 p-3 shadow-2xl backdrop-blur">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/60">Label color</p>
+          <div className="flex flex-wrap gap-2">
+            {PRESET_LABEL_COLORS.map((preset) => {
+              const normalizedPreset = normalizeHexColor(preset)
+              const isSelected = normalizedPreset === normalizedColor
+              const presetTextColor = getReadableTextColor(normalizedPreset)
+
+              return (
+                <button
+                  key={normalizedPreset}
+                  type="button"
+                  className={`flex h-7 w-7 items-center justify-center rounded-full border border-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${
+                    isSelected ? 'ring-2 ring-white/90 ring-offset-2 ring-offset-base-900' : 'hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: normalizedPreset, color: presetTextColor }}
+                  onClick={() => {
+                    onColorChange(normalizedPreset)
+                    setIsOpen(false)
+                  }}
+                  aria-label={`Use ${normalizedPreset} for ${label}`}
+                  aria-pressed={isSelected}
+                >
+                  {isSelected ? (
+                    <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path
+                        d="m4 8.5 2.5 2.5L12 5.5"
+                        stroke="currentColor"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-base-900/60 px-2 py-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-white/70">Custom</span>
+            <input
+              type="color"
+              className="h-7 w-14 cursor-pointer appearance-none border-none bg-transparent p-0"
+              value={normalizedColor}
+              onChange={(event) => {
+                const nextColor = normalizeHexColor(event.target.value)
+                onColorChange(nextColor)
+              }}
+              aria-label={`Choose a custom color for ${label}`}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export default function KanbanPage() {
   const [projects, setProjects] = useState<Map<string, KanbanProject>>(new Map())
   const [columnOrders, setColumnOrders] = useState<ColumnOrders>(() => createEmptyOrders())
@@ -194,8 +370,36 @@ export default function KanbanPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [labelColors, setLabelColors] = useState<LabelColors>({})
 
   const { pushToast } = useToast()
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    try {
+      const storedValue = window.localStorage.getItem(LABEL_COLOR_STORAGE_KEY)
+      if (!storedValue) {
+        return
+      }
+
+      const parsed = JSON.parse(storedValue) as Record<string, unknown>
+      const sanitized = Object.entries(parsed).reduce<LabelColors>((acc, [key, value]) => {
+        if (typeof value === 'string' && key) {
+          acc[key] = normalizeHexColor(value)
+        }
+        return acc
+      }, {})
+
+      if (Object.keys(sanitized).length > 0) {
+        setLabelColors((current) => ({ ...current, ...sanitized }))
+      }
+    } catch (cause) {
+      console.error('Failed to read stored Kanban label colors', cause)
+    }
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -274,7 +478,69 @@ export default function KanbanPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    try {
+      window.localStorage.setItem(LABEL_COLOR_STORAGE_KEY, JSON.stringify(labelColors))
+    } catch (cause) {
+      console.error('Failed to store Kanban label colors', cause)
+    }
+  }, [labelColors])
+
   const projectList = useMemo(() => Array.from(projects.values()), [projects])
+
+  useEffect(() => {
+    setLabelColors((current) => {
+      const labelSet = new Set<string>()
+      for (const project of projectList) {
+        for (const label of project.labels) {
+          if (label) {
+            labelSet.add(label)
+          }
+        }
+      }
+
+      const sortedLabels = Array.from(labelSet).sort((a, b) => a.localeCompare(b))
+      const next = sortedLabels.reduce<LabelColors>((acc, label) => {
+        if (current[label]) {
+          acc[label] = normalizeHexColor(current[label])
+        } else {
+          acc[label] = getDefaultColorForLabel(label)
+        }
+        return acc
+      }, {})
+
+      if (sortedLabels.length !== Object.keys(current).length) {
+        return next
+      }
+
+      for (const label of sortedLabels) {
+        if (next[label] !== current[label]) {
+          return next
+        }
+      }
+
+      return current
+    })
+  }, [projectList])
+
+  const handleLabelColorChange = useCallback((label: string, color: string) => {
+    if (!label) {
+      return
+    }
+
+    const normalized = normalizeHexColor(color)
+    setLabelColors((current) => {
+      if (current[label] === normalized) {
+        return current
+      }
+
+      return { ...current, [label]: normalized }
+    })
+  }, [])
 
   const clientOptions = useMemo(() => {
     const entries = new Map<string, string>()
@@ -669,12 +935,12 @@ export default function KanbanPage() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {project.labels.map((label) => (
-                        <span
+                        <LabelBadge
                           key={`${id}-label-${label}`}
-                          className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-white/70"
-                        >
-                          {label}
-                        </span>
+                          label={label}
+                          color={labelColors[label] ?? getDefaultColorForLabel(label)}
+                          onColorChange={(nextColor) => handleLabelColorChange(label, nextColor)}
+                        />
                       ))}
                       {project.tags.map((tag) => (
                         <span
