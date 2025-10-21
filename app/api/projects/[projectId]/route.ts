@@ -51,6 +51,20 @@ type ProjectDetailsResponse = {
   briefAnswers: BriefRow['answers'] | null
 }
 
+type ProjectUpdatePayload = {
+  name: string
+  description: string
+  status: Database['public']['Enums']['project_status']
+  client_id: string
+  assignee_profile_id: string | null
+  due_date: string | null
+  value_quote: number | null
+  value_invoiced: number | null
+  value_paid: number | null
+  labels: string[] | null
+  tags: string[] | null
+}
+
 async function resolveProfileRole(
   supabase: ReturnType<typeof createServerSupabase>,
   profileId: string
@@ -230,4 +244,122 @@ export async function GET(
     console.error('project details unexpected error:', error)
     return NextResponse.json({ message: 'Unable to load project.' }, { status: 500 })
   }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: { projectId: string } }
+) {
+  const supabase = createServerSupabase()
+
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    return NextResponse.json({ message: 'Not authenticated.' }, { status: 401 })
+  }
+
+  let profileRole: ProfileRole = null
+
+  try {
+    profileRole = await resolveProfileRole(supabase, user.id)
+  } catch (error) {
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : 'Unable to verify permissions.' },
+      { status: 500 }
+    )
+  }
+
+  let clientMemberships: string[] = []
+
+  if (profileRole === 'client') {
+    try {
+      clientMemberships = await resolveClientMemberships(supabase, user.id)
+    } catch (error) {
+      return NextResponse.json(
+        { message: error instanceof Error ? error.message : 'Unable to load memberships.' },
+        { status: 500 }
+      )
+    }
+
+    if (clientMemberships.length === 0) {
+      return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+    }
+  }
+
+  let payload: ProjectUpdatePayload
+
+  try {
+    payload = (await request.json()) as ProjectUpdatePayload
+  } catch (error) {
+    console.error('project update parse error:', error)
+    return NextResponse.json({ message: 'Invalid request body.' }, { status: 400 })
+  }
+
+  const updatePatch: Database['public']['Tables']['projects']['Update'] = {
+    name: payload.name,
+    description: payload.description,
+    status: payload.status,
+    client_id: payload.client_id,
+    assignee_profile_id: payload.assignee_profile_id,
+    due_date: payload.due_date,
+    value_quote: payload.value_quote,
+    value_invoiced: payload.value_invoiced,
+    value_paid: payload.value_paid,
+    labels: payload.labels,
+    tags: payload.tags
+  }
+
+  let updateQuery = supabase
+    .from(PROJECTS)
+    .update(updatePatch)
+    .eq('id', context.params.projectId)
+
+  if (profileRole === 'client') {
+    updateQuery = updateQuery.in('client_id', clientMemberships)
+  }
+
+  const { data, error: updateError } = await updateQuery
+    .select(
+      `
+        id,
+        name,
+        status,
+        description,
+        due_date,
+        created_at,
+        updated_at,
+        client_id,
+        assignee_profile_id,
+        value_invoiced,
+        value_paid,
+        value_quote,
+        labels,
+        tags,
+        clients:client_id ( id, name ),
+        assignee_profile:assignee_profile_id ( id, full_name )
+      `
+    )
+    .maybeSingle<ProjectDetailsRow>()
+
+  if (updateError) {
+    console.error('project update error:', updateError)
+    return NextResponse.json({ message: 'Unable to update project.' }, { status: 500 })
+  }
+
+  if (!data) {
+    return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+  }
+
+  const { clients, assignee_profile, ...rest } = data
+
+  const project = {
+    ...rest,
+    client: clients ?? null,
+    assignee: assignee_profile ?? null
+  }
+
+  return NextResponse.json({ project })
 }

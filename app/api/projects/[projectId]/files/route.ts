@@ -158,3 +158,131 @@ export async function GET(
 
   return NextResponse.json(response)
 }
+
+export async function POST(
+  request: Request,
+  context: { params: { projectId: string } }
+) {
+  const supabase = createServerSupabase()
+
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    return NextResponse.json({ message: 'Not authenticated.' }, { status: 401 })
+  }
+
+  try {
+    await ensureProjectAccess(supabase, context.params.projectId, user.id)
+  } catch (error) {
+    if (error instanceof Error && 'status' in error) {
+      const status = typeof (error as { status?: number }).status === 'number' ? (error as { status?: number }).status : 500
+      return NextResponse.json({ message: error.message }, { status })
+    }
+
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : 'Unable to verify access.' },
+      { status: 500 }
+    )
+  }
+
+  let file: File
+
+  try {
+    const formData = await request.formData()
+    const entry = formData.get('file')
+
+    if (!(entry instanceof File)) {
+      return NextResponse.json({ message: 'File upload payload is required.' }, { status: 400 })
+    }
+
+    file = entry
+  } catch (error) {
+    console.error('project file upload parse error:', error)
+    return NextResponse.json({ message: 'Invalid upload request.' }, { status: 400 })
+  }
+
+  const fileName = file.name?.trim()
+
+  if (!fileName) {
+    return NextResponse.json({ message: 'File name is required.' }, { status: 400 })
+  }
+
+  const path = `${context.params.projectId}/${fileName}`
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const admin = supabaseAdmin()
+    const { error: uploadError } = await admin.storage.from(STORAGE_BUCKET).upload(path, buffer, {
+      upsert: true,
+      contentType: file.type || 'application/octet-stream'
+    })
+
+    if (uploadError) {
+      console.error('project file upload error:', uploadError)
+      return NextResponse.json({ message: 'Unable to upload file.' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, path })
+  } catch (error) {
+    console.error('project file upload unexpected error:', error)
+    return NextResponse.json({ message: 'Unable to upload file.' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  context: { params: { projectId: string } }
+) {
+  const supabase = createServerSupabase()
+
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    return NextResponse.json({ message: 'Not authenticated.' }, { status: 401 })
+  }
+
+  try {
+    await ensureProjectAccess(supabase, context.params.projectId, user.id)
+  } catch (error) {
+    if (error instanceof Error && 'status' in error) {
+      const status = typeof (error as { status?: number }).status === 'number' ? (error as { status?: number }).status : 500
+      return NextResponse.json({ message: error.message }, { status })
+    }
+
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : 'Unable to verify access.' },
+      { status: 500 }
+    )
+  }
+
+  let payload: { path?: string }
+
+  try {
+    payload = (await request.json()) as { path?: string }
+  } catch (error) {
+    console.error('project file delete parse error:', error)
+    return NextResponse.json({ message: 'Invalid request body.' }, { status: 400 })
+  }
+
+  const path = typeof payload.path === 'string' ? payload.path.trim() : ''
+
+  if (!path || !path.startsWith(`${context.params.projectId}/`)) {
+    return NextResponse.json({ message: 'Invalid file path.' }, { status: 400 })
+  }
+
+  const admin = supabaseAdmin()
+  const { error } = await admin.storage.from(STORAGE_BUCKET).remove([path])
+
+  if (error) {
+    console.error('project file delete error:', error)
+    return NextResponse.json({ message: 'Unable to delete file.' }, { status: 500 })
+  }
+
+  return NextResponse.json({ success: true })
+}

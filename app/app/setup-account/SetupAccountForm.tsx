@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { fetchSetupProfile, updateSetupProfile } from '@/lib/api/profile'
 import { createBrowserClient } from '@/lib/supabase/browser'
 
 const MIN_PASSWORD_LENGTH = 8
-
-const PROFILES_TABLE = 'profiles' as const
 
 type FormStatus = 'initializing' | 'ready' | 'submitting' | 'success' | 'error'
 
@@ -113,22 +112,15 @@ export default function SetupAccountForm() {
         let derivedName = resolveMetadataName(user.user_metadata)
 
         try {
-          const { data: profileRow, error: profileError } = await supabase
-            .from(PROFILES_TABLE)
-            .select('full_name, email')
-            .eq('id', user.id)
-            .maybeSingle()
+          const response = await fetchSetupProfile()
+          const profileRow = response.profile
 
-          if (profileError) {
-            throw profileError
-          }
-
-          const profileName = typeof profileRow?.full_name === 'string' ? profileRow.full_name.trim() : ''
+          const profileName = typeof profileRow.full_name === 'string' ? profileRow.full_name.trim() : ''
           if (profileName) {
             derivedName = profileName
           }
 
-          const profileEmail = typeof profileRow?.email === 'string' ? profileRow.email.trim() : ''
+          const profileEmail = typeof profileRow.email === 'string' ? profileRow.email.trim() : ''
           if (profileEmail) {
             setEmail(profileEmail)
           }
@@ -205,18 +197,10 @@ export default function SetupAccountForm() {
         throw new Error(updateError.message)
       }
 
-      const { error: profileError } = await supabase
-        .from(PROFILES_TABLE)
-        .update({
-          full_name: trimmedName,
-          email: email.trim() || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', activeProfileId)
-
-      if (profileError) {
-        throw profileError
-      }
+      await updateSetupProfile({
+        fullName: trimmedName,
+        email: email.trim() || null
+      })
 
       setStatus('success')
       router.replace('/app/dashboard')

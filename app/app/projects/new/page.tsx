@@ -9,14 +9,10 @@ import { z } from 'zod'
 
 import { createProject, type ProjectWizardPayload } from './actions'
 
-import type { Database } from '@/types/supabase'
-import { createBrowserClient } from '@/lib/supabase/browser'
+import { listClientOptions, type ClientOptionSummary } from '@/lib/api/clients'
 import { useToast } from '../../_components/toast-context'
 
-type ClientRow = Database['public']['Tables']['clients']['Row']
-
-type ClientOption = Pick<ClientRow, 'id' | 'name'>
-const CLIENTS = 'clients' as const
+type ClientOption = ClientOptionSummary
 
 type StepConfig = {
   id: 'details' | 'brief' | 'confirm'
@@ -130,8 +126,6 @@ export default function NewProjectPage() {
     defaultValues
   })
 
-  const supabase = useMemo(createBrowserClient, [])
-
   useEffect(() => {
     let isMounted = true
 
@@ -139,22 +133,28 @@ export default function NewProjectPage() {
       setLoadingClients(true)
       setClientsError(null)
 
-      const { data, error } = await supabase
-        .from(CLIENTS)
-        .select('id, name')
-        .order('name', { ascending: true })
+      try {
+        const { clients: clientOptions } = await listClientOptions()
 
-      if (!isMounted) return
+        if (!isMounted) {
+          return
+        }
 
-      if (error) {
+        setClients(clientOptions)
+      } catch (error) {
         console.error(error)
+        if (!isMounted) {
+          return
+        }
+
         setClientsError('We ran into an issue loading clients. Please try again.')
         setClients([])
-      } else {
-        setClients((data ?? []) as ClientOption[])
+      } finally {
+        if (!isMounted) {
+          return
+        }
+        setLoadingClients(false)
       }
-
-      setLoadingClients(false)
     }
 
     void fetchClients()
@@ -162,7 +162,7 @@ export default function NewProjectPage() {
     return () => {
       isMounted = false
     }
-  }, [supabase])
+  }, [])
 
   const currentStep = steps[activeStep]
 

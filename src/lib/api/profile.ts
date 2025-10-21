@@ -28,6 +28,21 @@ type UpdateProfileResponse = {
   profile: ProfileShape
 }
 
+type SetupProfile = {
+  id: string
+  full_name: string | null
+  email: string | null
+}
+
+type SetupProfileResponse = {
+  profile: SetupProfile
+}
+
+type UpdateSetupProfilePayload = {
+  fullName: string
+  email: string | null
+}
+
 async function parseJson<T>(response: Response): Promise<T> {
   const text = await response.text()
 
@@ -68,4 +83,35 @@ export async function updateProfile(payload: UpdateProfilePayload) {
   return parseJson<UpdateProfileResponse>(response)
 }
 
-export type { ActiveProfileResponse, ProfileShape, UpdateProfilePayload, UpdateProfileResponse }
+export async function fetchSetupProfile() {
+  const response = await apiFetch('/api/profile/setup')
+
+  if (!response.ok) {
+    const body = await parseJson<{ message?: string }>(response)
+    throw new Error(body.message ?? 'Unable to load profile.')
+  }
+
+  return parseJson<SetupProfileResponse>(response)
+}
+
+export async function updateSetupProfile(payload: UpdateSetupProfilePayload) {
+  const response = await apiFetch('/api/profile/setup', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    const body = await parseJson<{ message?: string }>(response)
+    throw new Error(body.message ?? 'Unable to update profile.')
+  }
+}
+
+export type {
+  ActiveProfileResponse,
+  ProfileShape,
+  UpdateProfilePayload,
+  UpdateProfileResponse,
+  SetupProfile,
+  SetupProfileResponse,
+  UpdateSetupProfilePayload,
+}
