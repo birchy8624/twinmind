@@ -434,7 +434,7 @@ export default function DashboardPage() {
             <p className="mt-6 text-sm text-white/60">Fetching upcoming work…</p>
           ) : upcomingProjects.length > 0 ? (
             <ul className="mt-6 space-y-4">
-              {upcomingProjects.map((project) => (
+              {upcomingProjects.slice(0, 4).map((project) => (
                 <li key={project.id} className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-sm font-medium text-white">{project.name}</p>
