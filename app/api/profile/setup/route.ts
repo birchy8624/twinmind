@@ -291,39 +291,22 @@ export async function PATCH(request: Request) {
     }
   }
 
-  const profileUpdateValues: Database['public']['Tables']['profiles']['Update'] = {
+  const profileUpsertPayload: Database['public']['Tables']['profiles']['Insert'] = {
+    id: user.id,
     full_name: trimmedName,
     email: trimmedEmail ?? user.email ?? null,
     company: trimmedCompany ?? account?.name ?? null,
+    role: profileRow?.role ?? 'owner',
     updated_at: new Date().toISOString(),
   }
 
-  if (profileRow) {
-    const { error: updateProfileError } = await typedSupabase
-      .from(PROFILES)
-      .update(profileUpdateValues)
-      .eq('id', user.id)
+  const { error: upsertProfileError } = await typedSupabase
+    .from(PROFILES)
+    .upsert(profileUpsertPayload, { onConflict: 'id' })
 
-    if (updateProfileError) {
-      console.error('setup profile update error:', updateProfileError)
-      return NextResponse.json({ message: 'Unable to update profile.' }, { status: 500 })
-    }
-  } else {
-    const insertPayload: Database['public']['Tables']['profiles']['Insert'] = {
-      id: user.id,
-      full_name: profileUpdateValues.full_name ?? null,
-      email: profileUpdateValues.email ?? null,
-      company: profileUpdateValues.company ?? null,
-      role: 'owner',
-      updated_at: profileUpdateValues.updated_at ?? new Date().toISOString(),
-    }
-
-    const { error: insertProfileError } = await typedSupabase.from(PROFILES).insert(insertPayload)
-
-    if (insertProfileError) {
-      console.error('setup profile insert error:', insertProfileError)
-      return NextResponse.json({ message: 'Unable to update profile.' }, { status: 500 })
-    }
+  if (upsertProfileError) {
+    console.error('setup profile upsert error:', upsertProfileError)
+    return NextResponse.json({ message: 'Unable to update profile.' }, { status: 500 })
   }
 
   if (accountId) {
