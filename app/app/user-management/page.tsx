@@ -3,6 +3,9 @@ import { redirect } from 'next/navigation'
 import UserManagementClient from './UserManagementClient'
 import { fetchWorkspaceUsers } from '@/lib/api/user-management'
 
+export const revalidate = 0
+export const dynamic = 'force-dynamic'
+
 export default async function UserManagementPage() {
   try {
     const { currentUserId, users } = await fetchWorkspaceUsers()
