@@ -10,6 +10,7 @@ import { useActiveProfile } from '../../_components/active-profile-context'
 import { StatusBadge } from '../../_components/status-badge'
 import { useToast } from '../../_components/toast-context'
 import type { Database } from '@/types/supabase'
+import { fetchProjectComments as fetchProjectCommentsApi, fetchProjectDetails, listProjectFiles } from '@/lib/api/projects'
 import { createBrowserClient } from '@/lib/supabase/browser'
 
 type ProjectRow = Database['public']['Tables']['projects']['Row']
@@ -544,97 +545,21 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
     }
 
     try {
-      let projectQuery = supabase
-        .from(PROJECTS)
-        .select(
-          `
-            id,
-            name,
-            status,
-            description,
-            due_date,
-            created_at,
-            updated_at,
-            archived,
-            labels,
-            tags,
-            priority,
-            client_id,
-            account_id,
-            assignee_profile_id,
-            value_invoiced,
-            value_paid,
-            value_quote,
-            clients:client_id ( id, name ),
-            assignee_profile:assignee_profile_id ( id, full_name )
-          `
-        )
-        .eq('id', params.projectId)
-
-      if (isClientViewer) {
-        projectQuery = projectQuery.in('client_id', clientIds)
-      }
-
-      const projectPromise = projectQuery.maybeSingle()
-
-      const clientsPromise = supabase.from(CLIENTS).select('id, name').order('name', { ascending: true })
-      const assigneesPromise = supabase
-        .from(PROFILES)
-        .select('id, full_name')
-        .order('full_name', { ascending: true })
-      const invoicesPromise = supabase
-        .from(INVOICES)
-        .select(
-          'id, amount, currency, status, issued_at, due_at, external_url, paid_at, created_at, updated_at'
-        )
-        .eq('project_id', params.projectId)
-        .order('created_at', { ascending: false })
-      const briefPromise = supabase.from(BRIEFS).select('answers').eq('project_id', params.projectId).maybeSingle()
-
-      const [projectResult, clientsResult, assigneesResult, invoicesResult, briefResult] = await Promise.all([
-        projectPromise,
-        clientsPromise,
-        assigneesPromise,
-        invoicesPromise,
-        briefPromise
-      ])
+      const payload = await fetchProjectDetails(params.projectId)
 
       if (!isMountedRef.current) {
         return
       }
 
-      const { data: clientsData, error: clientsError } = clientsResult
-      if (clientsError) {
-        console.error('Failed to load clients', clientsError)
-      }
-      setClients((clientsData ?? []) as Array<Pick<ClientRow, 'id' | 'name'>>)
+      setClients(payload.clients)
+      setAssignees(payload.assignees)
 
-      const { data: assigneesData, error: assigneesError } = assigneesResult
-      if (assigneesError) {
-        console.error('Failed to load profiles', assigneesError)
-      }
-      setAssignees((assigneesData ?? []) as Array<Pick<ProfileRow, 'id' | 'full_name'>>)
-
-      const { data: invoicesData, error: invoicesError } = invoicesResult
-      if (invoicesError) {
-        console.error('Failed to load invoices', invoicesError)
-      }
-      const typedInvoices = (invoicesData ?? []) as InvoiceInfo[]
+      const typedInvoices = payload.invoices as InvoiceInfo[]
       setInvoices(typedInvoices)
       const invoiceRecord = typedInvoices.length > 0 ? typedInvoices[0] : null
       setInvoiceDetails(invoiceRecord ?? null)
 
-      const { data: projectData, error: projectError } = projectResult
-
-      if (projectError) {
-        console.error('Failed to load project', projectError)
-        setProject(null)
-        setFormState(null)
-        setStoredBriefAnswers(null)
-        setBriefFormState(createEmptyBriefFormState())
-        setError('We could not load this project. Please try again.')
-        return
-      }
+      const projectData = payload.project
 
       if (!projectData) {
         setProject(null)
@@ -645,21 +570,14 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         return
       }
 
-      type ProjectQuery = ProjectRow & {
-        clients: Pick<ClientRow, 'id' | 'name'> | null
-        assignee_profile: Pick<ProfileRow, 'id' | 'full_name'> | null
-      }
-
-      const { clients: projectClient, assignee_profile: projectAssignee, ...projectRest } = projectData as ProjectQuery
-
       const formattedBudget = invoiceRecord
         ? formatBudgetFromInvoice(invoiceRecord.amount, invoiceRecord.currency)
         : null
 
       const normalizedProject: Project = {
-        ...projectRest,
-        client: projectClient ?? null,
-        assignee: projectAssignee ?? null,
+        ...projectData,
+        client: projectData.client ?? null,
+        assignee: projectData.assignee ?? null,
         budget: formattedBudget
       }
 
@@ -688,12 +606,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
         tags: normalizedProject.tags ? normalizedProject.tags.join('\n') : ''
       })
 
-      const { data: briefData, error: briefError } = briefResult
-      if (briefError) {
-        console.error('Failed to load brief answers', briefError)
-      }
-
-      const normalizedBriefAnswers = normalizeBriefAnswers(briefData?.answers ?? null)
+      const normalizedBriefAnswers = normalizeBriefAnswers(payload.briefAnswers ?? null)
       if (normalizedBriefAnswers) {
         setStoredBriefAnswers(normalizedBriefAnswers)
         setBriefFormState(mapBriefAnswersToFormState(normalizedBriefAnswers))
@@ -712,7 +625,8 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setInvoiceDetails(null)
       setStoredBriefAnswers(null)
       setBriefFormState(createEmptyBriefFormState())
-      setError('We ran into an issue loading this project. Please try again.')
+      const message = cause instanceof Error ? cause.message : null
+      setError(message ?? 'We ran into an issue loading this project. Please try again.')
     } finally {
       if (!isMountedRef.current) {
         return
@@ -720,7 +634,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       setLoadingOptions(false)
       setLoadingProject(false)
     }
-  }, [clientIds, isClientViewer, params.projectId, profileLoading, supabase])
+  }, [clientIds, isClientViewer, params.projectId, profileLoading])
 
   const fetchProjectComments = useCallback(async () => {
     if (profileLoading || (isClientViewer && clientIds.length === 0)) {
@@ -729,46 +643,27 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
     setLoadingComments(true)
 
-    const { data, error } = await supabase
-      .from(COMMENTS)
-      .select(
-        `
-          id,
-          body,
-          created_at,
-          visibility,
-          author_profile:author_profile_id ( id, full_name, role )
-        `
-      )
-      .eq('project_id', params.projectId)
-      .order('created_at', { ascending: false })
+    try {
+      const { comments: commentRows } = await fetchProjectCommentsApi(params.projectId)
 
-    if (!isMountedRef.current) {
-      return
-    }
-
-    if (error) {
-      console.error('Failed to load project comments', error)
-      setComments([])
-      setLoadingComments(false)
-      return
-    }
-
-    type CommentQuery = Database['public']['Tables']['comments']['Row'] & {
-      author_profile: Pick<ProfileRow, 'id' | 'full_name' | 'role'> | null
-    }
-
-    const typedComments = (data ?? []).map((comment) => {
-      const { author_profile, ...rest } = comment as CommentQuery
-      return {
-        ...rest,
-        author: author_profile ?? null
+      if (!isMountedRef.current) {
+        return
       }
-    })
 
-    setComments(typedComments)
-    setLoadingComments(false)
-  }, [clientIds, isClientViewer, params.projectId, profileLoading, supabase])
+      setComments(commentRows)
+    } catch (error) {
+      console.error('Failed to load project comments', error)
+      if (!isMountedRef.current) {
+        return
+      }
+      setComments([])
+    } finally {
+      if (!isMountedRef.current) {
+        return
+      }
+      setLoadingComments(false)
+    }
+  }, [clientIds, isClientViewer, params.projectId, profileLoading])
 
   const fetchProjectFiles = useCallback(async () => {
     if (profileLoading || (isClientViewer && clientIds.length === 0)) {
@@ -777,53 +672,32 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
 
     setLoadingFiles(true)
 
-    const { data, error } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .list(params.projectId, {
-        limit: 100,
-        sortBy: { column: 'updated_at', order: 'desc' }
-      })
+    try {
+      const { files: fileObjects } = await listProjectFiles(params.projectId)
 
-    if (!isMountedRef.current) {
-      return
-    }
+      if (!isMountedRef.current) {
+        return
+      }
 
-    if (error) {
+      setFiles(fileObjects)
+    } catch (error) {
       console.error('Failed to load project files', error)
+      if (!isMountedRef.current) {
+        return
+      }
       pushToast({
         title: 'Unable to load files',
         description: 'We could not load the project files just now. Please try again.',
         variant: 'error'
       })
       setFiles([])
+    } finally {
+      if (!isMountedRef.current) {
+        return
+      }
       setLoadingFiles(false)
-      return
     }
-
-    const typedFiles = (data ?? []).map((fileObject) => {
-      const metadata = (fileObject.metadata ?? {}) as { size?: number | string }
-      let normalizedSize: number | null = null
-      if (typeof metadata.size === 'number') {
-        normalizedSize = metadata.size
-      } else if (typeof metadata.size === 'string') {
-        const parsed = Number.parseInt(metadata.size, 10)
-        normalizedSize = Number.isNaN(parsed) ? null : parsed
-      }
-
-      return {
-        path: `${params.projectId}/${fileObject.name}`,
-        name: fileObject.name,
-        id: fileObject.id ?? null,
-        created_at: fileObject.created_at ?? null,
-        updated_at: fileObject.updated_at ?? null,
-        last_accessed_at: fileObject.last_accessed_at ?? null,
-        size: normalizedSize
-      }
-    })
-
-    setFiles(typedFiles)
-    setLoadingFiles(false)
-  }, [clientIds, isClientViewer, params.projectId, profileLoading, pushToast, supabase])
+  }, [clientIds, isClientViewer, params.projectId, profileLoading, pushToast])
 
   useEffect(() => {
     void fetchProjectData()
