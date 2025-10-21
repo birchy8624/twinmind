@@ -93,21 +93,14 @@ const formatTimeAgo = (input: Date) => {
   return input.toLocaleDateString()
 }
 
-const humanizeEntityType = (entityType: string) => {
-  const normalized = entityType.replace(/_/g, ' ').trim()
-  if (!normalized) {
-    return 'Activity'
-  }
-
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1)
-}
-
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const ACCOUNT_MEMBERS = 'account_members' as const
+
 export async function GET() {
   try {
-    const { supabase, role, clientMemberships } = await getAccessContext({
+    const { supabase, role, clientMemberships, userId } = await getAccessContext({
       allowEmptyClientMemberships: true,
     })
 
@@ -123,6 +116,22 @@ export async function GET() {
     }
 
     let accessibleProjectIds: string[] | null = null
+
+    let activeAccountId: string | null = null
+
+    const { data: membershipRow, error: membershipError } = await supabase
+      .from(ACCOUNT_MEMBERS)
+      .select('account_id')
+      .eq('profile_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle<{ account_id: string | null }>()
+
+    if (membershipError) {
+      console.error('dashboard active account lookup error:', membershipError)
+    } else if (membershipRow?.account_id) {
+      activeAccountId = membershipRow.account_id
+    }
 
     if (role === 'client') {
       const { data: projectRows, error: projectError } = await supabase
@@ -412,37 +421,74 @@ export async function GET() {
     })()
 
     const activityPromise = (async (): Promise<ActivityFeedItem[]> => {
-      const { data, error } = await supabase
-        .from('audit_log')
-        .select('id, action, entity_type, created_at, profiles:actor_profile_id(full_name)')
-        .order('created_at', { ascending: false })
+      let activityQuery = supabase
+        .from('project_stage_events')
+        .select(
+          `
+            id,
+            changed_at,
+            from_status,
+            to_status,
+            projects!inner (
+              id,
+              name,
+              account_id
+            ),
+            actor:changed_by_profile_id (
+              full_name
+            )
+          `,
+        )
+        .not('changed_at', 'is', null)
+        .order('changed_at', { ascending: false })
         .limit(6)
-        .returns<
-          Array<{
-            id: string
-            action: string | null
-            entity_type: string | null
-            created_at: string | null
-            profiles: { full_name: string | null } | null
-          }> | null
-        >()
+
+      if (accessibleProjectIds && accessibleProjectIds.length > 0) {
+        activityQuery = activityQuery.in('project_id', accessibleProjectIds)
+      } else if (activeAccountId) {
+        activityQuery = activityQuery.eq('projects.account_id', activeAccountId)
+      }
+
+      const { data, error } = await activityQuery.returns<
+        Array<{
+          id: string | null
+          changed_at: string | null
+          from_status: Database['public']['Enums']['project_status'] | null
+          to_status: Database['public']['Enums']['project_status'] | null
+          projects: {
+            id: string | null
+            name: string | null
+            account_id: string | null
+          } | null
+          actor: { full_name: string | null } | null
+        }> | null
+      >()
 
       if (error) {
         throw error
       }
 
-      const auditRows = Array.isArray(data) ? data : []
+      const stageEvents = Array.isArray(data) ? data : []
 
-      return auditRows.map((entry) => {
-        const createdAt = entry.created_at ? new Date(entry.created_at) : null
-        const actor = entry.profiles?.full_name?.trim()
-        const entityType = entry.entity_type ?? ''
-        const action = (entry.action ?? '').trim() || 'Updated'
+      return stageEvents.map((entry) => {
+        const createdAt = entry.changed_at ? new Date(entry.changed_at) : null
+        const actor = entry.actor?.full_name?.trim()
+        const projectName = entry.projects?.name?.trim() || 'Project update'
+        const toStatus = entry.to_status ?? null
+        const fromStatus = entry.from_status ?? null
+
+        let changeSummary = 'was updated'
+
+        if (toStatus && fromStatus && fromStatus !== toStatus) {
+          changeSummary = `moved from ${fromStatus} to ${toStatus}`
+        } else if (toStatus) {
+          changeSummary = `moved into ${toStatus}`
+        }
 
         return {
-          id: entry.id,
+          id: entry.id ?? `${entry.projects?.id ?? 'activity'}-${entry.changed_at ?? Date.now().toString()}`,
           author: actor && actor.length > 0 ? actor : 'System',
-          description: `${humanizeEntityType(entityType)} · ${action}`,
+          description: `${projectName} · ${changeSummary}`,
           timeAgo: createdAt ? formatTimeAgo(createdAt) : 'Unknown time',
         }
       })
