@@ -18,6 +18,7 @@ export default {
         limeglow: {
           100: 'rgb(var(--brand-color-100) / <alpha-value>)',
           300: 'rgb(var(--brand-color-300) / <alpha-value>)',
+          400: 'rgb(var(--brand-color-400) / <alpha-value>)',
           500: 'rgb(var(--brand-color-500) / <alpha-value>)',
           600: 'rgb(var(--brand-color-600) / <alpha-value>)',
           700: 'rgb(var(--brand-color-700) / <alpha-value>)'
