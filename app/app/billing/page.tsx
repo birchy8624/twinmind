@@ -1,8 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-
-import { useToast } from '../_components/toast-context'
+import { useRouter } from 'next/navigation'
 
 const freeFeatures = [
   'Up to 2 active clients',
@@ -53,23 +51,10 @@ const CheckIcon = () => (
 )
 
 export default function BillingPage() {
-  const { pushToast } = useToast()
-  const [isUpgrading, setIsUpgrading] = useState(false)
+  const router = useRouter()
 
   const handleUpgrade = () => {
-    if (isUpgrading) {
-      return
-    }
-
-    setIsUpgrading(true)
-    setTimeout(() => {
-      pushToast({
-        title: 'Upgrade requested',
-        description: 'We will notify you once billing is connected. Premium features will unlock automatically.',
-        variant: 'success'
-      })
-      setIsUpgrading(false)
-    }, 900)
+    router.push('/app/billing/checkout')
   }
 
   return (
@@ -140,10 +125,9 @@ export default function BillingPage() {
           <button
             type="button"
             onClick={handleUpgrade}
-            disabled={isUpgrading}
             className="mt-auto inline-flex items-center justify-center rounded-full bg-limeglow-400 px-5 py-2 text-sm font-semibold text-base-950 transition hover:bg-limeglow-300 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {isUpgrading ? 'Upgrading…' : 'Upgrade to Premium'}
+            Upgrade to Premium
           </button>
         </article>
       </section>
