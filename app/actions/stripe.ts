@@ -10,10 +10,10 @@ if (!priceId) {
   throw new Error('STRIPE_PRICE_ID is not set in environment variables')
 }
 
-export async function fetchClientSecret() {
-  const origin = (await headers()).get('origin')
+export async function fetchClientSecret(): Promise<string> {
+  const originHeader = (await headers()).get('origin')
 
-  if (!origin) {
+  if (!originHeader) {
     throw new Error('Missing origin header in request')
   }
 
@@ -26,13 +26,15 @@ export async function fetchClientSecret() {
       },
     ],
     mode: 'subscription',
-    return_url: `${origin}/return?session_id={CHECKOUT_SESSION_ID}`,
+    return_url: `${originHeader}/return?session_id={CHECKOUT_SESSION_ID}`,
     automatic_tax: { enabled: true },
   })
 
-  if (!session.client_secret) {
+  const clientSecret = session.client_secret
+
+  if (!clientSecret) {
     throw new Error('Unable to retrieve client secret from Stripe session')
   }
 
-  return session.client_secret
+  return clientSecret
 }

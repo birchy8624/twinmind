@@ -2,7 +2,8 @@
 
 import {
   EmbeddedCheckout,
-  EmbeddedCheckoutProvider
+  EmbeddedCheckoutProvider,
+  type EmbeddedCheckoutProviderProps,
 } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
 
@@ -16,12 +17,16 @@ if (!publishableKey) {
 
 const stripePromise = loadStripe(publishableKey)
 
+const embeddedCheckoutOptions: EmbeddedCheckoutProviderProps['options'] = {
+  fetchClientSecret,
+}
+
 export default function Checkout() {
   return (
     <div id="checkout">
       <EmbeddedCheckoutProvider
         stripe={stripePromise}
-        options={{ fetchClientSecret }}
+        options={embeddedCheckoutOptions}
       >
         <EmbeddedCheckout />
       </EmbeddedCheckoutProvider>
