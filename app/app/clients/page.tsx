@@ -11,8 +11,12 @@ import type { Database } from '@/types/supabase'
 import { FilterDropdown } from '../_components/filter-dropdown'
 import { StatusBadge } from '../_components/status-badge'
 
-type Client = Database['public']['Tables']['clients']['Row']
-type ClientSelection = Pick<Client, 'id' | 'name' | 'website' | 'account_status' | 'created_at' | 'notes' | 'updated_at'>
+type ClientRow = Database['public']['Tables']['clients']['Row']
+type Client = ClientRow
+type ClientSelection = Pick<
+  ClientRow,
+  'id' | 'name' | 'website' | 'account_status' | 'created_at' | 'notes' | 'updated_at' | 'account_id'
+>
 
 const PAGE_SIZE = 8
 const CLIENTS = 'clients' as const
@@ -78,7 +82,7 @@ export default function ClientsPage() {
 
       const { data, error: fetchError } = await supabase
         .from(CLIENTS)
-        .select('id, name, website, account_status, created_at, notes, updated_at')
+        .select('id, name, website, account_status, created_at, notes, updated_at, account_id')
         .order('created_at', { ascending: false })
 
       if (!isMounted) return
@@ -96,7 +100,8 @@ export default function ClientsPage() {
           account_status: row.account_status ?? null,
           created_at: row.created_at ?? null,
           notes: row.notes ?? null,
-          updated_at: row.updated_at ?? null
+          updated_at: row.updated_at ?? null,
+          account_id: row.account_id ?? null
         }))
         setClients(rows)
       }

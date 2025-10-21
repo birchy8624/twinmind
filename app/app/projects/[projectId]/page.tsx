@@ -79,6 +79,14 @@ const INVOICE_STAGE_BADGE_VARIANTS: Record<InvoiceStage, string> = {
 const normalizeInvoiceStage = (
   status: Database['public']['Enums']['invoice_status'] | null | undefined
 ): InvoiceStage => {
+  if (status === 'Invoice Sent') {
+    return 'Sent'
+  }
+
+  if (status === 'Payment Made') {
+    return 'Paid'
+  }
+
   const candidate = status ?? 'Quote'
   return INVOICE_STAGE_OPTIONS.includes(candidate as InvoiceStage)
     ? (candidate as InvoiceStage)
@@ -332,8 +340,7 @@ const statusOptions: ProjectRow['status'][] = [
   'Build',
   'QA',
   'Handover',
-  'Closed',
-  'Archived'
+  'Closed'
 ]
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
@@ -489,7 +496,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const [comments, setComments] = useState<ProjectComment[]>([])
   const [commentBody, setCommentBody] = useState('')
   const [commentVisibility, setCommentVisibility] = useState<Database['public']['Enums']['visibility_enum']>('both')
-  const [commentFilter, setCommentFilter] = useState<'both' | 'client' | 'internal'>('both')
+  const [commentFilter, setCommentFilter] = useState<'both' | 'client' | 'owner'>('both')
   const [loadingComments, setLoadingComments] = useState(true)
   const [files, setFiles] = useState<ProjectFileObject[]>([])
   const [loadingFiles, setLoadingFiles] = useState(false)
@@ -553,6 +560,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
             tags,
             priority,
             client_id,
+            account_id,
             assignee_profile_id,
             value_invoiced,
             value_paid,
@@ -885,7 +893,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   }, [supabase])
 
   useEffect(() => {
-    if (currentProfile?.role !== 'owner' && commentVisibility === 'internal') {
+    if (currentProfile?.role !== 'owner' && commentVisibility === 'owner') {
       setCommentVisibility('both')
     }
   }, [commentVisibility, currentProfile])
@@ -1889,14 +1897,14 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
   const canEditBrief = currentProfile?.role === 'owner'
   const canUploadFiles = Boolean(currentProfile)
   const canDeleteFiles = currentProfile?.role === 'owner'
-  const canViewInternalComments = currentProfile?.role === 'owner'
+  const canViewOwnerComments = currentProfile?.role === 'owner'
 
   const accessibleComments = useMemo(() => {
-    if (canViewInternalComments) {
+    if (canViewOwnerComments) {
       return comments
     }
-    return comments.filter((comment) => comment.visibility !== 'internal')
-  }, [canViewInternalComments, comments])
+    return comments.filter((comment) => comment.visibility !== 'owner')
+  }, [canViewOwnerComments, comments])
 
   const filteredComments = useMemo(() => {
     if (commentFilter === 'client') {
@@ -1905,16 +1913,16 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       )
     }
 
-    if (commentFilter === 'internal') {
-      if (!canViewInternalComments) {
+    if (commentFilter === 'owner') {
+      if (!canViewOwnerComments) {
         return []
       }
 
-      return comments.filter((comment) => comment.visibility === 'internal')
+      return comments.filter((comment) => comment.visibility === 'owner')
     }
 
     return accessibleComments
-  }, [accessibleComments, canViewInternalComments, commentFilter, comments])
+  }, [accessibleComments, canViewOwnerComments, commentFilter, comments])
 
   const tabs = useMemo(() => {
     const definitions: Array<{ id: TabKey; label: string }> = [
@@ -2008,7 +2016,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
     }
 
     for (const comment of comments) {
-      const label = comment.visibility === 'internal' ? 'Owner note' : 'Comment added'
+      const label = comment.visibility === 'owner' ? 'Owner note' : 'Comment added'
       const trimmed = comment.body.length > 140 ? `${comment.body.slice(0, 139)}…` : comment.body
       entries.push({
         id: `comment-${comment.id}`,
@@ -2912,7 +2920,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                       >
                         <option value="both">Visible to agency & client</option>
                         <option value="client">Client-visible</option>
-                        <option value="internal" disabled={!canViewInternalComments}>
+                        <option value="owner" disabled={!canViewOwnerComments}>
                           Owner notes only
                         </option>
                       </select>
@@ -2939,7 +2947,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                     <h2 className="text-lg font-semibold text-white">Comments & notes</h2>
                   </div>
                   <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-base-900/60 p-1 text-xs font-semibold text-white/60 sm:text-sm">
-                    {(['both', 'client', 'internal'] as const).map((filter) => {
+                    {(['both', 'client', 'owner'] as const).map((filter) => {
                       const label = filter === 'both' ? 'Both' : filter === 'client' ? 'Client view' : 'Owner notes'
                       const isActiveFilter = commentFilter === filter
                       return (
@@ -2974,7 +2982,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
                             <p className="text-xs text-white/40">{formatTimestamp(comment.created_at)}</p>
                           </div>
                           <span className="inline-flex items-center rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/60">
-                            {comment.visibility === 'internal'
+                            {comment.visibility === 'owner'
                               ? 'Owner only'
                               : comment.visibility === 'client'
                                 ? 'Client-visible'

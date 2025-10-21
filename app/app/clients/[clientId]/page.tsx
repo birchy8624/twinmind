@@ -62,6 +62,7 @@ type ClientProject = {
   due_date: string | null
   created_at: string
   updated_at: string | null
+  archived: boolean | null
 }
 
 type ClientDetails = {
@@ -69,7 +70,8 @@ type ClientDetails = {
   name: string
   website: string | null
   notes: string | null
-  account_status: Database['public']['Enums']['account_status'] | null
+  account_id: string | null
+  account_status: string | null
   created_at: string | null
   updated_at: string | null
   client_members: ClientMember[]
@@ -325,6 +327,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
         name,
         website,
         notes,
+        account_id,
         account_status,
         created_at,
         updated_at,
@@ -370,7 +373,8 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
           status,
           due_date,
           created_at,
-          updated_at
+          updated_at,
+          archived
         )
       `
     )
@@ -393,6 +397,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
     name: clientRow.name,
     website: clientRow.website ?? null,
     notes: clientRow.notes ?? null,
+    account_id: clientRow.account_id ?? null,
     account_status: clientRow.account_status ?? null,
     created_at: clientRow.created_at ?? null,
     updated_at: clientRow.updated_at ?? null,
@@ -440,7 +445,8 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
       status: project.status,
       due_date: project.due_date ?? null,
       created_at: project.created_at,
-      updated_at: project.updated_at ?? null
+      updated_at: project.updated_at ?? null,
+      archived: project.archived ?? null
     }))
   }
 
@@ -523,6 +529,7 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
             name: client.name,
             website: client.website,
             notes: client.notes,
+            account_id: client.account_id,
             account_status: client.account_status,
             created_at: client.created_at,
             updated_at: client.updated_at
@@ -533,11 +540,11 @@ export default async function ClientOverviewPage({ params }: ClientOverviewPageP
           <ul className="mt-4 space-y-3 text-sm text-white/75">
             <li className="flex items-center justify-between">
               <span>Active projects</span>
-              <span className="font-semibold text-white">{sortedProjects.filter((project) => project.status !== 'Archived').length}</span>
+              <span className="font-semibold text-white">{sortedProjects.filter((project) => !project.archived).length}</span>
             </li>
             <li className="flex items-center justify-between">
               <span>Archived projects</span>
-              <span className="font-semibold text-white">{sortedProjects.filter((project) => project.status === 'Archived').length}</span>
+              <span className="font-semibold text-white">{sortedProjects.filter((project) => project.archived).length}</span>
             </li>
             <li className="flex items-center justify-between">
               <span>Primary contact</span>

@@ -67,15 +67,15 @@ const ACTIVE_PIPELINE_STATUSES: ProjectStatus[] = [
 ]
 
 const invoiceStatusToBucket = (status: InvoiceStatus) => {
-  if (status === 'Quote' || status === 'Draft') {
+  if (status === 'Quote') {
     return 'quoted' as const
   }
 
-  if (status === 'Sent') {
+  if (status === 'Sent' || status === 'Invoice Sent') {
     return 'invoiced' as const
   }
 
-  if (status === 'Paid') {
+  if (status === 'Paid' || status === 'Payment Made') {
     return 'paid' as const
   }
 
@@ -244,11 +244,11 @@ export default function DashboardPage() {
         const amount = Number(invoice.amount ?? 0)
         const issuedAt = invoice.issued_at ? new Date(invoice.issued_at) : null
 
-        if (invoice.status !== 'Cancelled') {
+        if (bucket) {
           quotesCount += 1
-        }
-        if (invoice.status === 'Paid') {
-          paidCount += 1
+          if (invoice.status === 'Paid' || invoice.status === 'Payment Made') {
+            paidCount += 1
+          }
         }
 
         if (!bucket || !issuedAt) {

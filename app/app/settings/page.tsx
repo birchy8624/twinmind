@@ -24,7 +24,7 @@ const profileSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>
 
 type ProfileInsert = Database['public']['Tables']['profiles']['Insert']
-type RoleEnum = Database['public']['Enums']['role']
+type RoleEnum = Database['public']['Enums']['role_enum']
 
 const PROFILES = 'profiles' as const
 const DEFAULT_ROLE: RoleEnum = 'client'
