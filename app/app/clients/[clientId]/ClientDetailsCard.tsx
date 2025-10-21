@@ -2,12 +2,12 @@
 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
-import { createBrowserClient } from '@/lib/supabase/browser'
 import type { Database } from '@/types/supabase'
+import { updateClientDetails } from '@/lib/api/clients'
 
 import { useToast } from '../../_components/toast-context'
 
@@ -60,7 +60,6 @@ const formSchema = z.object({
 })
 
 export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
-  const supabase = useMemo(createBrowserClient, [])
   const { pushToast } = useToast()
 
   const [currentClient, setCurrentClient] = useState(client)
@@ -97,54 +96,34 @@ export function ClientDetailsCard({ client }: ClientDetailsCardProps) {
       notes: values.notes.trim() ? values.notes.trim() : null
     }
 
-    const { data, error } = await supabase
-      .from('clients')
-      .update(payload)
-      .eq('id', currentClient.id)
-      .select('id, name, website, notes, account_status, created_at, updated_at, account_id')
-      .maybeSingle()
+    try {
+      const { client: updatedClient } = await updateClientDetails(currentClient.id, payload)
 
-    if (error) {
+      setCurrentClient((previous) => ({ ...previous, ...updatedClient }))
+      pushToast({
+        title: 'Client updated',
+        description: 'The latest changes have been saved.',
+        variant: 'success'
+      })
+
+      setIsModalOpen(false)
+      reset({
+        name: updatedClient.name ?? '',
+        account_status: ensureAccountStatus(updatedClient.account_status),
+        website: updatedClient.website ?? '',
+        notes: updatedClient.notes ?? ''
+      }, { keepDirty: false })
+    } catch (error) {
       console.error('Failed to update client', error)
+      const message = error instanceof Error ? error.message : 'We could not save these changes. Please try again.'
       pushToast({
         title: 'Update failed',
-        description: 'We could not save these changes. Please try again.',
+        description: message,
         variant: 'error'
       })
+    } finally {
       setIsSubmitting(false)
-      return
     }
-
-    if (!data) {
-      pushToast({
-        title: 'Update failed',
-        description: 'The client was not returned after saving. Please try again.',
-        variant: 'error'
-      })
-      setIsSubmitting(false)
-      return
-    }
-
-    const updatedClient = {
-      ...currentClient,
-      ...data
-    }
-
-    setCurrentClient(updatedClient)
-    pushToast({
-      title: 'Client updated',
-      description: 'The latest changes have been saved.',
-      variant: 'success'
-    })
-
-    setIsSubmitting(false)
-    setIsModalOpen(false)
-    reset({
-      name: updatedClient.name ?? '',
-      account_status: ensureAccountStatus(updatedClient.account_status),
-      website: updatedClient.website ?? '',
-      notes: updatedClient.notes ?? ''
-    }, { keepDirty: false })
   })
 
   const handleStartEditing = () => {

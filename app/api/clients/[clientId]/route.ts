@@ -1,13 +1,25 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 
 import { createServerSupabase } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import type { Database } from '@/types/supabase'
 import type { ClientDetailsQuery } from '@/lib/api/clients'
 
-const CLIENTS = 'clients' as const
 const PROJECT_FILES_BUCKET = 'project-files' as const
+
+const ACCOUNT_STATUS_SCHEMA = z.enum(['active', 'inactive', 'invited', 'archived'])
+
+const updateClientSchema = z.object({
+  name: z.string().trim().min(2, 'Client name is required'),
+  account_status: ACCOUNT_STATUS_SCHEMA,
+  website: z
+    .string()
+    .trim()
+    .refine((value) => value.length === 0 || isValidUrl(value), { message: 'Enter a valid URL' }),
+  notes: z.string().optional().transform((value) => value ?? '')
+})
 
 export const runtime = 'nodejs'
 
@@ -23,7 +35,7 @@ export async function GET(
   const supabase = createServerSupabase()
 
   const { data, error } = await supabase
-    .from(CLIENTS)
+    .from('clients')
     .select(
       `
         id,
@@ -95,6 +107,120 @@ export async function GET(
   if (!isClientDetailsRow(data)) {
     return NextResponse.json({ message: 'Client not found.' }, { status: 404 })
   }
+
+  return NextResponse.json({ client: data })
+}
+
+function normalizeWebsite(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed
+  }
+
+  return `https://${trimmed}`
+}
+
+function isValidUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return Boolean(url.protocol && url.host)
+  } catch (error) {
+    try {
+      const url = new URL(`https://${value}`)
+      return Boolean(url.host)
+    } catch (nestedError) {
+      return false
+    }
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: { clientId: string } }
+) {
+  const supabase = createServerSupabase()
+
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    return NextResponse.json({ message: 'Not authenticated.' }, { status: 401 })
+  }
+
+  const { data: profileRow, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: Database['public']['Enums']['role_enum'] | null }>()
+
+  if (profileError) {
+    console.error('updateClient profile error:', profileError)
+    return NextResponse.json({ message: 'Unable to verify permissions.' }, { status: 500 })
+  }
+
+  if (profileRow?.role !== 'owner') {
+    return NextResponse.json(
+      { message: 'Only workspace owners can update clients.' },
+      { status: 403 }
+    )
+  }
+
+  let payload: unknown
+
+  try {
+    payload = await request.json()
+  } catch (error) {
+    console.error('updateClient parse error:', error)
+    return NextResponse.json({ message: 'Invalid input.' }, { status: 400 })
+  }
+
+  const parsed = updateClientSchema.safeParse(payload)
+
+  if (!parsed.success) {
+    return NextResponse.json({ message: 'Invalid input.' }, { status: 400 })
+  }
+
+  const { name, account_status, website, notes } = parsed.data
+
+  const updatePayload: Database['public']['Tables']['clients']['Update'] = {
+    name: name.trim(),
+    account_status,
+    website: normalizeWebsite(website),
+    notes: notes.trim() ? notes.trim() : null
+  }
+
+  type ClientUpdateRow = Pick<
+    Database['public']['Tables']['clients']['Row'],
+    'id' | 'name' | 'website' | 'notes' | 'account_status' | 'created_at' | 'updated_at' | 'account_id'
+  >
+
+  const { data, error } = await supabase
+    .from('clients')
+    // Supabase's helper infers the update payload type as `never` here despite the table generics,
+    // so cast through `never` until the upstream typings are fixed.
+    .update(updatePayload as never)
+    .eq('id', context.params.clientId)
+    .select('id, name, website, notes, account_status, created_at, updated_at, account_id')
+    .maybeSingle<ClientUpdateRow>()
+
+  if (error) {
+    console.error('updateClient update error:', error)
+    return NextResponse.json({ message: 'Unable to update client.' }, { status: 500 })
+  }
+
+  if (!data) {
+    return NextResponse.json({ message: 'Client not found.' }, { status: 404 })
+  }
+
+  revalidatePath('/app/clients')
+  revalidatePath('/app/projects')
+  revalidatePath('/app/dashboard')
 
   return NextResponse.json({ client: data })
 }
