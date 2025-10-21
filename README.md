@@ -9,6 +9,14 @@ npm run dev
 ```
 Open http://localhost:3000
 
+## Linting
+Install dependencies first so the bundled `next` CLI is available:
+
+```bash
+npm install
+npm run lint
+```
+
 ## Tech
 - Next.js (App Router)
 - Tailwind CSS (dark mode, lime gradient accents)
