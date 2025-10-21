@@ -4,8 +4,9 @@ import { notFound } from 'next/navigation'
 import { StatusBadge } from '../../_components/status-badge'
 import { ClientDetailsCard } from './ClientDetailsCard'
 import { ClientDeleteButton } from './ClientDeleteButton'
-import { createServerSupabase } from '@/lib/supabase/server'
+import { fetchClientDetails } from '@/lib/api/clients'
 import type { Database } from '@/types/supabase'
+import type { ClientDetailsQuery } from '@/lib/api/clients'
 
 type ClientRow = Database['public']['Tables']['clients']['Row']
 
@@ -53,8 +54,6 @@ type ClientInvite = {
   profile: ProfileSummary | null
 }
 
-const CLIENTS = 'clients' as const
-
 type ClientProject = {
   id: string
   name: string
@@ -91,27 +90,6 @@ type ClientPersonRow = {
   accessLabel: string
   accessDescription: string | null
   createdAt: string
-}
-
-type ClientDetailsQuery = ClientRow & {
-  client_members: Array<
-    ClientMember & {
-      profile: ProfileSummary | null
-    }
-  > | null
-  contacts:
-    | Array<
-        (ClientContact & {
-          profile: { timezone: string | null } | null
-        })
-      >
-    | null
-  invites: Array<
-    ClientInvite & {
-      profile: ProfileSummary | null
-    }
-  > | null
-  projects: ClientProject[] | null
 }
 
 function formatStatus(status: string | null) {
@@ -306,91 +284,18 @@ function formatRole(value: string | null) {
     .join(' ')
 }
 
-function isClientDetailsRow(value: unknown): value is ClientDetailsQuery {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'id' in value &&
-    'name' in value
-  )
-}
-
 export default async function ClientOverviewPage({ params }: ClientOverviewPageProps) {
   const clientId: ClientRow['id'] = params.clientId
-  const supabase = createServerSupabase()
 
-  const { data, error } = await supabase
-    .from(CLIENTS)
-    .select(
-      `
-        id,
-        name,
-        website,
-        notes,
-        account_id,
-        account_status,
-        created_at,
-        updated_at,
-        client_members:client_members (
-          id,
-          role,
-          created_at,
-          profile:profiles!client_members_profile_id_fkey (
-            id,
-            full_name,
-            email
-          )
-        ),
-        contacts:contacts (
-          id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          title,
-          is_primary,
-          created_at,
-          profile_id,
-          profile:profiles!contacts_profile_id_fkey (
-            timezone
-          )
-        ),
-        invites:invites (
-          id,
-          email,
-          created_at,
-          expires_at,
-          accepted_profile_id,
-          profile:profiles!invites_accepted_profile_id_fkey (
-            id,
-            full_name,
-            email
-          )
-        ),
-        projects:projects (
-          id,
-          name,
-          status,
-          due_date,
-          created_at,
-          updated_at,
-          archived
-        )
-      `
-    )
-    .filter('id', 'eq', clientId)
-    .returns<ClientDetailsQuery>()
-    .maybeSingle()
+  let clientRow: ClientDetailsQuery
 
-  if (error) {
-    console.error(error)
-  }
-
-  if (!isClientDetailsRow(data)) {
+  try {
+    const response = await fetchClientDetails(clientId)
+    clientRow = response.client
+  } catch (error) {
+    console.error('Failed to load client details:', error)
     notFound()
   }
-
-  const clientRow: ClientDetailsQuery = data
 
   const client: ClientDetails = {
     id: clientRow.id,

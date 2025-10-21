@@ -2,8 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { AddContactForm } from './AddContactForm'
-
-import { createServerSupabase } from '@/lib/supabase/server'
+import { fetchClientDetails } from '@/lib/api/clients'
 
 type ClientRow = {
   id: string
@@ -15,15 +14,13 @@ export default async function NewClientContactPage({
 }: {
   params: { clientId: string }
 }) {
-  const supabase = createServerSupabase()
+  let client: ClientRow
 
-  const { data: client, error } = await supabase
-    .from('clients')
-    .select('id, name')
-    .eq('id', params.clientId)
-    .single<ClientRow>()
-
-  if (error || !client) {
+  try {
+    const response = await fetchClientDetails(params.clientId)
+    const clientRow = response.client
+    client = { id: clientRow.id, name: clientRow.name ?? 'Client' }
+  } catch (error) {
     console.error('Load client error:', error)
     notFound()
   }
