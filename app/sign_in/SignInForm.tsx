@@ -114,7 +114,7 @@ export default function SignInForm() {
 
   if (mode === 'reset') {
     return (
-      <form className="space-y-5" onSubmit={handleResetSubmit}>
+      <form key="reset" className="space-y-5" onSubmit={handleResetSubmit}>
         <div className="space-y-1">
           <h2 className="text-xl font-semibold text-white">Reset your password</h2>
           <p className="text-sm text-white/70">
@@ -244,7 +244,7 @@ export default function SignInForm() {
     }
 
     return (
-      <form className="space-y-5" onSubmit={handleSignUpSubmit}>
+      <form key="sign-up" className="space-y-5" onSubmit={handleSignUpSubmit}>
         <div className="space-y-1">
           <h2 className="text-xl font-semibold text-white">Create your TwinMinds account</h2>
           <p className="text-sm text-white/70">
@@ -333,7 +333,7 @@ export default function SignInForm() {
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
+    <form key="sign-in" className="space-y-5" onSubmit={handleSubmit}>
       <div>
         <label htmlFor="email" className="block text-sm text-white/80">
           Email address
