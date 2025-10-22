@@ -4,17 +4,12 @@ import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { stripe } from '@/lib/stripe'
-import {
-  normalizePlanStatus,
-  normalizeStripeStatus,
-  normalizeStripeTimestamp,
-  resolvePlanStatus,
-  resolveSubscriptionPeriodEnd,
-  serializeSubscriptionCancellationDetails,
-  type PlanStatus,
-} from '@/lib/stripe-subscription'
+import { upsertSubscriptionForAccount } from '@/lib/subscription-upsert'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
+import type { PlanStatus } from '@/lib/stripe-subscription'
+
+import { ReturnLogger } from './ReturnLogger'
 
 type BillingReturnProps = {
   searchParams?: {
@@ -22,108 +17,34 @@ type BillingReturnProps = {
   }
 }
 
-const ACCOUNT_MEMBERS = 'account_members' as const
-const SUBSCRIPTIONS = 'subscriptions' as const
-const PRO_PLAN_CODE = 'pro' as const
-
 type SubscriptionSyncContext = {
   session: Stripe.Checkout.Session
   supabase: SupabaseClient<Database>
 }
 
 type SubscriptionSyncResult = {
-  customerId: string | null
-  subscriptionId: string | null
-  currentPeriodEnd: string | null
+  accountId: string
   planStatus: PlanStatus
+  planCode: string
   providerStatus: string | null
+  providerCustomerId: string | null
+  providerSubscriptionId: string
+  currentPeriodEnd: string | null
   cancelAt: string | null
   canceledAt: string | null
   cancelAtPeriodEnd: boolean | null
-  cancellationDetails: Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
 }
 
-function isDeletedCustomer(
-  customer: Stripe.Customer | Stripe.DeletedCustomer
-): customer is Stripe.DeletedCustomer {
-  return 'deleted' in customer && customer.deleted === true
-}
+const ACCOUNT_MEMBERS = 'account_members' as const
 
-async function resolveSubscriptionMetadata(
-  session: Stripe.Checkout.Session
-): Promise<SubscriptionSyncResult> {
-  let subscriptionId: string | null = null
-  let subscription: Stripe.Subscription | null = null
-
-  if (typeof session.subscription === 'string') {
-    subscriptionId = session.subscription
-
-    try {
-      subscription = await stripe.subscriptions.retrieve(session.subscription, {
-        expand: ['items'],
-      })
-    } catch (error) {
-      console.error('billing return subscription retrieve error:', error)
-    }
-  } else if (session.subscription) {
-    subscription = session.subscription
-    subscriptionId = session.subscription.id
-  }
-
-  const currentPeriodEnd = resolveSubscriptionPeriodEnd(subscription)
-
-  let customerId: string | null = null
-
-  if (typeof session.customer === 'string') {
-    customerId = session.customer
-  } else if (session.customer && !isDeletedCustomer(session.customer)) {
-    customerId = session.customer.id
-  }
-
-  const rawProviderStatus =
-    subscription?.status ?? (session.status === 'complete' ? 'active' : session.status ?? 'active')
-  const providerStatus = normalizeStripeStatus(rawProviderStatus) ?? 'active'
-  const planStatus = resolvePlanStatus(providerStatus, currentPeriodEnd)
-
-  const cancelAt = normalizeStripeTimestamp(subscription?.cancel_at)
-  const canceledAt = normalizeStripeTimestamp(subscription?.canceled_at)
-  const cancelAtPeriodEnd =
-    typeof subscription?.cancel_at_period_end === 'boolean'
-      ? subscription.cancel_at_period_end
-      : null
-
-  const cancellationDetails = serializeSubscriptionCancellationDetails(subscription?.cancellation_details) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
-
-  return {
-    customerId,
-    subscriptionId,
-    currentPeriodEnd,
-    planStatus,
-    providerStatus,
-    cancelAt,
-    canceledAt,
-    cancelAtPeriodEnd,
-    cancellationDetails,
-  }
-}
-
-async function syncWorkspaceSubscription({
-  session,
-  supabase,
-}: SubscriptionSyncContext) {
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError || !user) {
-    throw new Error('Unable to determine the authenticated user.')
-  }
-
+async function resolveAccountId(
+  supabase: SupabaseClient<Database>,
+  profileId: string,
+): Promise<string> {
   const { data: membership, error: membershipError } = await supabase
     .from(ACCOUNT_MEMBERS)
     .select('account_id')
-    .eq('profile_id', user.id)
+    .eq('profile_id', profileId)
     .maybeSingle<{ account_id: string | null }>()
 
   if (membershipError) {
@@ -136,62 +57,67 @@ async function syncWorkspaceSubscription({
     throw new Error('Workspace account is not linked to this profile.')
   }
 
-  const metadata = await resolveSubscriptionMetadata(session)
+  return accountId
+}
 
-  const normalizedPlanStatus = normalizePlanStatus(metadata.planStatus)
-
-  const updatePayload: Database['public']['Tables']['subscriptions']['Update'] = {
-    plan_code: PRO_PLAN_CODE,
-    status: normalizedPlanStatus,
-    provider: 'stripe',
-    provider_customer_id: metadata.customerId,
-    provider_subscription_id: metadata.subscriptionId,
-    current_period_end: metadata.currentPeriodEnd,
-    cancel_at: metadata.cancelAt,
-    canceled_at: metadata.canceledAt,
-    cancel_at_period_end: metadata.cancelAtPeriodEnd,
-    cancellation_details: metadata.cancellationDetails,
+async function resolveStripeSubscription(
+  session: Stripe.Checkout.Session,
+): Promise<Stripe.Subscription> {
+  if (session.subscription && typeof session.subscription !== 'string') {
+    return session.subscription
   }
 
-  const { data: existingSubscription, error: fetchError } = await supabase
-    .from(SUBSCRIPTIONS)
-    .select('id')
-    .eq('account_id', accountId)
-    .maybeSingle<{ id: string }>()
-
-  if (fetchError) {
-    throw new Error('Unable to load the existing subscription record.')
+  if (typeof session.subscription === 'string') {
+    return stripe.subscriptions.retrieve(session.subscription, { expand: ['items'] })
   }
 
-  if (existingSubscription?.id) {
-    const { error: updateError } = await supabase
-      .from(SUBSCRIPTIONS)
-      .update(updatePayload)
-      .eq('id', existingSubscription.id)
+  throw new Error('Checkout session does not contain a subscription reference.')
+}
 
-    if (updateError) {
-      throw new Error('Unable to update the subscription record.')
-    }
-  } else {
-    const insertPayload: Database['public']['Tables']['subscriptions']['Insert'] = {
-      account_id: accountId,
-      plan_code: PRO_PLAN_CODE,
-      status: normalizedPlanStatus,
-      provider: 'stripe',
-      provider_customer_id: metadata.customerId,
-      provider_subscription_id: metadata.subscriptionId,
-      current_period_end: metadata.currentPeriodEnd,
-      cancel_at: metadata.cancelAt,
-      canceled_at: metadata.canceledAt,
-      cancel_at_period_end: metadata.cancelAtPeriodEnd,
-      cancellation_details: metadata.cancellationDetails,
-    }
+async function syncWorkspaceSubscription({
+  session,
+  supabase,
+}: SubscriptionSyncContext): Promise<SubscriptionSyncResult> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
 
-    const { error: insertError } = await supabase.from(SUBSCRIPTIONS).insert(insertPayload)
+  if (userError || !user) {
+    throw new Error('Unable to determine the authenticated user.')
+  }
 
-    if (insertError) {
-      throw new Error('Unable to create the subscription record.')
-    }
+  const accountId = await resolveAccountId(supabase, user.id)
+  const subscription = await resolveStripeSubscription(session)
+  const upsertResult = await upsertSubscriptionForAccount(accountId, subscription)
+
+  return {
+    accountId,
+    planStatus: upsertResult.planStatus,
+    planCode: upsertResult.planCode,
+    providerStatus: upsertResult.providerStatus,
+    providerCustomerId: upsertResult.providerCustomerId,
+    providerSubscriptionId: upsertResult.providerSubscriptionId,
+    currentPeriodEnd: upsertResult.currentPeriodEnd,
+    cancelAt: upsertResult.cancelAt,
+    canceledAt: upsertResult.canceledAt,
+    cancelAtPeriodEnd: upsertResult.cancelAtPeriodEnd,
+  }
+}
+
+function serializeErrorForLog(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`
+  }
+
+  if (typeof error === 'string') {
+    return error
+  }
+
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return 'Unknown error'
   }
 }
 
@@ -221,19 +147,30 @@ export default async function BillingReturn({
 
   const supabase = createServerSupabase()
 
+  let syncResult: SubscriptionSyncResult | null = null
   let syncError: string | null = null
+  let syncErrorLog: string | null = null
 
   try {
-    await syncWorkspaceSubscription({ session, supabase })
+    syncResult = await syncWorkspaceSubscription({ session, supabase })
   } catch (error) {
     console.error('billing return subscription sync error:', error)
     syncError =
       'We processed your payment, but we were unable to update your workspace subscription automatically. Please contact support so we can help.'
+    syncErrorLog = serializeErrorForLog(error)
   }
 
   if (syncError) {
     return (
       <main className="flex min-h-screen items-center justify-center px-6 py-24">
+        <ReturnLogger
+          status="error"
+          message="Stripe checkout completed but subscription synchronization failed."
+          details={{
+            sessionId,
+            error: syncErrorLog,
+          }}
+        />
         <section className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-6 rounded-3xl border border-rose-400/30 bg-base-900/70 p-8 text-center shadow-[0_25px_70px_-25px_rgba(255,83,112,0.25)]">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-400/10">
             <svg className="h-6 w-6 text-rose-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -260,6 +197,25 @@ export default async function BillingReturn({
 
   return (
     <main className="flex min-h-screen items-center justify-center px-6 py-24">
+      {syncResult ? (
+        <ReturnLogger
+          status="success"
+          message="Stripe checkout completed and subscription synchronized."
+          details={{
+            sessionId,
+            accountId: syncResult.accountId,
+            planCode: syncResult.planCode,
+            planStatus: syncResult.planStatus,
+            providerStatus: syncResult.providerStatus,
+            providerSubscriptionId: syncResult.providerSubscriptionId,
+            providerCustomerId: syncResult.providerCustomerId,
+            currentPeriodEnd: syncResult.currentPeriodEnd,
+            cancelAt: syncResult.cancelAt,
+            canceledAt: syncResult.canceledAt,
+            cancelAtPeriodEnd: syncResult.cancelAtPeriodEnd,
+          }}
+        />
+      ) : null}
       <section className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-6 rounded-3xl border border-limeglow-400/40 bg-base-900/70 p-8 text-center shadow-[0_25px_70px_-25px_rgba(157,242,85,0.3)]">
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-limeglow-400/10">
           <svg className="h-6 w-6 text-limeglow-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
