@@ -4,9 +4,13 @@ import { BillingManagement } from './_components/BillingManagement'
 import { BillingUpgrade } from './_components/BillingUpgrade'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
+import {
+  resolvePaidAccess as resolvePaidAccessFromSubscription,
+  syncWorkspaceSubscription,
+  type SubscriptionRow
+} from '@/lib/subscription'
 
 const ACCOUNT_MEMBERS = 'account_members' as const
-const SUBSCRIPTIONS = 'subscriptions' as const
 
 const PLAN_DETAILS: Record<
   string,
@@ -27,8 +31,6 @@ const PLAN_DETAILS: Record<
 
 const DEFAULT_PLAN_DETAIL = PLAN_DETAILS['pro']
 
-const ACTIVE_STATUSES = new Set(['active', 'trialing', 'past_due'])
-
 const STATUS_APPEARANCE: Record<
   string,
   {
@@ -41,6 +43,7 @@ const STATUS_APPEARANCE: Record<
   past_due: { label: 'Past due', tone: 'warning' },
   unpaid: { label: 'Unpaid', tone: 'danger' },
   canceled: { label: 'Cancelled', tone: 'danger' },
+  cancelled: { label: 'Cancelled', tone: 'danger' },
   incomplete: { label: 'Incomplete', tone: 'warning' },
   incomplete_expired: { label: 'Incomplete', tone: 'warning' }
 }
@@ -48,11 +51,6 @@ const STATUS_APPEARANCE: Record<
 type AccountMembershipRow = Pick<
   Database['public']['Tables']['account_members']['Row'],
   'account_id' | 'role'
->
-
-type SubscriptionRow = Pick<
-  Database['public']['Tables']['subscriptions']['Row'],
-  'plan_code' | 'status' | 'current_period_end' | 'provider_subscription_id' | 'provider_customer_id' | 'created_at'
 >
 
 type BillingState = {
@@ -94,25 +92,14 @@ const getBillingState = cache(async (): Promise<BillingState> => {
     return { membershipRole: membership?.role ?? null, subscription: null }
   }
 
-  const {
-    data: subscription,
-    error: subscriptionError
-  } = await supabase
-    .from(SUBSCRIPTIONS)
-    .select('plan_code, status, current_period_end, provider_subscription_id, provider_customer_id, created_at')
-    .eq('account_id', accountId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<SubscriptionRow>()
-
-  if (subscriptionError) {
-    console.error('billing subscription lookup error:', subscriptionError)
-    return { membershipRole: membership?.role ?? null, subscription: null }
-  }
+  const subscription = await syncWorkspaceSubscription({
+    supabase,
+    accountId,
+  })
 
   return {
     membershipRole: membership?.role ?? null,
-    subscription: subscription ?? null
+    subscription
   }
 })
 
@@ -136,7 +123,8 @@ const resolveStatusAppearance = (status: string | null | undefined) => {
   }
 
   const normalized = status.toLowerCase()
-  return STATUS_APPEARANCE[normalized] ?? {
+  const normalizedForAppearance = normalized === 'cancelled' ? 'canceled' : normalized
+  return STATUS_APPEARANCE[normalizedForAppearance] ?? {
     label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
     tone: 'default' as const
   }
@@ -145,16 +133,32 @@ const resolveStatusAppearance = (status: string | null | undefined) => {
 export default async function BillingPage() {
   const { subscription } = await getBillingState()
 
-  const planDetail = subscription ? PLAN_DETAILS[subscription.plan_code] ?? DEFAULT_PLAN_DETAIL : DEFAULT_PLAN_DETAIL
-  const hasSubscription = Boolean(subscription)
-  const normalizedStatus = subscription?.status ? subscription.status.toLowerCase() : null
-  const hasActiveSubscription = normalizedStatus ? ACTIVE_STATUSES.has(normalizedStatus) : false
-  const isCanceledSubscription = normalizedStatus === 'canceled'
+  const rawStatus = subscription?.status ?? null
+  const normalizedStatus = rawStatus ? rawStatus.toLowerCase() : null
+  const isCanceledSubscription = normalizedStatus === 'canceled' || normalizedStatus === 'cancelled'
+  const hasPaidAccess = resolvePaidAccessFromSubscription(
+    rawStatus,
+    subscription?.current_period_end ?? null,
+    subscription?.cancel_at ?? null,
+  )
+  const subscriptionForDisplay = hasPaidAccess ? subscription : null
+  const planDetail = subscriptionForDisplay
+    ? PLAN_DETAILS[subscriptionForDisplay.plan_code] ?? DEFAULT_PLAN_DETAIL
+    : DEFAULT_PLAN_DETAIL
+  const hasSubscription = Boolean(subscriptionForDisplay)
   const statusAppearance = resolveStatusAppearance(normalizedStatus)
-  const nextBillingLabel = formatBillingDate(subscription?.current_period_end ?? null)
+  const normalizedStatusForDisplay = normalizedStatus === 'canceled' ? 'cancelled' : normalizedStatus
+  const statusValueForDisplay = normalizedStatusForDisplay ?? 'unknown'
+  const nextBillingReference =
+    subscriptionForDisplay?.current_period_end ??
+    subscriptionForDisplay?.cancel_at ??
+    subscription?.current_period_end ??
+    subscription?.cancel_at ??
+    null
+  const nextBillingLabel = formatBillingDate(nextBillingReference)
   const cancellationNotice =
-    isCanceledSubscription && nextBillingLabel
-      ? `Your TwinMind Premium plan will remain active until ${nextBillingLabel}. You can reactivate anytime from the billing center.`
+    (normalizedStatus === 'canceled' || normalizedStatus === 'cancelled') && nextBillingLabel
+      ? `Your TwinMind Premium plan has been cancelled. It will remain active until ${nextBillingLabel}. You can reactivate anytime from the billing center.`
       : null
 
   const pageTitle = hasSubscription
@@ -184,20 +188,13 @@ export default async function BillingPage() {
             planDescription={planDetail.description}
             statusLabel={statusAppearance.label}
             statusTone={statusAppearance.tone}
-            statusValue={normalizedStatus ?? 'unknown'}
+            statusValue={statusValueForDisplay}
             nextBillingDateLabel={nextBillingLabel}
-            nextBillingDateIso={subscription?.current_period_end ?? null}
-            subscriptionId={subscription?.provider_subscription_id ?? null}
-            canManageBilling={Boolean(subscription?.provider_customer_id)}
+            nextBillingDateIso={nextBillingReference}
+            subscriptionId={subscriptionForDisplay?.provider_subscription_id ?? null}
+            canManageBilling={Boolean(subscriptionForDisplay?.provider_customer_id)}
             cancellationNotice={cancellationNotice}
           />
-          {!hasActiveSubscription ? (
-            <BillingUpgrade
-              planName={planDetail.name}
-              planPrice={planDetail.price}
-              planPriceNote={planDetail.priceNote}
-            />
-          ) : null}
         </>
       ) : (
         <BillingUpgrade planName={planDetail.name} planPrice={planDetail.price} planPriceNote={planDetail.priceNote} />
