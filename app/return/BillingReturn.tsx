@@ -54,9 +54,11 @@ async function resolveSubscriptionMetadata(
     subscriptionId = session.subscription.id
   }
 
+  const stripeSubscription = subscription as Stripe.Subscription | null
+
   const currentPeriodEnd =
-    typeof subscription?.current_period_end === 'number'
-      ? new Date(subscription.current_period_end * 1000).toISOString()
+    typeof stripeSubscription?.current_period_end === 'number'
+      ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
       : null
 
   let customerId: string | null = null
