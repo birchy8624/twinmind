@@ -16,12 +16,38 @@ if (!webhookSecret) {
   throw new Error('STRIPE_WEBHOOK_SECRET is not set in environment variables')
 }
 
+type SubscriptionWithLegacyFields = Stripe.Subscription & {
+  current_period_end?: number | null
+}
+
 function normalizeTimestamp(timestamp?: number | null): string | null {
   if (typeof timestamp !== 'number') {
     return null
   }
 
   return new Date(timestamp * 1000).toISOString()
+}
+
+function resolveCurrentPeriodEnd(subscription: Stripe.Subscription): string | null {
+  const subscriptionWithLegacyFields = subscription as SubscriptionWithLegacyFields
+
+  if (typeof subscriptionWithLegacyFields.current_period_end === 'number') {
+    return normalizeTimestamp(subscriptionWithLegacyFields.current_period_end)
+  }
+
+  const latestItemPeriodEnd = subscription.items.data.reduce<number | null>((latest, item) => {
+    if (typeof item.current_period_end !== 'number') {
+      return latest
+    }
+
+    if (latest === null || item.current_period_end > latest) {
+      return item.current_period_end
+    }
+
+    return latest
+  }, null)
+
+  return normalizeTimestamp(latestItemPeriodEnd)
 }
 
 function serializeCancellationDetails(
@@ -43,7 +69,7 @@ async function updateSubscriptionRecord(subscription: Stripe.Subscription) {
     status: normalizedStatus,
     provider: 'stripe',
     provider_subscription_id: subscription.id,
-    current_period_end: normalizeTimestamp(subscription.current_period_end),
+    current_period_end: resolveCurrentPeriodEnd(subscription),
     cancel_at: normalizeTimestamp(subscription.cancel_at),
     canceled_at: normalizeTimestamp(subscription.canceled_at),
     cancel_at_period_end:
