@@ -45,9 +45,12 @@ type RevenuePerformanceItem = {
   paid: number
 }
 
-type VelocityItem = {
-  stage: string
-  days: number
+type StaleProject = {
+  id: string
+  name: string
+  client: string
+  lastUpdatedAt: string | null
+  daysSinceUpdate: number | null
 }
 
 type UpcomingProject = {
@@ -109,7 +112,7 @@ export async function GET() {
         pipelineOverview: [],
         revenuePerformance: [],
         winRate: { quotes: 0, paid: 0 },
-        velocityByStage: [],
+        staleProjects: [],
         upcomingProjects: [],
         activityFeed: [],
       })
@@ -156,7 +159,7 @@ export async function GET() {
           pipelineOverview: [],
           revenuePerformance: [],
           winRate: { quotes: 0, paid: 0 },
-          velocityByStage: [],
+          staleProjects: [],
           upcomingProjects: [],
           activityFeed: [],
         })
@@ -302,74 +305,100 @@ export async function GET() {
       }
     })()
 
-    const velocityPromise = (async (): Promise<VelocityItem[]> => {
-      let velocityQuery = supabase
-        .from('project_stage_events')
-        .select('project_id, from_status, to_status, changed_at')
-        .not('changed_at', 'is', null)
-        .order('project_id', { ascending: true })
-        .order('changed_at', { ascending: true })
+    const staleProjectsPromise = (async (): Promise<StaleProject[]> => {
+      let projectsQuery = supabase
+        .from('projects')
+        .select('id, name, clients:client_id(name)')
+        .eq('archived', false)
 
       if (accessibleProjectIds) {
-        velocityQuery = velocityQuery.in('project_id', accessibleProjectIds)
+        projectsQuery = projectsQuery.in('id', accessibleProjectIds)
       }
 
-      const { data, error } = await velocityQuery.returns<
+      const { data: projectData, error: projectError } = await projectsQuery.returns<
+        Array<{
+          id: string | null
+          name: string | null
+          clients: { name: string | null } | null
+        }> | null
+      >()
+
+      if (projectError) {
+        throw projectError
+      }
+
+      const projects = (Array.isArray(projectData) ? projectData : []).filter(
+        (project): project is { id: string; name: string | null; clients: { name: string | null } | null } =>
+          typeof project?.id === 'string' && project.id.length > 0,
+      )
+
+      if (projects.length === 0) {
+        return []
+      }
+
+      const projectIds = projects.map((project) => project.id)
+
+      const eventsQuery = supabase
+        .from('project_stage_events')
+        .select('project_id, changed_at')
+        .not('changed_at', 'is', null)
+        .in('project_id', projectIds)
+        .order('project_id', { ascending: true })
+        .order('changed_at', { ascending: false })
+
+      const { data: eventData, error: eventsError } = await eventsQuery.returns<
         Array<{
           project_id: string | null
-          from_status: Database['public']['Enums']['project_status'] | null
-          to_status: Database['public']['Enums']['project_status'] | null
           changed_at: string | null
         }> | null
       >()
 
-      if (error) {
-        throw error
+      if (eventsError) {
+        throw eventsError
       }
 
-      const lastStageByProject = new Map<string, { stage: Database['public']['Enums']['project_status']; changedAt: Date }>()
-      const transitionTotals = new Map<string, { totalMs: number; count: number }>()
-
-      const events = Array.isArray(data) ? data : []
+      const lastEventByProject = new Map<string, Date>()
+      const events = Array.isArray(eventData) ? eventData : []
 
       for (const event of events) {
         const projectId = event.project_id
-        const toStatus = event.to_status as Database['public']['Enums']['project_status'] | null
-        const fromStatus = event.from_status as Database['public']['Enums']['project_status'] | null
         const changedAt = event.changed_at ? new Date(event.changed_at) : null
 
-        if (!projectId || !toStatus || !changedAt) {
+        if (!projectId || !changedAt) {
           continue
         }
 
-        const previous = lastStageByProject.get(projectId)
-        if (previous && fromStatus && previous.stage === fromStatus) {
-          const diffMs = changedAt.getTime() - previous.changedAt.getTime()
-          if (diffMs > 0) {
-            const key = `${fromStatus}→${toStatus}`
-            const current = transitionTotals.get(key) ?? { totalMs: 0, count: 0 }
-            current.totalMs += diffMs
-            current.count += 1
-            transitionTotals.set(key, current)
-          }
+        if (!lastEventByProject.has(projectId)) {
+          lastEventByProject.set(projectId, changedAt)
         }
-
-        lastStageByProject.set(projectId, { stage: toStatus, changedAt })
       }
 
-      return Array.from(transitionTotals.entries())
-        .map(([key, stats]) => {
-          const avgDays = stats.totalMs / stats.count / MS_IN_DAY
-          const [fromStatus, toStatus] = key.split('→')
+      const now = new Date()
+      const staleThresholdMs = 7 * MS_IN_DAY
+
+      const staleProjects = projects
+        .map((project) => {
+          const lastChanged = lastEventByProject.get(project.id) ?? null
+          const diffMs = lastChanged ? now.getTime() - lastChanged.getTime() : null
+          const daysSinceUpdate =
+            diffMs !== null ? Math.max(0, Math.floor(diffMs / MS_IN_DAY)) : null
+
           return {
-            stage: `${fromStatus} → ${toStatus}`,
-            days: Number(avgDays.toFixed(1)),
-            count: stats.count,
+            id: project.id,
+            name: project.name?.trim() || 'Untitled project',
+            client: project.clients?.name?.trim() || 'Unknown client',
+            lastUpdatedAt: lastChanged ? lastChanged.toISOString() : null,
+            daysSinceUpdate,
+            isStale: diffMs === null || diffMs > staleThresholdMs,
+            sortWeight: diffMs === null ? Number.POSITIVE_INFINITY : diffMs,
           }
         })
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5)
-        .map(({ stage, days }) => ({ stage, days }))
+        .filter((project) => project.isStale)
+        .sort((a, b) => b.sortWeight - a.sortWeight)
+        .slice(0, 3)
+        .map(({ sortWeight: _sortWeight, isStale: _isStale, ...rest }) => rest)
+
+      return staleProjects
     })()
 
     const upcomingPromise = (async (): Promise<UpcomingProject[]> => {
@@ -494,10 +523,10 @@ export async function GET() {
       })
     })()
 
-    const [pipelineOverview, revenueResult, velocityByStage, upcomingProjects, activityFeed] = await Promise.all([
+    const [pipelineOverview, revenueResult, staleProjects, upcomingProjects, activityFeed] = await Promise.all([
       pipelinePromise,
       revenuePromise,
-      velocityPromise,
+      staleProjectsPromise,
       upcomingPromise,
       activityPromise,
     ])
@@ -506,7 +535,7 @@ export async function GET() {
       pipelineOverview,
       revenuePerformance: revenueResult.revenue,
       winRate: revenueResult.winRate,
-      velocityByStage,
+      staleProjects,
       upcomingProjects,
       activityFeed,
     })

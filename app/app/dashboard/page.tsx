@@ -1,17 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import {
   fetchDashboardSummary,
@@ -19,7 +9,7 @@ import {
   type PipelineOverviewItem,
   type RevenuePerformanceItem,
   type UpcomingProject,
-  type VelocityItem,
+  type StaleProject,
   type WinRate,
 } from '@/lib/api/dashboard'
 
@@ -36,9 +26,9 @@ export default function DashboardPage() {
   const [revenueLoading, setRevenueLoading] = useState(true)
   const [revenueError, setRevenueError] = useState<string | null>(null)
 
-  const [velocityByStage, setVelocityByStage] = useState<VelocityItem[]>([])
-  const [velocityLoading, setVelocityLoading] = useState(true)
-  const [velocityError, setVelocityError] = useState<string | null>(null)
+  const [staleProjects, setStaleProjects] = useState<StaleProject[]>([])
+  const [staleLoading, setStaleLoading] = useState(true)
+  const [staleError, setStaleError] = useState<string | null>(null)
 
   const [winRate, setWinRate] = useState<WinRate | null>(null)
   const [winRateLoading, setWinRateLoading] = useState(true)
@@ -58,6 +48,16 @@ export default function DashboardPage() {
         style: 'currency',
         currency: 'USD',
         maximumFractionDigits: 0,
+      }),
+    [],
+  )
+
+  const lastUpdatedFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
       }),
     [],
   )
@@ -86,7 +86,7 @@ export default function DashboardPage() {
 
     setPipelineLoading(true)
     setRevenueLoading(true)
-    setVelocityLoading(true)
+    setStaleLoading(true)
     setWinRateLoading(true)
     setUpcomingLoading(true)
     setActivityLoading(true)
@@ -104,8 +104,8 @@ export default function DashboardPage() {
         setWinRate(data.winRate)
         setWinRateError(null)
 
-        setVelocityByStage(data.velocityByStage)
-        setVelocityError(null)
+        setStaleProjects(data.staleProjects)
+        setStaleError(null)
 
         setUpcomingProjects(data.upcomingProjects)
         setUpcomingError(null)
@@ -127,8 +127,8 @@ export default function DashboardPage() {
         setWinRate(null)
         setWinRateError('Unable to load win rate.')
 
-        setVelocityByStage([])
-        setVelocityError('Unable to load velocity data.')
+        setStaleProjects([])
+        setStaleError('Unable to load stale project data.')
 
         setUpcomingProjects([])
         setUpcomingError('Unable to load upcoming projects.')
@@ -143,7 +143,7 @@ export default function DashboardPage() {
 
         setPipelineLoading(false)
         setRevenueLoading(false)
-        setVelocityLoading(false)
+        setStaleLoading(false)
         setWinRateLoading(false)
         setUpcomingLoading(false)
         setActivityLoading(false)
@@ -161,7 +161,7 @@ export default function DashboardPage() {
     (item) => item.quoted > 0 || item.invoiced > 0 || item.paid > 0,
   )
 
-  const hasVelocityData = velocityByStage.length > 0
+  const hasStaleProjects = staleProjects.length > 0
 
   const winRatePercent =
     winRate && winRate.quotes > 0 ? Math.round((winRate.paid / winRate.quotes) * 100) : 0
@@ -303,56 +303,51 @@ export default function DashboardPage() {
         <section className="rounded-lg border border-white/10 bg-base-900/40 p-6 shadow-sm backdrop-blur-xl">
           <header className="flex items-start justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-white">Velocity</h2>
-              <p className="text-xs text-white/60">Avg days between milestones</p>
+              <h2 className="text-lg font-semibold text-white">Stale projects</h2>
+              <p className="text-xs text-white/60">No activity in over 7 days</p>
             </div>
             <span className="text-xs text-white/60">
-              {velocityLoading ? 'Loading…' : 'Based on stage transitions'}
+              {staleLoading ? 'Loading…' : 'Needs attention'}
             </span>
           </header>
-          {velocityError ? (
-            <p className="mt-6 text-sm text-red-300">{velocityError}</p>
-          ) : velocityLoading ? (
-            <p className="mt-6 text-sm text-white/60">Analyzing delivery velocity…</p>
-          ) : hasVelocityData ? (
-            <div className="mt-6 h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={velocityByStage}>
-                  <defs>
-                    <linearGradient id="velocityGradient" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="#a855f7" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="#a855f7" stopOpacity={0.1} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={chartAppearance.grid} vertical={false} />
-                  <XAxis
-                    dataKey="stage"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: chartAppearance.axis, fontSize: 12 }}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: chartAppearance.axis, fontSize: 12 }}
-                  />
-                  <Tooltip
-                    cursor={{ stroke: chartAppearance.areaCursor, strokeWidth: 1 }}
-                    formatter={(value: number | string) => `${Number(value).toFixed(1)} days`}
-                    contentStyle={{
-                      background: chartAppearance.tooltip.background,
-                      border: chartAppearance.tooltip.border,
-                      borderRadius: '0.75rem',
-                      color: chartAppearance.tooltip.color,
-                      boxShadow: chartAppearance.tooltip.boxShadow,
-                    }}
-                  />
-                  <Area type="monotone" dataKey="days" stroke="#a855f7" fill="url(#velocityGradient)" strokeWidth={2.5} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+          {staleError ? (
+            <p className="mt-6 text-sm text-red-300">{staleError}</p>
+          ) : staleLoading ? (
+            <p className="mt-6 text-sm text-white/60">Identifying inactive projects…</p>
+          ) : hasStaleProjects ? (
+            <ul className="mt-6 space-y-4">
+              {staleProjects.map((project) => {
+                const days = project.daysSinceUpdate
+                const lastUpdatedDate = project.lastUpdatedAt ? new Date(project.lastUpdatedAt) : null
+                const recencyLabel =
+                  days === null
+                    ? 'No updates recorded'
+                    : days === 1
+                      ? 'Last update 1 day ago'
+                      : `Last update ${days} days ago`
+
+                return (
+                  <li key={project.id} className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-white">{project.name}</p>
+                      <p className="text-xs text-white/60">{project.client}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-medium text-limeglow-300">
+                        {days === null ? 'No updates logged' : `${days} day${days === 1 ? '' : 's'} since update`}
+                      </p>
+                      <p className="text-xs text-white/60">
+                        {lastUpdatedDate
+                          ? `${recencyLabel} · ${lastUpdatedFormatter.format(lastUpdatedDate)}`
+                          : recencyLabel}
+                      </p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
           ) : (
-            <p className="mt-6 text-sm text-white/60">No stage transitions logged yet.</p>
+            <p className="mt-6 text-sm text-white/60">All projects have been updated within the last week.</p>
           )}
         </section>
 
