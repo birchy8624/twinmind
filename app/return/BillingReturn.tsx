@@ -181,7 +181,7 @@ export default async function BillingReturn({
             <h1 className="text-2xl font-semibold text-white">We need a hand to finish your upgrade</h1>
             <p className="text-sm text-white/70">
               {syncError}{' '}
-              You can email <a className="text-white underline" href="mailto:billing@twinmind.app">billing@twinmind.app</a> and we&apos;ll make sure everything is squared away.
+                You can email <a className="text-white underline" href="mailto:billing@twinminds.studio">billing@twinminds.studio</a> and we&apos;ll make sure everything is squared away.
             </p>
           </div>
           <Link

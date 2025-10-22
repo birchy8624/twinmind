@@ -1248,7 +1248,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       }
       const billedFrom = {
         label: 'From',
-        lines: ['Twinmind HQ', '55 Innovation Way, Metropolis', 'billing@twinmind.app']
+        lines: ['Twinmind HQ', '55 Innovation Way, Metropolis', 'billing@twinminds.studio']
       }
 
       const projectName = project?.name ?? 'Untitled project'
@@ -1469,7 +1469,7 @@ export default function ProjectOverviewPage({ params }: ProjectOverviewPageProps
       const paymentInfoY = summaryBoxY - 32
       addText('Payment notes', tableLeft, paymentInfoY, 12, [71, 85, 105])
       addText('Please settle the total within 14 days via bank transfer.', tableLeft, paymentInfoY - 18, 11, [107, 114, 128])
-      addText('Questions? Reach us at billing@twinmind.app', tableLeft, paymentInfoY - 36, 11, [107, 114, 128])
+      addText('Questions? Reach us at billing@twinminds.studio', tableLeft, paymentInfoY - 36, 11, [107, 114, 128])
 
       const streamContent = `${streamCommands.join('\n')}\n`
       const encoder = new TextEncoder()
