@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
@@ -327,21 +328,29 @@ export default function DashboardPage() {
                       : `Last update ${days} days ago`
 
                 return (
-                  <li key={project.id} className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-medium text-white">{project.name}</p>
-                      <p className="text-xs text-white/60">{project.client}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs font-medium text-limeglow-300">
-                        {days === null ? 'No updates logged' : `${days} day${days === 1 ? '' : 's'} since update`}
-                      </p>
-                      <p className="text-xs text-white/60">
-                        {lastUpdatedDate
-                          ? `${recencyLabel} · ${lastUpdatedFormatter.format(lastUpdatedDate)}`
-                          : recencyLabel}
-                      </p>
-                    </div>
+                  <li key={project.id}>
+                    <Link
+                      href={`/app/projects/${project.id}`}
+                      aria-label={`View project ${project.name}`}
+                      className="group flex items-center justify-between gap-4 rounded-lg border border-transparent px-3 py-2 transition hover:border-white/10 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-limeglow-400"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-white group-hover:text-limeglow-200">
+                          {project.name}
+                        </p>
+                        <p className="text-xs text-white/60">{project.client}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-medium text-limeglow-300">
+                          {days === null ? 'No updates logged' : `${days} day${days === 1 ? '' : 's'} since update`}
+                        </p>
+                        <p className="text-xs text-white/60">
+                          {lastUpdatedDate
+                            ? `${recencyLabel} · ${lastUpdatedFormatter.format(lastUpdatedDate)}`
+                            : recencyLabel}
+                        </p>
+                      </div>
+                    </Link>
                   </li>
                 )
               })}
@@ -430,14 +439,20 @@ export default function DashboardPage() {
           ) : upcomingProjects.length > 0 ? (
             <ul className="mt-6 space-y-4">
               {upcomingProjects.slice(0, 4).map((project) => (
-                <li key={project.id} className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-white">{project.name}</p>
-                    <p className="text-xs text-white/60">{project.client}</p>
-                  </div>
-                  <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
-                    {project.dueIn === null ? 'Date TBC' : `Due in ${project.dueIn} days`}
-                  </span>
+                <li key={project.id}>
+                  <Link
+                    href={`/app/projects/${project.id}`}
+                    aria-label={`View project ${project.name}`}
+                    className="group flex items-center justify-between gap-4 rounded-lg border border-transparent px-3 py-2 transition hover:border-white/10 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-limeglow-400"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-white group-hover:text-limeglow-200">{project.name}</p>
+                      <p className="text-xs text-white/60">{project.client}</p>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
+                      {project.dueIn === null ? 'Date TBC' : `Due in ${project.dueIn} days`}
+                    </span>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -463,15 +478,23 @@ export default function DashboardPage() {
           ) : activityFeed.length > 0 ? (
             <ul className="mt-6 space-y-4">
               {activityFeed.map((activity) => (
-                <li key={activity.id} className="flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4">
-                  <div className="mt-1 h-2 w-2 rounded-full bg-limeglow-500" />
-                  <div>
-                    <p className="text-sm text-white">
-                      <span className="font-medium text-white">{activity.author}</span>{' '}
-                      {activity.description}
-                    </p>
-                    <p className="mt-1 text-xs text-white/60">{activity.timeAgo}</p>
-                  </div>
+                <li key={activity.id}>
+                  <Link
+                    href={`/app/projects/${activity.projectId}`}
+                    aria-label={`View project ${activity.projectName}`}
+                    className="group flex items-start gap-4 rounded-lg border border-white/5 bg-white/5 p-4 transition hover:border-limeglow-400/40 hover:bg-limeglow-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-limeglow-400"
+                  >
+                    <div className="mt-1 h-2 w-2 rounded-full bg-limeglow-500 group-hover:bg-limeglow-300" />
+                    <div>
+                      <p className="text-sm text-white">
+                        <span className="font-medium text-white">{activity.author}</span>{' '}
+                        {activity.description}
+                      </p>
+                      <p className="mt-1 text-xs text-white/60">
+                        {activity.projectName} · {activity.timeAgo}
+                      </p>
+                    </div>
+                  </Link>
                 </li>
               ))}
             </ul>

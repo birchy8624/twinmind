@@ -62,6 +62,8 @@ type UpcomingProject = {
 
 type ActivityFeedItem = {
   id: string
+  projectId: string
+  projectName: string
   author: string
   description: string
   timeAgo: string
@@ -499,28 +501,37 @@ export async function GET() {
 
       const stageEvents = Array.isArray(data) ? data : []
 
-      return stageEvents.map((entry) => {
-        const createdAt = entry.changed_at ? new Date(entry.changed_at) : null
-        const actor = entry.actor?.full_name?.trim()
-        const projectName = entry.projects?.name?.trim() || 'Project update'
-        const toStatus = entry.to_status ?? null
-        const fromStatus = entry.from_status ?? null
+      return stageEvents
+        .map((entry) => {
+          const projectId = entry.projects?.id?.trim()
+          if (!projectId) {
+            return null
+          }
 
-        let changeSummary = 'was updated'
+          const createdAt = entry.changed_at ? new Date(entry.changed_at) : null
+          const actor = entry.actor?.full_name?.trim()
+          const projectName = entry.projects?.name?.trim() || 'Project update'
+          const toStatus = entry.to_status ?? null
+          const fromStatus = entry.from_status ?? null
 
-        if (toStatus && fromStatus && fromStatus !== toStatus) {
-          changeSummary = `moved from ${fromStatus} to ${toStatus}`
-        } else if (toStatus) {
-          changeSummary = `moved into ${toStatus}`
-        }
+          let changeSummary = 'was updated'
 
-        return {
-          id: entry.id ?? `${entry.projects?.id ?? 'activity'}-${entry.changed_at ?? Date.now().toString()}`,
-          author: actor && actor.length > 0 ? actor : 'System',
-          description: `${projectName} · ${changeSummary}`,
-          timeAgo: createdAt ? formatTimeAgo(createdAt) : 'Unknown time',
-        }
-      })
+          if (toStatus && fromStatus && fromStatus !== toStatus) {
+            changeSummary = `moved from ${fromStatus} to ${toStatus}`
+          } else if (toStatus) {
+            changeSummary = `moved into ${toStatus}`
+          }
+
+          return {
+            id: entry.id ?? `${projectId}-${entry.changed_at ?? Date.now().toString()}`,
+            projectId,
+            projectName,
+            author: actor && actor.length > 0 ? actor : 'System',
+            description: changeSummary,
+            timeAgo: createdAt ? formatTimeAgo(createdAt) : 'Unknown time',
+          }
+        })
+        .filter((item): item is ActivityFeedItem => item !== null)
     })()
 
     const [pipelineOverview, revenueResult, staleProjects, upcomingProjects, activityFeed] = await Promise.all([
