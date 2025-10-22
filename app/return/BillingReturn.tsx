@@ -4,6 +4,11 @@ import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { stripe } from '@/lib/stripe'
+import {
+  normalizeStripeTimestamp,
+  resolveSubscriptionPeriodEnd,
+  serializeSubscriptionCancellationDetails,
+} from '@/lib/stripe-subscription'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
 
@@ -27,6 +32,10 @@ type SubscriptionSyncResult = {
   subscriptionId: string | null
   currentPeriodEnd: string | null
   status: string
+  cancelAt: string | null
+  canceledAt: string | null
+  cancelAtPeriodEnd: boolean | null
+  cancellationDetails: Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
 }
 
 function isDeletedCustomer(
@@ -56,27 +65,7 @@ async function resolveSubscriptionMetadata(
     subscriptionId = session.subscription.id
   }
 
-  const stripeSubscription = subscription as Stripe.Subscription | null
-
-  let currentPeriodEnd: string | null = null
-
-  if (stripeSubscription?.items?.data?.length) {
-    const latestPeriodEnd = stripeSubscription.items.data.reduce<number | null>((latest, item) => {
-      if (typeof item.current_period_end !== 'number') {
-        return latest
-      }
-
-      if (latest === null || item.current_period_end > latest) {
-        return item.current_period_end
-      }
-
-      return latest
-    }, null)
-
-    if (typeof latestPeriodEnd === 'number') {
-      currentPeriodEnd = new Date(latestPeriodEnd * 1000).toISOString()
-    }
-  }
+  const currentPeriodEnd = resolveSubscriptionPeriodEnd(subscription)
 
   let customerId: string | null = null
 
@@ -89,11 +78,24 @@ async function resolveSubscriptionMetadata(
   const resolvedStatus =
     subscription?.status ?? (session.status === 'complete' ? 'active' : session.status ?? 'active')
 
+  const cancelAt = normalizeStripeTimestamp(subscription?.cancel_at)
+  const canceledAt = normalizeStripeTimestamp(subscription?.canceled_at)
+  const cancelAtPeriodEnd =
+    typeof subscription?.cancel_at_period_end === 'boolean'
+      ? subscription.cancel_at_period_end
+      : null
+
+  const cancellationDetails = serializeSubscriptionCancellationDetails(subscription?.cancellation_details) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
+
   return {
     customerId,
     subscriptionId,
     currentPeriodEnd,
     status: resolvedStatus,
+    cancelAt,
+    canceledAt,
+    cancelAtPeriodEnd,
+    cancellationDetails,
   }
 }
 
@@ -137,6 +139,10 @@ async function syncWorkspaceSubscription({
     provider_customer_id: metadata.customerId,
     provider_subscription_id: metadata.subscriptionId,
     current_period_end: metadata.currentPeriodEnd,
+    cancel_at: metadata.cancelAt,
+    canceled_at: metadata.canceledAt,
+    cancel_at_period_end: metadata.cancelAtPeriodEnd,
+    cancellation_details: metadata.cancellationDetails,
   }
 
   const { data: existingSubscription, error: fetchError } = await supabase
@@ -167,6 +173,10 @@ async function syncWorkspaceSubscription({
       provider_customer_id: metadata.customerId,
       provider_subscription_id: metadata.subscriptionId,
       current_period_end: metadata.currentPeriodEnd,
+      cancel_at: metadata.cancelAt,
+      canceled_at: metadata.canceledAt,
+      cancel_at_period_end: metadata.cancelAtPeriodEnd,
+      cancellation_details: metadata.cancellationDetails,
     }
 
     const { error: insertError } = await supabase.from(SUBSCRIPTIONS).insert(insertPayload)

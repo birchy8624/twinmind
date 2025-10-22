@@ -679,6 +679,10 @@ export type Database = {
       subscriptions: {
         Row: {
           account_id: string
+          cancel_at: string | null
+          cancel_at_period_end: boolean | null
+          canceled_at: string | null
+          cancellation_details: Json | null
           created_at: string | null
           current_period_end: string | null
           id: string
@@ -690,6 +694,10 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean | null
+          canceled_at?: string | null
+          cancellation_details?: Json | null
           created_at?: string | null
           current_period_end?: string | null
           id?: string
@@ -701,6 +709,10 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean | null
+          canceled_at?: string | null
+          cancellation_details?: Json | null
           created_at?: string | null
           current_period_end?: string | null
           id?: string
