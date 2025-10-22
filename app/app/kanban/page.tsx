@@ -7,6 +7,8 @@ import {
   useRef,
   useState,
   type DragEvent,
+  type ChangeEvent,
+  type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode
@@ -14,7 +16,12 @@ import {
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 
-import { fetchKanbanProjects, updateProjectStatus, type KanbanProject as ApiKanbanProject } from '@/lib/api/projects'
+import {
+  addProjectLabel,
+  fetchKanbanProjects,
+  updateProjectStatus,
+  type KanbanProject as ApiKanbanProject,
+} from '@/lib/api/projects'
 import type { Database } from '@/types/supabase'
 
 import { FilterDropdown } from '../_components/filter-dropdown'
@@ -63,10 +70,16 @@ type DragState = {
 }
 
 type LabelColors = Record<string, string>
+type LabelComposerState = {
+  projectId: string | null
+  value: string
+  isSubmitting: boolean
+}
 
 const LABEL_COLOR_STORAGE_KEY = 'twinmind-kanban-label-colors'
 const PRESET_LABEL_COLORS = ['#F97316', '#F59E0B', '#10B981', '#3B82F6', '#A855F7'] as const
 const DEFAULT_LABEL_COLOR = '#334155'
+const MAX_LABEL_LENGTH = 20
 
 function normalizeHexColor(value: string | null | undefined): string {
   if (typeof value !== 'string') {
@@ -383,8 +396,116 @@ export default function KanbanPage() {
   const [error, setError] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [labelColors, setLabelColors] = useState<LabelColors>({})
+  const [labelComposer, setLabelComposer] = useState<LabelComposerState>({
+    projectId: null,
+    value: '',
+    isSubmitting: false,
+  })
 
   const { pushToast } = useToast()
+
+  const resetLabelComposer = useCallback(() => {
+    setLabelComposer({ projectId: null, value: '', isSubmitting: false })
+  }, [])
+
+  const handleLabelComposerOpen = useCallback((projectId: string) => {
+    setLabelComposer((current) => ({
+      projectId,
+      value: current.projectId === projectId ? current.value : '',
+      isSubmitting: false,
+    }))
+  }, [])
+
+  const handleLabelComposerInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const { value } = event.target
+    setLabelComposer((current) => ({ ...current, value }))
+  }, [])
+
+  const handleLabelComposerCancel = useCallback(() => {
+    resetLabelComposer()
+  }, [resetLabelComposer])
+
+  const handleLabelComposerSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+
+      if (!labelComposer.projectId) {
+        return
+      }
+
+      const normalizedInput = labelComposer.value.trim().replace(/\s+/g, ' ')
+
+      if (!normalizedInput) {
+        pushToast({
+          title: 'Label required',
+          description: 'Enter a label name before saving.',
+          variant: 'error',
+        })
+        return
+      }
+
+      if (normalizedInput.length > MAX_LABEL_LENGTH) {
+        pushToast({
+          title: 'Label too long',
+          description: `Labels must be ${MAX_LABEL_LENGTH} characters or fewer.`,
+          variant: 'error',
+        })
+        return
+      }
+
+      setLabelComposer((current) => ({ ...current, isSubmitting: true }))
+
+      try {
+        const { project } = await addProjectLabel(labelComposer.projectId, normalizedInput)
+
+        const nextLabels = Array.isArray(project.labels)
+          ? project.labels.filter((label): label is string => typeof label === 'string' && label.length > 0)
+          : []
+
+        setProjects((current) => {
+          const updated = new Map(current)
+          const existing = updated.get(project.id)
+          if (existing) {
+            updated.set(project.id, { ...existing, labels: nextLabels })
+          }
+          return updated
+        })
+
+        resetLabelComposer()
+
+        pushToast({
+          title: 'Label added',
+          description: `Added "${normalizedInput}" to the project.`,
+          variant: 'success',
+        })
+      } catch (cause) {
+        const message =
+          cause instanceof Error && cause.message
+            ? cause.message
+            : 'We could not update the project labels. Please try again.'
+
+        console.error('Failed to add project label', cause)
+        pushToast({
+          title: 'Failed to add label',
+          description: message,
+          variant: 'error',
+        })
+        setLabelComposer((current) => ({ ...current, isSubmitting: false }))
+      }
+    },
+    [labelComposer.projectId, labelComposer.value, pushToast, resetLabelComposer]
+  )
+
+  useEffect(() => {
+    if (!labelComposer.projectId) {
+      return
+    }
+
+    const project = projects.get(labelComposer.projectId)
+    if (!project || project.labels.length > 0) {
+      resetLabelComposer()
+    }
+  }, [labelComposer.projectId, projects, resetLabelComposer])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -991,9 +1112,66 @@ export default function KanbanPage() {
                         </span>
                       ))}
                       {project.labels.length === 0 && project.tags.length === 0 ? (
-                        <span className="rounded-full bg-white/5 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-white/40">
-                          No labels
-                        </span>
+                        labelComposer.projectId === id ? (
+                          <form
+                            className="flex items-center gap-1 rounded-full bg-white/5 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-white/80"
+                            onSubmit={handleLabelComposerSubmit}
+                          >
+                            <label className="sr-only" htmlFor={`${id}-label-input`}>
+                              Add a label
+                            </label>
+                            <input
+                              id={`${id}-label-input`}
+                              type="text"
+                              autoFocus
+                              value={labelComposer.value}
+                              onChange={handleLabelComposerInputChange}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                  event.preventDefault()
+                                  handleLabelComposerCancel()
+                                }
+                              }}
+                              maxLength={MAX_LABEL_LENGTH}
+                              disabled={labelComposer.isSubmitting}
+                              className="w-24 bg-transparent text-[11px] font-medium uppercase tracking-wide text-white placeholder:text-white/40 focus:outline-none"
+                              placeholder="Add label"
+                            />
+                            <button
+                              type="submit"
+                              className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 disabled:cursor-not-allowed disabled:opacity-60"
+                              disabled={labelComposer.isSubmitting}
+                            >
+                              Add
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleLabelComposerCancel}
+                              className="rounded-full p-1 text-white/60 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                              aria-label="Cancel adding label"
+                              disabled={labelComposer.isSubmitting}
+                            >
+                              <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                                <path
+                                  d="m3 3 6 6M9 3 3 9"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                              <span className="sr-only">Cancel</span>
+                            </button>
+                          </form>
+                        ) : (
+                          <button
+                            type="button"
+                            className="rounded-full bg-white/5 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-white/60 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                            onClick={() => handleLabelComposerOpen(id)}
+                          >
+                            No labels
+                          </button>
+                        )
                       ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
