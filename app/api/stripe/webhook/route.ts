@@ -10,11 +10,15 @@ export const dynamic = 'force-dynamic'
 
 const SUBSCRIPTIONS = 'subscriptions' as const
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
+const webhookSecret = (() => {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET
 
-if (!webhookSecret) {
-  throw new Error('STRIPE_WEBHOOK_SECRET is not set in environment variables')
-}
+  if (!secret) {
+    throw new Error('STRIPE_WEBHOOK_SECRET is not set in environment variables')
+  }
+
+  return secret
+})()
 
 type SubscriptionWithLegacyFields = Stripe.Subscription & {
   current_period_end?: number | null
