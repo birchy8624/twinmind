@@ -19,7 +19,9 @@ import { useRouter } from 'next/navigation'
 import {
   addProjectLabel,
   fetchKanbanProjects,
+  removeProjectLabel,
   updateProjectStatus,
+  updateProjectLabel,
   type KanbanProject as ApiKanbanProject,
 } from '@/lib/api/projects'
 import type { Database } from '@/types/supabase'
@@ -271,11 +273,17 @@ function DropZone({ isActive, isDragging, onDrop, onDragOver, onDragLeave, child
 type LabelBadgeProps = {
   label: string
   color: string
+  isBusy: boolean
   onColorChange: (color: string) => void
+  onRename: (nextLabel: string) => Promise<void> | void
+  onRemove: () => Promise<void> | void
 }
 
-function LabelBadge({ label, color, onColorChange }: LabelBadgeProps) {
+function LabelBadge({ label, color, isBusy, onColorChange, onRename, onRemove }: LabelBadgeProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [draftLabel, setDraftLabel] = useState(label)
+  const [fieldError, setFieldError] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<'rename' | 'remove' | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -305,8 +313,76 @@ function LabelBadge({ label, color, onColorChange }: LabelBadgeProps) {
     }
   }, [isOpen])
 
+  useEffect(() => {
+    if (!isOpen) {
+      setDraftLabel(label)
+      setFieldError(null)
+      setPendingAction(null)
+    }
+  }, [isOpen, label])
+
+  useEffect(() => {
+    setDraftLabel(label)
+  }, [label])
+
   const normalizedColor = normalizeHexColor(color)
   const textColor = getReadableTextColor(normalizedColor)
+
+  const handleToggle = () => {
+    setIsOpen((current) => !current)
+  }
+
+  const handleRenameSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (isBusy || pendingAction !== null) {
+      return
+    }
+
+    const normalized = draftLabel.trim().replace(/\s+/g, ' ')
+
+    if (!normalized) {
+      setFieldError('Enter a label name before saving.')
+      return
+    }
+
+    if (normalized.length > MAX_LABEL_LENGTH) {
+      setFieldError(`Labels must be ${MAX_LABEL_LENGTH} characters or fewer.`)
+      return
+    }
+
+    if (normalized === label) {
+      setIsOpen(false)
+      return
+    }
+
+    try {
+      setFieldError(null)
+      setPendingAction('rename')
+      await onRename(normalized)
+      setIsOpen(false)
+    } catch (error) {
+      console.error('Failed to rename label', error)
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  const handleRemove = async () => {
+    if (isBusy || pendingAction !== null) {
+      return
+    }
+
+    try {
+      setPendingAction('remove')
+      await onRemove()
+      setIsOpen(false)
+    } catch (error) {
+      console.error('Failed to remove label', error)
+    } finally {
+      setPendingAction(null)
+    }
+  }
 
   return (
     <div ref={containerRef} className="relative">
@@ -314,9 +390,10 @@ function LabelBadge({ label, color, onColorChange }: LabelBadgeProps) {
         type="button"
         className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium uppercase tracking-wide shadow-sm transition hover:shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
         style={{ backgroundColor: normalizedColor, color: textColor }}
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={handleToggle}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
+        disabled={isBusy}
       >
         <span className="leading-none">{label}</span>
         <svg className="h-2.5 w-2.5 opacity-80" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -324,7 +401,7 @@ function LabelBadge({ label, color, onColorChange }: LabelBadgeProps) {
         </svg>
       </button>
       {isOpen ? (
-        <div className="absolute left-1/2 top-full z-20 mt-2 w-48 -translate-x-1/2 rounded-xl border border-white/10 bg-base-900/95 p-3 shadow-2xl backdrop-blur">
+        <div className="absolute left-1/2 top-full z-20 mt-2 w-60 -translate-x-1/2 rounded-xl border border-white/10 bg-base-900/95 p-4 shadow-2xl backdrop-blur">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/60">Label color</p>
           <div className="flex flex-wrap gap-2">
             {PRESET_LABEL_COLORS.map((preset) => {
@@ -373,7 +450,49 @@ function LabelBadge({ label, color, onColorChange }: LabelBadgeProps) {
                 onColorChange(nextColor)
               }}
               aria-label={`Choose a custom color for ${label}`}
+              disabled={isBusy || pendingAction !== null}
             />
+          </div>
+          <div className="mt-4 border-t border-white/10 pt-3">
+            <form className="space-y-2" onSubmit={handleRenameSubmit}>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-white/60" htmlFor={`label-${label}-input`}>
+                  Label name
+                </label>
+                <input
+                  id={`label-${label}-input`}
+                  type="text"
+                  value={draftLabel}
+                  onChange={(event) => {
+                    setDraftLabel(event.target.value)
+                    if (fieldError) {
+                      setFieldError(null)
+                    }
+                  }}
+                  className="w-full rounded-lg border border-white/10 bg-base-900/70 px-2 py-1 text-sm text-white placeholder:text-white/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  maxLength={MAX_LABEL_LENGTH}
+                  disabled={isBusy || pendingAction !== null}
+                />
+                {fieldError ? <p className="text-[11px] font-medium text-rose-300">{fieldError}</p> : null}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isBusy || pendingAction !== null}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 rounded-lg bg-rose-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-rose-200 transition hover:bg-rose-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/60 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={handleRemove}
+                  disabled={isBusy || pendingAction !== null}
+                >
+                  Remove
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}
@@ -401,6 +520,7 @@ export default function KanbanPage() {
     value: '',
     isSubmitting: false,
   })
+  const [activeLabelMutation, setActiveLabelMutation] = useState<{ projectId: string; label: string } | null>(null)
 
   const { pushToast } = useToast()
 
@@ -674,6 +794,143 @@ export default function KanbanPage() {
       return { ...current, [label]: normalized }
     })
   }, [])
+
+  const handleLabelRename = useCallback(
+    async (projectId: string, currentLabel: string, nextLabelInput: string) => {
+      const normalized = nextLabelInput.trim().replace(/\s+/g, ' ')
+
+      if (!normalized) {
+        throw new Error('Label required')
+      }
+
+      if (normalized.length > MAX_LABEL_LENGTH) {
+        throw new Error(`Labels must be ${MAX_LABEL_LENGTH} characters or fewer.`)
+      }
+
+      if (normalized === currentLabel) {
+        return
+      }
+
+      setActiveLabelMutation({ projectId, label: currentLabel })
+
+      try {
+        const { project } = await updateProjectLabel(projectId, currentLabel, normalized)
+
+        const nextLabels = Array.isArray(project.labels)
+          ? project.labels.filter((label): label is string => typeof label === 'string' && label.length > 0)
+          : []
+
+        setProjects((current) => {
+          const updated = new Map(current)
+          const existing = updated.get(project.id)
+          if (existing) {
+            updated.set(project.id, { ...existing, labels: nextLabels })
+          }
+          return updated
+        })
+
+        setLabelColors((current) => {
+          if (currentLabel === normalized) {
+            return current
+          }
+
+          const next = { ...current }
+          const existingColor = current[currentLabel] ?? getDefaultColorForLabel(currentLabel)
+          const normalizedColor = normalizeHexColor(existingColor)
+          delete next[currentLabel]
+          next[normalized] = normalizedColor
+          return next
+        })
+
+        setLabelFilter((current) => {
+          if (
+            current !== 'all' &&
+            current.localeCompare(currentLabel, undefined, { sensitivity: 'accent' }) === 0
+          ) {
+            return normalized
+          }
+          return current
+        })
+
+        pushToast({
+          title: 'Label updated',
+          description: `Renamed the label to "${normalized}".`,
+          variant: 'success',
+        })
+      } catch (cause) {
+        const message =
+          cause instanceof Error && cause.message
+            ? cause.message
+            : 'We could not update the project labels. Please try again.'
+
+        console.error('Failed to rename project label', cause)
+        pushToast({
+          title: 'Failed to update label',
+          description: message,
+          variant: 'error',
+        })
+        throw cause
+      } finally {
+        setActiveLabelMutation(null)
+      }
+    },
+    [pushToast],
+  )
+
+  const handleLabelRemove = useCallback(
+    async (projectId: string, label: string) => {
+      setActiveLabelMutation({ projectId, label })
+
+      try {
+        const { project } = await removeProjectLabel(projectId, label)
+
+        const nextLabels = Array.isArray(project.labels)
+          ? project.labels.filter((value): value is string => typeof value === 'string' && value.length > 0)
+          : []
+
+        setProjects((current) => {
+          const updated = new Map(current)
+          const existing = updated.get(project.id)
+          if (existing) {
+            updated.set(project.id, { ...existing, labels: nextLabels })
+          }
+          return updated
+        })
+
+        setLabelFilter((current) => {
+          if (
+            current !== 'all' &&
+            current.localeCompare(label, undefined, { sensitivity: 'accent' }) === 0
+          ) {
+            return 'all'
+          }
+          return current
+        })
+
+        pushToast({
+          title: 'Label removed',
+          description: `Removed "${label}" from the project.`,
+          variant: 'success',
+        })
+      } catch (cause) {
+        const message =
+          cause instanceof Error && cause.message
+            ? cause.message
+            : 'We could not update the project labels. Please try again.'
+
+        console.error('Failed to remove project label', cause)
+        pushToast({
+          title: 'Failed to remove label',
+          description: message,
+          variant: 'error',
+        })
+        throw cause
+      } finally {
+        setActiveLabelMutation(null)
+      }
+    },
+    [pushToast],
+  )
 
   const clientOptions = useMemo(() => {
     const entries = new Map<string, string>()
@@ -1107,7 +1364,14 @@ export default function KanbanPage() {
                           key={`${id}-label-${label}`}
                           label={label}
                           color={labelColors[label] ?? getDefaultColorForLabel(label)}
+                          isBusy={
+                            !!activeLabelMutation &&
+                            activeLabelMutation.projectId === id &&
+                            activeLabelMutation.label === label
+                          }
                           onColorChange={(nextColor) => handleLabelColorChange(label, nextColor)}
+                          onRename={(nextLabel) => handleLabelRename(id, label, nextLabel)}
+                          onRemove={() => handleLabelRemove(id, label)}
                         />
                       ))}
                       {project.tags.map((tag) => (

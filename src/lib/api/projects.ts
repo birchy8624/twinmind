@@ -170,6 +170,34 @@ export async function addProjectLabel(projectId: string, label: string) {
   return parseJson<ProjectLabelsResponse>(response)
 }
 
+export async function updateProjectLabel(projectId: string, label: string, nextLabel: string) {
+  const response = await apiFetch(`/api/projects/${projectId}/labels`, {
+    method: 'PATCH',
+    body: JSON.stringify({ label, nextLabel }),
+  })
+
+  if (!response.ok) {
+    const body = await parseJson<{ message?: string }>(response)
+    throw new Error(body.message ?? 'Unable to update project labels.')
+  }
+
+  return parseJson<ProjectLabelsResponse>(response)
+}
+
+export async function removeProjectLabel(projectId: string, label: string) {
+  const response = await apiFetch(`/api/projects/${projectId}/labels`, {
+    method: 'DELETE',
+    body: JSON.stringify({ label }),
+  })
+
+  if (!response.ok) {
+    const body = await parseJson<{ message?: string }>(response)
+    throw new Error(body.message ?? 'Unable to update project labels.')
+  }
+
+  return parseJson<ProjectLabelsResponse>(response)
+}
+
 export async function updateProjectDetails(projectId: string, payload: ProjectUpdatePayload) {
   const response = await apiFetch(`/api/projects/${projectId}`, {
     method: 'PATCH',
