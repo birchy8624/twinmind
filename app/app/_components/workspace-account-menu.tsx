@@ -145,6 +145,10 @@ export function WorkspaceAccountMenu({ className, showOnMobile = false }: Worksp
 
   const isOwner = profileRole === 'owner'
 
+  const handleMenuItemSelect = () => {
+    setIsOpen(false)
+  }
+
   return (
     <details
       ref={containerRef}
@@ -161,6 +165,7 @@ export function WorkspaceAccountMenu({ className, showOnMobile = false }: Worksp
       <div className="absolute right-0 mt-2 w-48 overflow-hidden rounded-xl border border-white/10 bg-base-900/80 p-2 shadow-lg">
         <Link
           href="/app/settings"
+          onClick={handleMenuItemSelect}
           className="block rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
         >
           View profile
@@ -169,12 +174,14 @@ export function WorkspaceAccountMenu({ className, showOnMobile = false }: Worksp
           <>
             <Link
               href="/app/billing"
+              onClick={handleMenuItemSelect}
               className="block rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
             >
               Billing &amp; plans
             </Link>
             <Link
               href="/app/user-management"
+              onClick={handleMenuItemSelect}
               className="block rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"
             >
               User management
