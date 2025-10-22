@@ -215,48 +215,52 @@ export default async function BillingReturn({
 
   if (syncError) {
     return (
-      <section className="mx-auto flex min-h-[60vh] w-full max-w-xl flex-col items-center justify-center gap-6 rounded-3xl border border-rose-400/30 bg-base-900/70 p-8 text-center shadow-[0_25px_70px_-25px_rgba(255,83,112,0.25)]">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-400/10">
-          <svg className="h-6 w-6 text-rose-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-          </svg>
-        </div>
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold text-white">We need a hand to finish your upgrade</h1>
-          <p className="text-sm text-white/70">
-            {syncError}{' '}
-            You can email <a className="text-white underline" href="mailto:billing@twinmind.app">billing@twinmind.app</a> and we&apos;ll make sure everything is squared away.
-          </p>
-        </div>
-        <Link
-          href="/app/billing"
-          className="inline-flex items-center justify-center rounded-full border border-white/20 px-5 py-2 text-sm font-medium text-white transition hover:border-white/40"
-        >
-          Return to billing
-        </Link>
-      </section>
+      <main className="flex min-h-screen items-center justify-center px-6 py-24">
+        <section className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-6 rounded-3xl border border-rose-400/30 bg-base-900/70 p-8 text-center shadow-[0_25px_70px_-25px_rgba(255,83,112,0.25)]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-400/10">
+            <svg className="h-6 w-6 text-rose-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold text-white">We need a hand to finish your upgrade</h1>
+            <p className="text-sm text-white/70">
+              {syncError}{' '}
+              You can email <a className="text-white underline" href="mailto:billing@twinmind.app">billing@twinmind.app</a> and we'll make sure everything is squared away.
+            </p>
+          </div>
+          <Link
+            href="/app/billing"
+            className="inline-flex items-center justify-center rounded-full border border-white/20 px-5 py-2 text-sm font-medium text-white transition hover:border-white/40"
+          >
+            Return to billing
+          </Link>
+        </section>
+      </main>
     )
   }
 
   return (
-    <section className="mx-auto flex min-h-[60vh] w-full max-w-xl flex-col items-center justify-center gap-6 rounded-3xl border border-limeglow-400/40 bg-base-900/70 p-8 text-center shadow-[0_25px_70px_-25px_rgba(157,242,85,0.3)]">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-limeglow-400/10">
-        <svg className="h-6 w-6 text-limeglow-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="m5 12 4 4L19 6" />
-        </svg>
-      </div>
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold text-white">Your TwinMind Growth plan is active</h1>
-        <p className="text-sm text-white/70">
-          Thanks for upgrading{customerEmail ? `, ${customerEmail}` : ''}! Your workspace subscription has been moved to the pro plan and you can now manage billing directly from the TwinMind billing center.
-        </p>
-      </div>
-      <Link
-        href="/app/billing"
-        className="inline-flex items-center justify-center rounded-full bg-limeglow-400 px-5 py-2 text-sm font-semibold text-base-950 transition hover:bg-limeglow-300"
-      >
-        Return to billing
-      </Link>
-    </section>
+    <main className="flex min-h-screen items-center justify-center px-6 py-24">
+      <section className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-6 rounded-3xl border border-limeglow-400/40 bg-base-900/70 p-8 text-center shadow-[0_25px_70px_-25px_rgba(157,242,85,0.3)]">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-limeglow-400/10">
+          <svg className="h-6 w-6 text-limeglow-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m5 12 4 4L19 6" />
+          </svg>
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold text-white">Your TwinMind Growth plan is active</h1>
+          <p className="text-sm text-white/70">
+            Thanks for upgrading{customerEmail ? `, ${customerEmail}` : ''}! Your workspace subscription has been moved to the pro plan and you can now manage billing directly from the TwinMind billing center.
+          </p>
+        </div>
+        <Link
+          href="/app/billing"
+          className="inline-flex items-center justify-center rounded-full bg-limeglow-400 px-5 py-2 text-sm font-semibold text-base-950 transition hover:bg-limeglow-300"
+        >
+          Return to billing
+        </Link>
+      </section>
+    </main>
   )
 }
