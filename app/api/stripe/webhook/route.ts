@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 
 import { stripe } from '@/lib/stripe'
+import {
+  normalizeStripeTimestamp,
+  resolveSubscriptionPeriodEnd,
+  serializeSubscriptionCancellationDetails,
+} from '@/lib/stripe-subscription'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import type { Database } from '@/types/supabase'
 
@@ -20,50 +25,6 @@ const webhookSecret = (() => {
   return secret
 })()
 
-type SubscriptionWithLegacyFields = Stripe.Subscription & {
-  current_period_end?: number | null
-}
-
-function normalizeTimestamp(timestamp?: number | null): string | null {
-  if (typeof timestamp !== 'number') {
-    return null
-  }
-
-  return new Date(timestamp * 1000).toISOString()
-}
-
-function resolveCurrentPeriodEnd(subscription: Stripe.Subscription): string | null {
-  const subscriptionWithLegacyFields = subscription as SubscriptionWithLegacyFields
-
-  if (typeof subscriptionWithLegacyFields.current_period_end === 'number') {
-    return normalizeTimestamp(subscriptionWithLegacyFields.current_period_end)
-  }
-
-  const latestItemPeriodEnd = subscription.items.data.reduce<number | null>((latest, item) => {
-    if (typeof item.current_period_end !== 'number') {
-      return latest
-    }
-
-    if (latest === null || item.current_period_end > latest) {
-      return item.current_period_end
-    }
-
-    return latest
-  }, null)
-
-  return normalizeTimestamp(latestItemPeriodEnd)
-}
-
-function serializeCancellationDetails(
-  details: Stripe.Subscription.CancellationDetails | null | undefined
-): Database['public']['Tables']['subscriptions']['Update']['cancellation_details'] {
-  if (!details) {
-    return null
-  }
-
-  return JSON.parse(JSON.stringify(details)) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
-}
-
 async function updateSubscriptionRecord(subscription: Stripe.Subscription) {
   const supabase = supabaseAdmin()
 
@@ -73,14 +34,15 @@ async function updateSubscriptionRecord(subscription: Stripe.Subscription) {
     status: normalizedStatus,
     provider: 'stripe',
     provider_subscription_id: subscription.id,
-    current_period_end: resolveCurrentPeriodEnd(subscription),
-    cancel_at: normalizeTimestamp(subscription.cancel_at),
-    canceled_at: normalizeTimestamp(subscription.canceled_at),
+    current_period_end: resolveSubscriptionPeriodEnd(subscription),
+    cancel_at: normalizeStripeTimestamp(subscription.cancel_at),
+    canceled_at: normalizeStripeTimestamp(subscription.canceled_at),
     cancel_at_period_end:
       typeof subscription.cancel_at_period_end === 'boolean'
         ? subscription.cancel_at_period_end
         : null,
-    cancellation_details: serializeCancellationDetails(subscription.cancellation_details),
+    cancellation_details:
+      serializeSubscriptionCancellationDetails(subscription.cancellation_details) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details'],
   }
 
   if (typeof subscription.customer === 'string') {

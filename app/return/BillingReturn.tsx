@@ -4,6 +4,11 @@ import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { stripe } from '@/lib/stripe'
+import {
+  normalizeStripeTimestamp,
+  resolveSubscriptionPeriodEnd,
+  serializeSubscriptionCancellationDetails,
+} from '@/lib/stripe-subscription'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
 
@@ -39,14 +44,6 @@ function isDeletedCustomer(
   return 'deleted' in customer && customer.deleted === true
 }
 
-function normalizeTimestamp(timestamp?: number | null): string | null {
-  if (typeof timestamp !== 'number') {
-    return null
-  }
-
-  return new Date(timestamp * 1000).toISOString()
-}
-
 async function resolveSubscriptionMetadata(
   session: Stripe.Checkout.Session
 ): Promise<SubscriptionSyncResult> {
@@ -68,27 +65,7 @@ async function resolveSubscriptionMetadata(
     subscriptionId = session.subscription.id
   }
 
-  const stripeSubscription = subscription as Stripe.Subscription | null
-
-  let currentPeriodEnd: string | null = normalizeTimestamp(subscription?.current_period_end)
-
-  if (!currentPeriodEnd && stripeSubscription?.items?.data?.length) {
-    const latestPeriodEnd = stripeSubscription.items.data.reduce<number | null>((latest, item) => {
-      if (typeof item.current_period_end !== 'number') {
-        return latest
-      }
-
-      if (latest === null || item.current_period_end > latest) {
-        return item.current_period_end
-      }
-
-      return latest
-    }, null)
-
-    if (typeof latestPeriodEnd === 'number') {
-      currentPeriodEnd = new Date(latestPeriodEnd * 1000).toISOString()
-    }
-  }
+  const currentPeriodEnd = resolveSubscriptionPeriodEnd(subscription)
 
   let customerId: string | null = null
 
@@ -101,18 +78,14 @@ async function resolveSubscriptionMetadata(
   const resolvedStatus =
     subscription?.status ?? (session.status === 'complete' ? 'active' : session.status ?? 'active')
 
-  const cancelAt = normalizeTimestamp(subscription?.cancel_at)
-  const canceledAt = normalizeTimestamp(subscription?.canceled_at)
+  const cancelAt = normalizeStripeTimestamp(subscription?.cancel_at)
+  const canceledAt = normalizeStripeTimestamp(subscription?.canceled_at)
   const cancelAtPeriodEnd =
     typeof subscription?.cancel_at_period_end === 'boolean'
       ? subscription.cancel_at_period_end
       : null
 
-  const cancellationDetails = subscription?.cancellation_details
-    ? (JSON.parse(
-        JSON.stringify(subscription.cancellation_details)
-      ) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details'])
-    : null
+  const cancellationDetails = serializeSubscriptionCancellationDetails(subscription?.cancellation_details) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
 
   return {
     customerId,
