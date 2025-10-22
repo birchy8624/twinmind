@@ -27,12 +27,24 @@ type SubscriptionSyncResult = {
   subscriptionId: string | null
   currentPeriodEnd: string | null
   status: string
+  cancelAt: string | null
+  canceledAt: string | null
+  cancelAtPeriodEnd: boolean | null
+  cancellationDetails: Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
 }
 
 function isDeletedCustomer(
   customer: Stripe.Customer | Stripe.DeletedCustomer
 ): customer is Stripe.DeletedCustomer {
   return 'deleted' in customer && customer.deleted === true
+}
+
+function normalizeTimestamp(timestamp?: number | null): string | null {
+  if (typeof timestamp !== 'number') {
+    return null
+  }
+
+  return new Date(timestamp * 1000).toISOString()
 }
 
 async function resolveSubscriptionMetadata(
@@ -58,9 +70,9 @@ async function resolveSubscriptionMetadata(
 
   const stripeSubscription = subscription as Stripe.Subscription | null
 
-  let currentPeriodEnd: string | null = null
+  let currentPeriodEnd: string | null = normalizeTimestamp(subscription?.current_period_end)
 
-  if (stripeSubscription?.items?.data?.length) {
+  if (!currentPeriodEnd && stripeSubscription?.items?.data?.length) {
     const latestPeriodEnd = stripeSubscription.items.data.reduce<number | null>((latest, item) => {
       if (typeof item.current_period_end !== 'number') {
         return latest
@@ -89,11 +101,28 @@ async function resolveSubscriptionMetadata(
   const resolvedStatus =
     subscription?.status ?? (session.status === 'complete' ? 'active' : session.status ?? 'active')
 
+  const cancelAt = normalizeTimestamp(subscription?.cancel_at)
+  const canceledAt = normalizeTimestamp(subscription?.canceled_at)
+  const cancelAtPeriodEnd =
+    typeof subscription?.cancel_at_period_end === 'boolean'
+      ? subscription.cancel_at_period_end
+      : null
+
+  const cancellationDetails = subscription?.cancellation_details
+    ? (JSON.parse(
+        JSON.stringify(subscription.cancellation_details)
+      ) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details'])
+    : null
+
   return {
     customerId,
     subscriptionId,
     currentPeriodEnd,
     status: resolvedStatus,
+    cancelAt,
+    canceledAt,
+    cancelAtPeriodEnd,
+    cancellationDetails,
   }
 }
 
@@ -137,6 +166,10 @@ async function syncWorkspaceSubscription({
     provider_customer_id: metadata.customerId,
     provider_subscription_id: metadata.subscriptionId,
     current_period_end: metadata.currentPeriodEnd,
+    cancel_at: metadata.cancelAt,
+    canceled_at: metadata.canceledAt,
+    cancel_at_period_end: metadata.cancelAtPeriodEnd,
+    cancellation_details: metadata.cancellationDetails,
   }
 
   const { data: existingSubscription, error: fetchError } = await supabase
@@ -167,6 +200,10 @@ async function syncWorkspaceSubscription({
       provider_customer_id: metadata.customerId,
       provider_subscription_id: metadata.subscriptionId,
       current_period_end: metadata.currentPeriodEnd,
+      cancel_at: metadata.cancelAt,
+      canceled_at: metadata.canceledAt,
+      cancel_at_period_end: metadata.cancelAtPeriodEnd,
+      cancellation_details: metadata.cancellationDetails,
     }
 
     const { error: insertError } = await supabase.from(SUBSCRIPTIONS).insert(insertPayload)
