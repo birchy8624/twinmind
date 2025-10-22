@@ -1,4 +1,12 @@
 import { cache } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+import { stripe } from '@/lib/stripe'
+import {
+  normalizeStripeTimestamp,
+  resolveSubscriptionPeriodEnd,
+  serializeSubscriptionCancellationDetails,
+} from '@/lib/stripe-subscription'
 
 import { BillingManagement } from './_components/BillingManagement'
 import { BillingUpgrade } from './_components/BillingUpgrade'
@@ -54,6 +62,103 @@ type BillingState = {
   subscription: SubscriptionRow | null
 }
 
+type SubscriptionSyncContext = {
+  supabase: SupabaseClient<Database>
+  accountId: string
+  subscription: SubscriptionRow
+}
+
+const SUBSCRIPTION_SYNC_SELECT =
+  'plan_code, status, current_period_end, provider_subscription_id, provider_customer_id, created_at, cancel_at, canceled_at, cancel_at_period_end, cancellation_details'
+
+const normalizeStripeStatus = (value: string | null | undefined): string | null => {
+  if (!value) {
+    return null
+  }
+
+  return value.trim()
+}
+
+const resolvePaidAccess = (status: string | null, currentPeriodEnd: string | null): boolean => {
+  if (!status) {
+    return false
+  }
+
+  const normalized = status.toLowerCase()
+
+  if (ACTIVE_STATUSES.has(normalized)) {
+    return true
+  }
+
+  if (normalized !== 'canceled' || !currentPeriodEnd) {
+    return false
+  }
+
+  const periodEndDate = new Date(currentPeriodEnd)
+
+  if (Number.isNaN(periodEndDate.getTime())) {
+    return false
+  }
+
+  return periodEndDate.getTime() > Date.now()
+}
+
+const syncStripeSubscription = async ({
+  supabase,
+  accountId,
+  subscription,
+}: SubscriptionSyncContext): Promise<SubscriptionRow> => {
+  if (!subscription.provider_subscription_id) {
+    return subscription
+  }
+
+  try {
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.provider_subscription_id, {
+      expand: ['items'],
+    })
+
+    const currentPeriodEnd = resolveSubscriptionPeriodEnd(stripeSubscription)
+    const cancelAt = normalizeStripeTimestamp(stripeSubscription.cancel_at)
+    const canceledAt = normalizeStripeTimestamp(stripeSubscription.canceled_at)
+    const cancelAtPeriodEnd =
+      typeof stripeSubscription.cancel_at_period_end === 'boolean'
+        ? stripeSubscription.cancel_at_period_end
+        : null
+    const cancellationDetails = serializeSubscriptionCancellationDetails(
+      stripeSubscription.cancellation_details,
+    ) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
+
+    const nextStatus = normalizeStripeStatus(stripeSubscription.status) ?? subscription.status ?? 'active'
+
+    const updatePayload: Database['public']['Tables']['subscriptions']['Update'] = {
+      status: nextStatus,
+      current_period_end: currentPeriodEnd,
+      cancel_at: cancelAt,
+      canceled_at: canceledAt,
+      cancel_at_period_end: cancelAtPeriodEnd,
+      cancellation_details: cancellationDetails,
+    }
+
+    const { data: syncedSubscription, error: syncError } = await supabase
+      .from(SUBSCRIPTIONS)
+      .update(updatePayload)
+      .eq('account_id', accountId)
+      .eq('provider_subscription_id', subscription.provider_subscription_id)
+      .select(SUBSCRIPTION_SYNC_SELECT)
+      .maybeSingle<SubscriptionRow>()
+
+    if (syncError) {
+      console.error('billing subscription sync update error:', syncError)
+      return { ...subscription, ...updatePayload }
+    }
+
+    return syncedSubscription ?? { ...subscription, ...updatePayload }
+  } catch (error) {
+    console.error('billing subscription sync retrieve error:', error)
+    return subscription
+  }
+}
+
 const getBillingState = cache(async (): Promise<BillingState> => {
   const supabase = createServerSupabase()
 
@@ -91,6 +196,16 @@ const getBillingState = cache(async (): Promise<BillingState> => {
   const subscription = await syncWorkspaceSubscription({
     supabase,
     accountId,
+  })
+
+  if (!subscription) {
+    return { membershipRole: membership?.role ?? null, subscription: null }
+  }
+
+  const syncedSubscription = await syncStripeSubscription({
+    supabase,
+    accountId,
+    subscription
   })
 
   return {
