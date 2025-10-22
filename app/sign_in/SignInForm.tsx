@@ -33,6 +33,8 @@ export default function SignInForm() {
       return
     }
 
+    let didSucceed = false
+
     try {
       setLoading(true)
       setError(null)
@@ -62,11 +64,14 @@ export default function SignInForm() {
 
       router.replace('/app/dashboard')
       router.refresh()
+      didSucceed = true
     } catch (cause) {
       console.error('Failed to sign in', cause)
       setError('Something went wrong while signing you in. Please try again.')
     } finally {
-      setLoading(false)
+      if (!didSucceed) {
+        setLoading(false)
+      }
     }
   }
 
