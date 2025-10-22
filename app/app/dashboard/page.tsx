@@ -477,7 +477,7 @@ export default function DashboardPage() {
             <p className="mt-6 text-sm text-white/60">Syncing recent activity…</p>
           ) : activityFeed.length > 0 ? (
             <ul className="mt-6 space-y-4">
-              {activityFeed.map((activity) => (
+              {activityFeed.slice(0, 5).map((activity) => (
                 <li key={activity.id}>
                   <Link
                     href={`/app/projects/${activity.projectId}`}
