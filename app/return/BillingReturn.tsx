@@ -1,8 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import type Stripe from 'stripe'
-import type { SupabaseClient } from '@supabase/supabase-js'
-
 import { stripe } from '@/lib/stripe'
 import {
   normalizeStripeTimestamp,
@@ -10,6 +8,7 @@ import {
   serializeSubscriptionCancellationDetails,
 } from '@/lib/stripe-subscription'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import type { Database } from '@/types/supabase'
 
 type BillingReturnProps = {
@@ -22,20 +21,16 @@ const ACCOUNT_MEMBERS = 'account_members' as const
 const SUBSCRIPTIONS = 'subscriptions' as const
 const PRO_PLAN_CODE = 'pro' as const
 
-type SubscriptionSyncContext = {
-  session: Stripe.Checkout.Session
-  supabase: SupabaseClient<Database>
-}
-
 type SubscriptionSyncResult = {
   customerId: string | null
   subscriptionId: string | null
   currentPeriodEnd: string | null
-  status: string
+  status: string | null
   cancelAt: string | null
   canceledAt: string | null
   cancelAtPeriodEnd: boolean | null
   cancellationDetails: Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
+  subscriptionAccountId: string | null
 }
 
 function isDeletedCustomer(
@@ -87,6 +82,11 @@ async function resolveSubscriptionMetadata(
 
   const cancellationDetails = serializeSubscriptionCancellationDetails(subscription?.cancellation_details) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
 
+  const subscriptionAccountId =
+    subscription && typeof subscription.metadata?.accountId === 'string'
+      ? subscription.metadata.accountId
+      : null
+
   return {
     customerId,
     subscriptionId,
@@ -96,48 +96,88 @@ async function resolveSubscriptionMetadata(
     canceledAt,
     cancelAtPeriodEnd,
     cancellationDetails,
+    subscriptionAccountId,
   }
 }
 
-async function syncWorkspaceSubscription({
-  session,
-  supabase,
-}: SubscriptionSyncContext) {
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError || !user) {
-    throw new Error('Unable to determine the authenticated user.')
+const normalizeStatus = (status: string | null | undefined): string => {
+  if (!status) {
+    return 'active'
   }
 
-  const { data: membership, error: membershipError } = await supabase
+  const normalized = status.trim().toLowerCase()
+
+  if (normalized === 'cancelled' || normalized === 'canceling') {
+    return 'canceled'
+  }
+
+  return normalized
+}
+
+async function resolveAccountId(
+  session: Stripe.Checkout.Session,
+  metadata: SubscriptionSyncResult
+): Promise<string | null> {
+  const metadataAccountId =
+    session.metadata && typeof session.metadata.accountId === 'string'
+      ? session.metadata.accountId
+      : null
+  const subscriptionAccountId = metadata.subscriptionAccountId
+  const clientReferenceId =
+    typeof session.client_reference_id === 'string' ? session.client_reference_id : null
+
+  if (metadataAccountId) {
+    return metadataAccountId
+  }
+
+  if (subscriptionAccountId) {
+    return subscriptionAccountId
+  }
+
+  if (clientReferenceId) {
+    return clientReferenceId
+  }
+
+  const supabase = createServerSupabase()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return null
+  }
+
+  const { data: membership } = await supabase
     .from(ACCOUNT_MEMBERS)
     .select('account_id')
     .eq('profile_id', user.id)
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle<{ account_id: string | null }>()
 
-  if (membershipError) {
-    throw new Error('Unable to load workspace membership.')
-  }
+  return membership?.account_id ?? null
+}
 
-  const accountId = membership?.account_id
+async function syncWorkspaceSubscription({ session }: { session: Stripe.Checkout.Session }) {
+  const metadata = await resolveSubscriptionMetadata(session)
+  const accountId = await resolveAccountId(session, metadata)
 
   if (!accountId) {
-    throw new Error('Workspace account is not linked to this profile.')
+    throw new Error('Unable to determine the workspace account.')
   }
 
-  const metadata = await resolveSubscriptionMetadata(session)
+  if (!metadata.subscriptionId) {
+    throw new Error('Unable to determine the Stripe subscription ID.')
+  }
 
-  const normalizedStatus = metadata.status?.trim() || 'active'
+  const normalizedStatusFromMetadata = normalizeStatus(metadata.status)
+  const normalizedStatus =
+    metadata.cancelAtPeriodEnd || metadata.canceledAt ? 'canceled' : normalizedStatusFromMetadata
 
   const updatePayload: Database['public']['Tables']['subscriptions']['Update'] = {
     plan_code: PRO_PLAN_CODE,
     status: normalizedStatus,
     provider: 'stripe',
-    provider_customer_id: metadata.customerId,
-    provider_subscription_id: metadata.subscriptionId,
     current_period_end: metadata.currentPeriodEnd,
     cancel_at: metadata.cancelAt,
     canceled_at: metadata.canceledAt,
@@ -145,10 +185,22 @@ async function syncWorkspaceSubscription({
     cancellation_details: metadata.cancellationDetails,
   }
 
+  if (metadata.customerId) {
+    updatePayload.provider_customer_id = metadata.customerId
+  }
+
+  if (metadata.subscriptionId) {
+    updatePayload.provider_subscription_id = metadata.subscriptionId
+  }
+
+  const supabase = supabaseAdmin()
+
   const { data: existingSubscription, error: fetchError } = await supabase
     .from(SUBSCRIPTIONS)
     .select('id')
     .eq('account_id', accountId)
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle<{ id: string }>()
 
   if (fetchError) {
@@ -211,12 +263,10 @@ export default async function BillingReturn({
     redirect('/app/billing')
   }
 
-  const supabase = createServerSupabase()
-
   let syncError: string | null = null
 
   try {
-    await syncWorkspaceSubscription({ session, supabase })
+    await syncWorkspaceSubscription({ session })
   } catch (error) {
     console.error('billing return subscription sync error:', error)
     syncError =

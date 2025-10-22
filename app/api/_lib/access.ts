@@ -2,6 +2,7 @@ import type { User } from '@supabase/supabase-js'
 
 import type { Database } from '@/types/supabase'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { syncWorkspaceSubscription } from '@/lib/subscription'
 
 export type ServerSupabaseClient = ReturnType<typeof createServerSupabase>
 
@@ -13,6 +14,7 @@ type AccessContext = {
   role: ProfileRole
   clientMemberships: string[]
   user: User
+  accountId: string | null
 }
 
 type AccessContextOptions = {
@@ -76,6 +78,7 @@ export async function getAccessContext(options: AccessContextOptions = {}): Prom
 
   const role = await resolveProfileRole(supabase, user.id)
   let clientMemberships: string[] = []
+  let accountId: string | null = null
 
   if (role === 'client') {
     clientMemberships = await resolveClientMemberships(supabase, user.id)
@@ -83,9 +86,31 @@ export async function getAccessContext(options: AccessContextOptions = {}): Prom
     if (clientMemberships.length === 0 && !options.allowEmptyClientMemberships) {
       throw new HttpError('No associated clients.', 404)
     }
+  } else {
+    const { data: membership, error: membershipError } = await supabase
+      .from('account_members')
+      .select('account_id')
+      .eq('profile_id', user.id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle<{ account_id: string | null }>()
+
+    if (membershipError) {
+      console.error('workspace membership lookup error:', membershipError)
+    } else {
+      accountId = membership?.account_id ?? null
+    }
+
+    if (accountId) {
+      try {
+        await syncWorkspaceSubscription({ supabase, accountId })
+      } catch (error) {
+        console.error('workspace subscription sync error:', error)
+      }
+    }
   }
 
-  return { supabase, userId: user.id, role, clientMemberships, user }
+  return { supabase, userId: user.id, role, clientMemberships, user, accountId }
 }
 
 export { HttpError }
