@@ -13,6 +13,15 @@ type AddLabelPayload = {
   label?: unknown
 }
 
+type UpdateLabelPayload = {
+  label?: unknown
+  nextLabel?: unknown
+}
+
+type RemoveLabelPayload = {
+  label?: unknown
+}
+
 type ProjectLabelsResponse = {
   project: { id: string; labels: string[] }
 }
@@ -32,6 +41,12 @@ function sanitizeLabel(value: unknown): string | null {
   }
 
   return trimmed
+}
+
+function findLabelIndex(labels: string[], needle: string): number {
+  return labels.findIndex(
+    (label) => label.localeCompare(needle, undefined, { sensitivity: 'accent' }) === 0,
+  )
 }
 
 export async function POST(request: Request, context: { params: { projectId: string } }) {
@@ -104,6 +119,229 @@ export async function POST(request: Request, context: { params: { projectId: str
     }
 
     const nextLabels = [...currentLabels, normalizedLabel]
+
+    let updateQuery = supabase.from(PROJECTS).update({ labels: nextLabels }).eq('id', projectId)
+
+    if (role === 'client') {
+      updateQuery = updateQuery.in('client_id', clientMemberships)
+    }
+
+    const { data, error } = await updateQuery.select('id, labels').maybeSingle<{
+      id: string
+      labels: string[] | null
+    }>()
+
+    if (error) {
+      console.error('project label update error:', error)
+      return NextResponse.json({ message: 'Unable to update project labels.' }, { status: 500 })
+    }
+
+    if (!data) {
+      return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+    }
+
+    const updatedLabels = Array.isArray(data.labels)
+      ? data.labels.filter((label): label is string => typeof label === 'string' && label.length > 0)
+      : []
+
+    return NextResponse.json<ProjectLabelsResponse>({
+      project: { id: data.id, labels: updatedLabels },
+    })
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
+
+    console.error('project label unexpected error:', error)
+    return NextResponse.json({ message: 'Unable to update project labels.' }, { status: 500 })
+  }
+}
+
+export async function PATCH(request: Request, context: { params: { projectId: string } }) {
+  let payload: UpdateLabelPayload
+
+  try {
+    payload = (await request.json()) as UpdateLabelPayload
+  } catch (error) {
+    console.error('project label update parse error:', error)
+    return NextResponse.json({ message: 'Invalid request body.' }, { status: 400 })
+  }
+
+  const currentLabel = sanitizeLabel(payload.label)
+  const nextLabel = sanitizeLabel(payload.nextLabel)
+
+  if (!currentLabel || !nextLabel) {
+    return NextResponse.json(
+      { message: `Labels must be ${MAX_LABEL_LENGTH} characters or fewer.` },
+      { status: 400 },
+    )
+  }
+
+  const projectId = context.params.projectId
+
+  try {
+    const { supabase, role, clientMemberships } = await getAccessContext({
+      allowEmptyClientMemberships: true,
+    })
+
+    if (role === 'client' && clientMemberships.length === 0) {
+      return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+    }
+
+    let projectLookup = supabase
+      .from(PROJECTS)
+      .select('id, labels, client_id')
+      .eq('id', projectId)
+
+    if (role === 'client') {
+      projectLookup = projectLookup.in('client_id', clientMemberships)
+    }
+
+    const { data: existingProject, error: existingProjectError } = await projectLookup.maybeSingle<{
+      id: string
+      client_id: string | null
+      labels: Database['public']['Tables']['projects']['Row']['labels']
+    }>()
+
+    if (existingProjectError) {
+      console.error('project label lookup error:', existingProjectError)
+      return NextResponse.json({ message: 'Unable to update project labels.' }, { status: 500 })
+    }
+
+    if (!existingProject) {
+      return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+    }
+
+    const currentLabels = Array.isArray(existingProject.labels)
+      ? existingProject.labels
+          .map((label) => (typeof label === 'string' ? label.trim() : ''))
+          .filter((label): label is string => label.length > 0)
+      : []
+
+    const labelIndex = findLabelIndex(currentLabels, currentLabel)
+
+    if (labelIndex === -1) {
+      return NextResponse.json({ message: 'Label not found.' }, { status: 404 })
+    }
+
+    const isDuplicate = currentLabels.some(
+      (label, index) => index !== labelIndex && label.localeCompare(nextLabel, undefined, { sensitivity: 'accent' }) === 0,
+    )
+
+    if (isDuplicate) {
+      return NextResponse.json({ message: 'A label with that name already exists.' }, { status: 409 })
+    }
+
+    if (currentLabels[labelIndex] === nextLabel) {
+      return NextResponse.json<ProjectLabelsResponse>({
+        project: { id: existingProject.id, labels: currentLabels },
+      })
+    }
+
+    const nextLabels = [...currentLabels]
+    nextLabels[labelIndex] = nextLabel
+
+    let updateQuery = supabase.from(PROJECTS).update({ labels: nextLabels }).eq('id', projectId)
+
+    if (role === 'client') {
+      updateQuery = updateQuery.in('client_id', clientMemberships)
+    }
+
+    const { data, error } = await updateQuery.select('id, labels').maybeSingle<{
+      id: string
+      labels: string[] | null
+    }>()
+
+    if (error) {
+      console.error('project label update error:', error)
+      return NextResponse.json({ message: 'Unable to update project labels.' }, { status: 500 })
+    }
+
+    if (!data) {
+      return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+    }
+
+    const updatedLabels = Array.isArray(data.labels)
+      ? data.labels.filter((label): label is string => typeof label === 'string' && label.length > 0)
+      : []
+
+    return NextResponse.json<ProjectLabelsResponse>({
+      project: { id: data.id, labels: updatedLabels },
+    })
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
+
+    console.error('project label unexpected error:', error)
+    return NextResponse.json({ message: 'Unable to update project labels.' }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: Request, context: { params: { projectId: string } }) {
+  let payload: RemoveLabelPayload
+
+  try {
+    payload = (await request.json()) as RemoveLabelPayload
+  } catch (error) {
+    console.error('project label remove parse error:', error)
+    return NextResponse.json({ message: 'Invalid request body.' }, { status: 400 })
+  }
+
+  const normalizedLabel = sanitizeLabel(payload.label)
+
+  if (!normalizedLabel) {
+    return NextResponse.json({ message: 'Label is required.' }, { status: 400 })
+  }
+
+  const projectId = context.params.projectId
+
+  try {
+    const { supabase, role, clientMemberships } = await getAccessContext({
+      allowEmptyClientMemberships: true,
+    })
+
+    if (role === 'client' && clientMemberships.length === 0) {
+      return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+    }
+
+    let projectLookup = supabase
+      .from(PROJECTS)
+      .select('id, labels, client_id')
+      .eq('id', projectId)
+
+    if (role === 'client') {
+      projectLookup = projectLookup.in('client_id', clientMemberships)
+    }
+
+    const { data: existingProject, error: existingProjectError } = await projectLookup.maybeSingle<{
+      id: string
+      client_id: string | null
+      labels: Database['public']['Tables']['projects']['Row']['labels']
+    }>()
+
+    if (existingProjectError) {
+      console.error('project label lookup error:', existingProjectError)
+      return NextResponse.json({ message: 'Unable to update project labels.' }, { status: 500 })
+    }
+
+    if (!existingProject) {
+      return NextResponse.json({ message: 'Project not found.' }, { status: 404 })
+    }
+
+    const currentLabels = Array.isArray(existingProject.labels)
+      ? existingProject.labels
+          .map((label) => (typeof label === 'string' ? label.trim() : ''))
+          .filter((label): label is string => label.length > 0)
+      : []
+
+    const nextLabels = currentLabels.filter(
+      (label) => label.localeCompare(normalizedLabel, undefined, { sensitivity: 'accent' }) !== 0,
+    )
+
+    if (currentLabels.length === nextLabels.length) {
+      return NextResponse.json({ message: 'Label not found.' }, { status: 404 })
+    }
 
     let updateQuery = supabase.from(PROJECTS).update({ labels: nextLabels }).eq('id', projectId)
 
