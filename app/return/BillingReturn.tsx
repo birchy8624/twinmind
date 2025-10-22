@@ -5,11 +5,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { stripe } from '@/lib/stripe'
 import {
+  normalizePlanStatus,
+  normalizeStripeStatus,
   normalizeStripeTimestamp,
+  resolvePlanStatus,
   resolveSubscriptionPeriodEnd,
   serializeSubscriptionCancellationDetails,
+  type PlanStatus,
 } from '@/lib/stripe-subscription'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import type { Database } from '@/types/supabase'
 
 type BillingReturnProps = {
@@ -31,7 +36,8 @@ type SubscriptionSyncResult = {
   customerId: string | null
   subscriptionId: string | null
   currentPeriodEnd: string | null
-  status: string
+  planStatus: PlanStatus
+  providerStatus: string | null
   cancelAt: string | null
   canceledAt: string | null
   cancelAtPeriodEnd: boolean | null
@@ -75,8 +81,10 @@ async function resolveSubscriptionMetadata(
     customerId = session.customer.id
   }
 
-  const resolvedStatus =
+  const rawProviderStatus =
     subscription?.status ?? (session.status === 'complete' ? 'active' : session.status ?? 'active')
+  const providerStatus = normalizeStripeStatus(rawProviderStatus) ?? 'active'
+  const planStatus = resolvePlanStatus(providerStatus, currentPeriodEnd)
 
   const cancelAt = normalizeStripeTimestamp(subscription?.cancel_at)
   const canceledAt = normalizeStripeTimestamp(subscription?.canceled_at)
@@ -91,7 +99,8 @@ async function resolveSubscriptionMetadata(
     customerId,
     subscriptionId,
     currentPeriodEnd,
-    status: resolvedStatus,
+    planStatus,
+    providerStatus,
     cancelAt,
     canceledAt,
     cancelAtPeriodEnd,
@@ -103,6 +112,8 @@ async function syncWorkspaceSubscription({
   session,
   supabase,
 }: SubscriptionSyncContext) {
+  const adminClient = supabaseAdmin()
+
   const {
     data: { user },
     error: userError,
@@ -130,11 +141,11 @@ async function syncWorkspaceSubscription({
 
   const metadata = await resolveSubscriptionMetadata(session)
 
-  const normalizedStatus = metadata.status?.trim() || 'active'
+  const normalizedPlanStatus = normalizePlanStatus(metadata.planStatus)
 
   const updatePayload: Database['public']['Tables']['subscriptions']['Update'] = {
     plan_code: PRO_PLAN_CODE,
-    status: normalizedStatus,
+    status: normalizedPlanStatus,
     provider: 'stripe',
     provider_customer_id: metadata.customerId,
     provider_subscription_id: metadata.subscriptionId,
@@ -145,7 +156,7 @@ async function syncWorkspaceSubscription({
     cancellation_details: metadata.cancellationDetails,
   }
 
-  const { data: existingSubscription, error: fetchError } = await supabase
+  const { data: existingSubscription, error: fetchError } = await adminClient
     .from(SUBSCRIPTIONS)
     .select('id')
     .eq('account_id', accountId)
@@ -156,7 +167,7 @@ async function syncWorkspaceSubscription({
   }
 
   if (existingSubscription?.id) {
-    const { error: updateError } = await supabase
+    const { error: updateError } = await adminClient
       .from(SUBSCRIPTIONS)
       .update(updatePayload)
       .eq('id', existingSubscription.id)
@@ -168,7 +179,7 @@ async function syncWorkspaceSubscription({
     const insertPayload: Database['public']['Tables']['subscriptions']['Insert'] = {
       account_id: accountId,
       plan_code: PRO_PLAN_CODE,
-      status: normalizedStatus,
+      status: normalizedPlanStatus,
       provider: 'stripe',
       provider_customer_id: metadata.customerId,
       provider_subscription_id: metadata.subscriptionId,
@@ -179,7 +190,7 @@ async function syncWorkspaceSubscription({
       cancellation_details: metadata.cancellationDetails,
     }
 
-    const { error: insertError } = await supabase.from(SUBSCRIPTIONS).insert(insertPayload)
+    const { error: insertError } = await adminClient.from(SUBSCRIPTIONS).insert(insertPayload)
 
     if (insertError) {
       throw new Error('Unable to create the subscription record.')
