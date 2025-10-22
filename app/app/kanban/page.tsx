@@ -984,10 +984,8 @@ export default function KanbanPage() {
         </div>
       </motion.div>
 
-      <div
-        className="grid gap-4 xl:grid-cols-5 2xl:grid-cols-5"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
-      >
+      <div className="overflow-x-auto pb-2">
+        <div className="flex min-w-max gap-4">
           {PIPELINE_COLUMNS.map((column, columnIndex) => {
             const projectIds = columnOrders[column.status] ?? []
             const totalProjectsInColumn = projectIds.filter((id) => projects.has(id)).length
@@ -1080,6 +1078,15 @@ export default function KanbanPage() {
                     onClick={(event) => handleProjectActivate(event, id)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
+                        const target = event.target as HTMLElement | null
+                        if (
+                          target &&
+                          target !== event.currentTarget &&
+                          target.closest('button, a, input, select, textarea')
+                        ) {
+                          return
+                        }
+
                         event.preventDefault()
                         handleProjectActivate(event, id)
                       }
@@ -1297,7 +1304,7 @@ export default function KanbanPage() {
                       })
                     }
                   }}
-                  className={`flex min-h-[280px] flex-col gap-3 rounded-3xl border p-4 shadow-lg backdrop-blur transition-colors ${
+                  className={`flex min-h-[280px] basis-[320px] flex-shrink-0 flex-col gap-3 rounded-3xl border p-4 shadow-lg backdrop-blur transition-colors ${
                     isColumnDropTarget
                       ? 'border-limeglow-400/70 bg-limeglow-400/10 shadow-limeglow-500/20'
                       : 'border-white/10 bg-base-900/40 shadow-base-900/30'
@@ -1316,6 +1323,7 @@ export default function KanbanPage() {
                 </motion.div>
               )
             })}
+        </div>
       </div>
     </section>
   )
