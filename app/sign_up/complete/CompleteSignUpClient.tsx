@@ -121,7 +121,7 @@ export default function CompleteSignUpClient() {
         }
 
         setStatus('redirecting')
-        router.replace('/app/setup-account')
+        router.replace('/app/setup-account?mode=self-service')
         router.refresh()
       } catch (cause) {
         console.error('Failed to complete email confirmation flow', cause)
@@ -147,7 +147,7 @@ export default function CompleteSignUpClient() {
           <p className="text-sm text-white/70">Redirecting you to finish setting up your TwinMinds Studio account.</p>
         </div>
         <p className="text-xs text-white/50">If you are not redirected automatically, continue below.</p>
-        <Link href="/app/setup-account" className="btn btn-primary w-full">
+        <Link href="/app/setup-account?mode=self-service" className="btn btn-primary w-full">
           Continue to account setup
         </Link>
       </div>

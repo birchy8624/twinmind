@@ -213,7 +213,7 @@ export default function SignInForm() {
 
         const siteOrigin = resolveSiteOrigin()
         const emailRedirectTo = siteOrigin
-          ? new URL('/app/setup-account?mode=self-service', siteOrigin).toString()
+          ? new URL('/sign_up/complete', siteOrigin).toString()
           : undefined
 
         const { error: signUpResultError } = await supabase.auth.signUp({
