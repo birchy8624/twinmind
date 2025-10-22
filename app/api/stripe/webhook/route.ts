@@ -29,6 +29,11 @@ const webhookSecret = (() => {
 })()
 
 async function updateSubscriptionRecord(subscription: Stripe.Subscription) {
+  console.info('[stripe webhook] updating subscription record', {
+    subscriptionId: subscription.id,
+    status: subscription.status,
+    customerType: typeof subscription.customer,
+  })
   const supabase = supabaseAdmin()
 
   const currentPeriodEnd = resolveSubscriptionPeriodEnd(subscription)
@@ -77,6 +82,11 @@ async function updateSubscriptionRecord(subscription: Stripe.Subscription) {
     return
   }
 
+  console.info('[stripe webhook] found subscription record', {
+    subscriptionId: subscription.id,
+    recordId: existing.id,
+  })
+
   const { error: updateError } = await supabase
     .from(SUBSCRIPTIONS)
     .update(updatePayload)
@@ -86,6 +96,12 @@ async function updateSubscriptionRecord(subscription: Stripe.Subscription) {
     console.error('stripe webhook subscription update error:', updateError)
     throw new Error(`Unable to update subscription record ${existing.id}`)
   }
+
+  console.info('[stripe webhook] subscription record updated', {
+    subscriptionId: subscription.id,
+    recordId: existing.id,
+    planStatus,
+  })
 }
 
 export async function POST(req: Request) {
@@ -112,6 +128,12 @@ export async function POST(req: Request) {
       event.type === 'customer.subscription.deleted'
     ) {
       const subscription = event.data.object as Stripe.Subscription
+      console.info('[stripe webhook] processing subscription event', {
+        eventId: event.id,
+        eventType: event.type,
+        subscriptionId: subscription.id,
+        subscriptionStatus: subscription.status,
+      })
       await updateSubscriptionRecord(subscription)
     }
   } catch (error) {

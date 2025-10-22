@@ -16,6 +16,7 @@ if (!priceId) {
 }
 
 export async function fetchClientSecret(): Promise<string> {
+  console.info('[stripe] fetchClientSecret invoked')
   const originHeader = (await headers()).get('origin')
 
   if (!originHeader) {
@@ -30,8 +31,11 @@ export async function fetchClientSecret(): Promise<string> {
   } = await supabase.auth.getUser()
 
   if (userError || !user) {
+    console.error('[stripe] fetchClientSecret user resolution failed', userError)
     throw new Error('You need to be signed in to start the checkout session')
   }
+
+  console.info('[stripe] fetchClientSecret resolved user', { userId: user.id })
 
   const { data: membership, error: membershipError } = await supabase
     .from(ACCOUNT_MEMBERS)
@@ -40,6 +44,7 @@ export async function fetchClientSecret(): Promise<string> {
     .maybeSingle<{ account_id: string | null }>()
 
   if (membershipError) {
+    console.error('[stripe] fetchClientSecret membership lookup failed', membershipError)
     throw new Error('Unable to find a workspace for the current profile')
   }
 
@@ -49,6 +54,8 @@ export async function fetchClientSecret(): Promise<string> {
     throw new Error('Workspace account could not be determined for checkout')
   }
 
+  console.info('[stripe] fetchClientSecret resolved account', { userId: user.id, accountId })
+
   const { data: subscription, error: subscriptionError } = await supabase
     .from(SUBSCRIPTIONS)
     .select('provider_customer_id')
@@ -56,10 +63,16 @@ export async function fetchClientSecret(): Promise<string> {
     .maybeSingle<Pick<Database['public']['Tables']['subscriptions']['Row'], 'provider_customer_id'>>()
 
   if (subscriptionError) {
+    console.error('[stripe] fetchClientSecret subscription lookup failed', subscriptionError)
     throw new Error('Unable to load the current subscription for checkout')
   }
 
   const existingCustomerId = subscription?.provider_customer_id ?? undefined
+
+  console.info('[stripe] fetchClientSecret creating checkout session', {
+    accountId,
+    hasExistingCustomer: Boolean(existingCustomerId),
+  })
 
   const session = await stripe.checkout.sessions.create({
     ui_mode: 'embedded',
@@ -83,8 +96,17 @@ export async function fetchClientSecret(): Promise<string> {
   const clientSecret = session.client_secret
 
   if (!clientSecret) {
+    console.error('[stripe] fetchClientSecret session missing client secret', {
+      accountId,
+      sessionId: session.id,
+    })
     throw new Error('Unable to retrieve client secret from Stripe session')
   }
+
+  console.info('[stripe] fetchClientSecret created session', {
+    accountId,
+    sessionId: session.id,
+  })
 
   return clientSecret
 }

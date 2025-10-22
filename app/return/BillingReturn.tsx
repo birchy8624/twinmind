@@ -79,8 +79,13 @@ function extractAccountIdFromSession(session: Stripe.Checkout.Session): string |
 }
 
 async function resolveSubscriptionMetadata(
-  session: Stripe.Checkout.Session
+  session: Stripe.Checkout.Session,
 ): Promise<SubscriptionSyncResult> {
+  console.info('[billing return] resolving subscription metadata', {
+    sessionId: session.id,
+    sessionStatus: session.status,
+    subscriptionType: typeof session.subscription,
+  })
   let subscriptionId: string | null = null
   let subscription: Stripe.Subscription | null = null
 
@@ -98,6 +103,12 @@ async function resolveSubscriptionMetadata(
     subscription = session.subscription
     subscriptionId = session.subscription.id
   }
+
+  console.info('[billing return] subscription resolution result', {
+    sessionId: session.id,
+    subscriptionId,
+    subscriptionStatus: subscription?.status,
+  })
 
   const currentPeriodEnd = resolveSubscriptionPeriodEnd(subscription)
 
@@ -122,6 +133,18 @@ async function resolveSubscriptionMetadata(
       : null
 
   const cancellationDetails = serializeSubscriptionCancellationDetails(subscription?.cancellation_details) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
+
+  console.info('[billing return] subscription metadata normalized', {
+    sessionId: session.id,
+    customerId,
+    subscriptionId,
+    currentPeriodEnd,
+    planStatus,
+    providerStatus,
+    cancelAt,
+    canceledAt,
+    cancelAtPeriodEnd,
+  })
 
   return {
     customerId,
@@ -154,6 +177,7 @@ async function syncWorkspaceSubscription({
   let memberAccountId: string | null = null
 
   if (user) {
+    console.info('[billing return] loading membership for user', { userId: user.id })
     const { data: membership, error: membershipError } = await supabase
       .from(ACCOUNT_MEMBERS)
       .select('account_id')
@@ -165,9 +189,20 @@ async function syncWorkspaceSubscription({
     }
 
     memberAccountId = membership?.account_id ?? null
+
+    console.info('[billing return] membership lookup result', {
+      userId: user.id,
+      memberAccountId,
+    })
   }
 
   const sessionAccountId = extractAccountIdFromSession(session)
+
+  console.info('[billing return] extracted account from session', {
+    sessionId: session.id,
+    sessionAccountId,
+    memberAccountId,
+  })
 
   if (memberAccountId && sessionAccountId && memberAccountId !== sessionAccountId) {
     throw new Error('The checkout session does not match the active workspace.')
@@ -178,6 +213,11 @@ async function syncWorkspaceSubscription({
   if (!accountId) {
     throw new Error('Workspace account is not linked to this checkout session.')
   }
+
+  console.info('[billing return] syncing subscription for account', {
+    accountId,
+    sessionId: session.id,
+  })
 
   const metadata = await resolveSubscriptionMetadata(session)
 
@@ -196,6 +236,14 @@ async function syncWorkspaceSubscription({
     cancellation_details: metadata.cancellationDetails,
   }
 
+  console.info('[billing return] prepared subscription update payload', {
+    accountId,
+    normalizedPlanStatus,
+    hasCustomerId: Boolean(metadata.customerId),
+    hasSubscriptionId: Boolean(metadata.subscriptionId),
+    currentPeriodEnd: metadata.currentPeriodEnd,
+  })
+
   const { data: existingSubscription, error: fetchError } = await adminClient
     .from(SUBSCRIPTIONS)
     .select('id')
@@ -207,6 +255,10 @@ async function syncWorkspaceSubscription({
   }
 
   if (existingSubscription?.id) {
+    console.info('[billing return] updating existing subscription', {
+      accountId,
+      subscriptionId: existingSubscription.id,
+    })
     const { error: updateError } = await adminClient
       .from(SUBSCRIPTIONS)
       .update(updatePayload)
@@ -216,6 +268,9 @@ async function syncWorkspaceSubscription({
       throw new Error('Unable to update the subscription record.')
     }
   } else {
+    console.info('[billing return] inserting new subscription', {
+      accountId,
+    })
     const insertPayload: Database['public']['Tables']['subscriptions']['Insert'] = {
       account_id: accountId,
       plan_code: PRO_PLAN_CODE,
@@ -236,6 +291,12 @@ async function syncWorkspaceSubscription({
       throw new Error('Unable to create the subscription record.')
     }
   }
+
+  console.info('[billing return] subscription sync complete', {
+    accountId,
+    sessionId: session.id,
+    normalizedPlanStatus,
+  })
 }
 
 export default async function BillingReturn({
@@ -247,6 +308,8 @@ export default async function BillingReturn({
     throw new Error('Please provide a valid session_id (`cs_test_...`)')
   }
 
+  console.info('[billing return] loading checkout session', { sessionId })
+
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ['line_items', 'payment_intent', 'subscription', 'subscription.items', 'customer'],
   })
@@ -254,15 +317,28 @@ export default async function BillingReturn({
   const status = session.status
   const customerEmail = session.customer_details?.email
 
+  console.info('[billing return] checkout session retrieved', {
+    sessionId,
+    status,
+    customerEmail,
+  })
+
   if (status === 'open') {
+    console.warn('[billing return] session still open, redirecting to billing', { sessionId })
     redirect('/app/billing')
   }
 
   if (status !== 'complete') {
+    console.warn('[billing return] session not complete, redirecting to billing', {
+      sessionId,
+      status,
+    })
     redirect('/app/billing')
   }
 
   const supabase = createServerSupabase()
+
+  console.info('[billing return] attempting subscription sync', { sessionId })
 
   let syncError: string | null = null
 
@@ -275,6 +351,7 @@ export default async function BillingReturn({
   }
 
   if (syncError) {
+    console.error('[billing return] subscription sync failed', { sessionId })
     return (
       <main className="flex min-h-screen items-center justify-center px-6 py-24">
         <section className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-6 rounded-3xl border border-rose-400/30 bg-base-900/70 p-8 text-center shadow-[0_25px_70px_-25px_rgba(255,83,112,0.25)]">
@@ -300,6 +377,11 @@ export default async function BillingReturn({
       </main>
     )
   }
+
+  console.info('[billing return] subscription sync succeeded', {
+    sessionId,
+    customerEmail,
+  })
 
   return (
     <main className="flex min-h-screen items-center justify-center px-6 py-24">
