@@ -158,7 +158,7 @@ async function syncWorkspaceSubscription({
       .from(ACCOUNT_MEMBERS)
       .select('account_id')
       .eq('profile_id', user.id)
-      .maybeSingle<{ account_id: string | null }>({ head: false })
+      .maybeSingle<{ account_id: string | null }>()
 
     if (membershipError) {
       throw new Error('Unable to load workspace membership.')
