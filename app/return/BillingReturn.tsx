@@ -45,7 +45,9 @@ async function resolveSubscriptionMetadata(
     subscriptionId = session.subscription
 
     try {
-      subscription = await stripe.subscriptions.retrieve(session.subscription)
+      subscription = await stripe.subscriptions.retrieve(session.subscription, {
+        expand: ['items'],
+      })
     } catch (error) {
       console.error('billing return subscription retrieve error:', error)
     }
@@ -56,10 +58,25 @@ async function resolveSubscriptionMetadata(
 
   const stripeSubscription = subscription as Stripe.Subscription | null
 
-  const currentPeriodEnd =
-    typeof stripeSubscription?.current_period_end === 'number'
-      ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
-      : null
+  let currentPeriodEnd: string | null = null
+
+  if (stripeSubscription?.items?.data?.length) {
+    const latestPeriodEnd = stripeSubscription.items.data.reduce<number | null>((latest, item) => {
+      if (typeof item.current_period_end !== 'number') {
+        return latest
+      }
+
+      if (latest === null || item.current_period_end > latest) {
+        return item.current_period_end
+      }
+
+      return latest
+    }, null)
+
+    if (typeof latestPeriodEnd === 'number') {
+      currentPeriodEnd = new Date(latestPeriodEnd * 1000).toISOString()
+    }
+  }
 
   let customerId: string | null = null
 
@@ -170,7 +187,7 @@ export default async function BillingReturn({
   }
 
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ['line_items', 'payment_intent', 'subscription', 'customer'],
+    expand: ['line_items', 'payment_intent', 'subscription', 'subscription.items', 'customer'],
   })
 
   const status = session.status
