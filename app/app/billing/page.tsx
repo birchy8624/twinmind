@@ -280,17 +280,34 @@ export default async function BillingPage() {
   const planStatus = normalizePlanStatus(subscription?.status ?? null)
   const hasPaidPlan = Boolean(subscription && hasActivePlan(planStatus))
   const subscriptionForDisplay = hasPaidPlan ? subscription : null
+  const cancelAtDate = subscriptionForDisplay?.cancel_at
+    ? new Date(subscriptionForDisplay.cancel_at)
+    : null
+  const cancelAtInFuture = Boolean(
+    cancelAtDate && !Number.isNaN(cancelAtDate.getTime()) && cancelAtDate.getTime() > Date.now(),
+  )
+  const cancellationScheduled = Boolean(
+    subscriptionForDisplay && (subscriptionForDisplay.cancel_at_period_end || cancelAtInFuture),
+  )
+  const displayPlanStatus = cancellationScheduled ? 'cancelled' : planStatus
   const planDetail = subscriptionForDisplay
     ? PLAN_DETAILS[subscriptionForDisplay.plan_code] ?? DEFAULT_PLAN_DETAIL
     : DEFAULT_PLAN_DETAIL
+  const nextBillingIso = subscriptionForDisplay?.current_period_end ?? null
+  const cancellationEndIso = cancellationScheduled
+    ? subscriptionForDisplay?.cancel_at ?? nextBillingIso
+    : null
+  const billingDateIso = cancellationEndIso ?? nextBillingIso
+  const billingDateLabel = formatBillingDate(billingDateIso)
   const statusForDisplay = subscriptionForDisplay
-    ? normalizeStripeStatus(subscriptionForDisplay.provider_status) ?? planStatus
-    : planStatus
+    ? cancellationScheduled
+      ? 'cancelled'
+      : normalizeStripeStatus(subscriptionForDisplay.provider_status) ?? planStatus
+    : displayPlanStatus
   const statusAppearance = resolveStatusAppearance(statusForDisplay)
-  const nextBillingLabel = formatBillingDate(subscriptionForDisplay?.current_period_end ?? null)
   const cancellationNotice =
-    planStatus === 'cancelled' && nextBillingLabel
-      ? `Your TwinMind Premium plan will remain active until ${nextBillingLabel}. You can reactivate anytime from the billing center.`
+    displayPlanStatus === 'cancelled' && billingDateLabel
+      ? `Your TwinMind Premium plan will remain active until ${billingDateLabel}. You can reactivate anytime from the billing center.`
       : null
 
   const pageTitle = hasPaidPlan
@@ -298,7 +315,7 @@ export default async function BillingPage() {
     : 'Choose the plan that grows with your studio'
 
   const pageDescription = hasPaidPlan
-    ? planStatus === 'cancelled'
+    ? displayPlanStatus === 'cancelled'
       ? 'Your workspace cancelled the TwinMind Premium plan. Access remains available through the end of the current billing period.'
       : 'Your workspace is on the TwinMind Premium plan. Review billing details, manage payment methods, or download invoices from one place.'
     : 'TwinMind Studio helps agencies stay on top of client relationships. Upgrade to the premium plan to unlock unlimited clients, richer reporting, and proactive support from our team.'
@@ -318,12 +335,12 @@ export default async function BillingPage() {
             planPrice={planDetail.price}
             planPriceNote={planDetail.priceNote}
             planDescription={planDetail.description}
-            planStatus={planStatus}
+            planStatus={displayPlanStatus}
             statusLabel={statusAppearance.label}
             statusTone={statusAppearance.tone}
             statusValue={statusForDisplay ?? 'unknown'}
-            nextBillingDateLabel={nextBillingLabel}
-            nextBillingDateIso={subscriptionForDisplay?.current_period_end ?? null}
+            nextBillingDateLabel={billingDateLabel}
+            nextBillingDateIso={billingDateIso}
             subscriptionId={subscriptionForDisplay?.provider_subscription_id ?? null}
             canManageBilling={Boolean(subscriptionForDisplay?.provider_customer_id)}
             cancellationNotice={cancellationNotice}
