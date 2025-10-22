@@ -107,7 +107,11 @@ export function BillingManagement(props: BillingManagementProps) {
     })
   }
 
-  const nextBillingHeading = statusValue === 'canceled' ? 'Access until' : 'Next billing'
+  const normalizedStatusValue = statusValue?.toLowerCase()
+  const nextBillingHeading =
+    normalizedStatusValue === 'canceled' || normalizedStatusValue === 'cancelled'
+      ? 'Access until'
+      : 'Next billing'
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
