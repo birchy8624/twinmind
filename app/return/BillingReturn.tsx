@@ -249,7 +249,7 @@ export default async function BillingReturn({
           </svg>
         </div>
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold text-white">Your TwinMind Growth plan is active</h1>
+          <h1 className="text-2xl font-semibold text-white">Your TwinMind Premium plan is active</h1>
           <p className="text-sm text-white/70">
             Thanks for upgrading{customerEmail ? `, ${customerEmail}` : ''}! Your workspace subscription has been moved to the pro plan and you can now manage billing directly from the TwinMind billing center.
           </p>

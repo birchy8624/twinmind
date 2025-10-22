@@ -16,6 +16,7 @@ type BillingManagementProps = {
   nextBillingDateIso: string | null
   subscriptionId: string | null
   canManageBilling: boolean
+  cancellationNotice?: string | null
 }
 
 type ToneClassNameMap = Record<BillingManagementProps['statusTone'], string>
@@ -65,6 +66,7 @@ export function BillingManagement(props: BillingManagementProps) {
     nextBillingDateIso,
     subscriptionId,
     canManageBilling,
+    cancellationNotice,
   } = props
 
   const [isPending, startTransition] = useTransition()
@@ -105,6 +107,8 @@ export function BillingManagement(props: BillingManagementProps) {
     })
   }
 
+  const nextBillingHeading = statusValue === 'canceled' ? 'Access until' : 'Next billing'
+
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <article className="flex flex-col gap-6 rounded-3xl border border-white/10 bg-base-900/70 p-8 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.45)]">
@@ -127,7 +131,7 @@ export function BillingManagement(props: BillingManagementProps) {
 
         <dl className="space-y-3 text-sm text-white/70">
           <div className="flex items-center justify-between gap-4">
-            <dt className="text-white/60">Next billing</dt>
+            <dt className="text-white/60">{nextBillingHeading}</dt>
             <dd className="text-right text-white" title={nextBillingDateIso ?? undefined}>
               {nextBillingDateLabel ?? 'Not available'}
             </dd>
@@ -145,6 +149,12 @@ export function BillingManagement(props: BillingManagementProps) {
             </div>
           ) : null}
         </dl>
+
+        {cancellationNotice ? (
+          <p className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+            {cancellationNotice}
+          </p>
+        ) : null}
 
         <div className="mt-auto space-y-3">
           <button

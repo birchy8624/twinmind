@@ -18,10 +18,10 @@ const PLAN_DETAILS: Record<
   }
 > = {
   pro: {
-    name: 'Growth',
+    name: 'Premium',
     price: '$12',
     priceNote: 'per month',
-    description: 'TwinMind Growth unlocks unlimited clients, workflow automation, and priority workspace support.'
+    description: 'TwinMind Premium unlocks unlimited clients, workflow automation, and priority workspace support.'
   }
 }
 
@@ -146,17 +146,25 @@ export default async function BillingPage() {
   const { subscription } = await getBillingState()
 
   const planDetail = subscription ? PLAN_DETAILS[subscription.plan_code] ?? DEFAULT_PLAN_DETAIL : DEFAULT_PLAN_DETAIL
+  const hasSubscription = Boolean(subscription)
   const normalizedStatus = subscription?.status ? subscription.status.toLowerCase() : null
   const hasActiveSubscription = normalizedStatus ? ACTIVE_STATUSES.has(normalizedStatus) : false
+  const isCanceledSubscription = normalizedStatus === 'canceled'
   const statusAppearance = resolveStatusAppearance(normalizedStatus)
   const nextBillingLabel = formatBillingDate(subscription?.current_period_end ?? null)
+  const cancellationNotice =
+    isCanceledSubscription && nextBillingLabel
+      ? `Your TwinMind Premium plan will remain active until ${nextBillingLabel}. You can reactivate anytime from the billing center.`
+      : null
 
-  const pageTitle = hasActiveSubscription
+  const pageTitle = hasSubscription
     ? 'Manage your TwinMind subscription'
     : 'Choose the plan that grows with your studio'
 
-  const pageDescription = hasActiveSubscription
-    ? 'Your workspace is on the TwinMind Growth plan. Review billing details, manage payment methods, or download invoices from one place.'
+  const pageDescription = hasSubscription
+    ? isCanceledSubscription
+      ? 'Your workspace cancelled the TwinMind Premium plan. Access remains available through the end of the current billing period.'
+      : 'Your workspace is on the TwinMind Premium plan. Review billing details, manage payment methods, or download invoices from one place.'
     : 'TwinMind Studio helps agencies stay on top of client relationships. Upgrade to the premium plan to unlock unlimited clients, richer reporting, and proactive support from our team.'
 
   return (
@@ -167,26 +175,32 @@ export default async function BillingPage() {
         <p className="max-w-2xl text-sm text-white/60">{pageDescription}</p>
       </header>
 
-      {hasActiveSubscription ? (
-        <BillingManagement
-          planName={planDetail.name}
-          planPrice={planDetail.price}
-          planPriceNote={planDetail.priceNote}
-          planDescription={planDetail.description}
-          statusLabel={statusAppearance.label}
-          statusTone={statusAppearance.tone}
-          statusValue={normalizedStatus ?? 'unknown'}
-          nextBillingDateLabel={nextBillingLabel}
-          nextBillingDateIso={subscription?.current_period_end ?? null}
-          subscriptionId={subscription?.provider_subscription_id ?? null}
-          canManageBilling={Boolean(subscription?.provider_customer_id)}
-        />
+      {hasSubscription ? (
+        <>
+          <BillingManagement
+            planName={planDetail.name}
+            planPrice={planDetail.price}
+            planPriceNote={planDetail.priceNote}
+            planDescription={planDetail.description}
+            statusLabel={statusAppearance.label}
+            statusTone={statusAppearance.tone}
+            statusValue={normalizedStatus ?? 'unknown'}
+            nextBillingDateLabel={nextBillingLabel}
+            nextBillingDateIso={subscription?.current_period_end ?? null}
+            subscriptionId={subscription?.provider_subscription_id ?? null}
+            canManageBilling={Boolean(subscription?.provider_customer_id)}
+            cancellationNotice={cancellationNotice}
+          />
+          {!hasActiveSubscription ? (
+            <BillingUpgrade
+              planName={planDetail.name}
+              planPrice={planDetail.price}
+              planPriceNote={planDetail.priceNote}
+            />
+          ) : null}
+        </>
       ) : (
-        <BillingUpgrade
-          planName={planDetail.name}
-          planPrice={planDetail.price}
-          planPriceNote={planDetail.priceNote}
-        />
+        <BillingUpgrade planName={planDetail.name} planPrice={planDetail.price} planPriceNote={planDetail.priceNote} />
       )}
     </div>
   )
