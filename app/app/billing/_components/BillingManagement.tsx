@@ -3,12 +3,14 @@
 import { useMemo, useState, useTransition } from 'react'
 
 import { createBillingPortalSession } from '@/app/actions/billing'
+import type { PlanStatus } from '@/lib/stripe-subscription'
 
 type BillingManagementProps = {
   planName: string
   planPrice: string
   planPriceNote: string
   planDescription: string
+  planStatus: PlanStatus
   statusLabel: string
   statusTone: 'positive' | 'warning' | 'danger' | 'default'
   statusValue: string
@@ -59,6 +61,7 @@ export function BillingManagement(props: BillingManagementProps) {
     planPrice,
     planPriceNote,
     planDescription,
+    planStatus,
     statusLabel,
     statusTone,
     statusValue,
@@ -107,7 +110,7 @@ export function BillingManagement(props: BillingManagementProps) {
     })
   }
 
-  const nextBillingHeading = statusValue === 'canceled' ? 'Access until' : 'Next billing'
+  const nextBillingHeading = planStatus === 'cancelled' ? 'Access until' : 'Next billing'
 
   return (
     <div className="grid gap-6 md:grid-cols-2">

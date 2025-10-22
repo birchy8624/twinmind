@@ -5,9 +5,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { stripe } from '@/lib/stripe'
 import {
+  normalizePlanStatus,
+  normalizeStripeStatus,
   normalizeStripeTimestamp,
+  resolvePlanStatus,
   resolveSubscriptionPeriodEnd,
   serializeSubscriptionCancellationDetails,
+  type PlanStatus,
 } from '@/lib/stripe-subscription'
 import { createServerSupabase } from '@/lib/supabase/server'
 import type { Database } from '@/types/supabase'
@@ -31,7 +35,8 @@ type SubscriptionSyncResult = {
   customerId: string | null
   subscriptionId: string | null
   currentPeriodEnd: string | null
-  status: string
+  planStatus: PlanStatus
+  providerStatus: string | null
   cancelAt: string | null
   canceledAt: string | null
   cancelAtPeriodEnd: boolean | null
@@ -75,8 +80,10 @@ async function resolveSubscriptionMetadata(
     customerId = session.customer.id
   }
 
-  const resolvedStatus =
+  const rawProviderStatus =
     subscription?.status ?? (session.status === 'complete' ? 'active' : session.status ?? 'active')
+  const providerStatus = normalizeStripeStatus(rawProviderStatus) ?? 'active'
+  const planStatus = resolvePlanStatus(providerStatus, currentPeriodEnd)
 
   const cancelAt = normalizeStripeTimestamp(subscription?.cancel_at)
   const canceledAt = normalizeStripeTimestamp(subscription?.canceled_at)
@@ -91,7 +98,8 @@ async function resolveSubscriptionMetadata(
     customerId,
     subscriptionId,
     currentPeriodEnd,
-    status: resolvedStatus,
+    planStatus,
+    providerStatus,
     cancelAt,
     canceledAt,
     cancelAtPeriodEnd,
@@ -130,11 +138,11 @@ async function syncWorkspaceSubscription({
 
   const metadata = await resolveSubscriptionMetadata(session)
 
-  const normalizedStatus = metadata.status?.trim() || 'active'
+  const normalizedPlanStatus = normalizePlanStatus(metadata.planStatus)
 
   const updatePayload: Database['public']['Tables']['subscriptions']['Update'] = {
     plan_code: PRO_PLAN_CODE,
-    status: normalizedStatus,
+    status: normalizedPlanStatus,
     provider: 'stripe',
     provider_customer_id: metadata.customerId,
     provider_subscription_id: metadata.subscriptionId,
@@ -168,7 +176,7 @@ async function syncWorkspaceSubscription({
     const insertPayload: Database['public']['Tables']['subscriptions']['Insert'] = {
       account_id: accountId,
       plan_code: PRO_PLAN_CODE,
-      status: normalizedStatus,
+      status: normalizedPlanStatus,
       provider: 'stripe',
       provider_customer_id: metadata.customerId,
       provider_subscription_id: metadata.subscriptionId,
