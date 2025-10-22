@@ -36,6 +36,10 @@ type ProjectUpdateResponse = {
   project: (ProjectRow & { client: ClientOption | null; assignee: AssigneeOption | null })
 }
 
+type ProjectLabelsResponse = {
+  project: { id: string; labels: string[] | null }
+}
+
 type SaveInvoicePayload = {
   invoiceId?: string
   amount: number
@@ -150,6 +154,20 @@ export async function updateProjectStatus(
   }
 
   return parseJson<{ project: { id: string; status: Database['public']['Enums']['project_status'] } }>(response)
+}
+
+export async function addProjectLabel(projectId: string, label: string) {
+  const response = await apiFetch(`/api/projects/${projectId}/labels`, {
+    method: 'POST',
+    body: JSON.stringify({ label }),
+  })
+
+  if (!response.ok) {
+    const body = await parseJson<{ message?: string }>(response)
+    throw new Error(body.message ?? 'Unable to update project labels.')
+  }
+
+  return parseJson<ProjectLabelsResponse>(response)
 }
 
 export async function updateProjectDetails(projectId: string, payload: ProjectUpdatePayload) {
