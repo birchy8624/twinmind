@@ -207,8 +207,8 @@ export function BillingManagement(props: BillingManagementProps) {
         <div className="mt-auto rounded-2xl border border-white/10 bg-base-900/70 p-4 text-sm text-white/70">
           <p>
             Need help? Email{' '}
-            <a className="text-white underline" href="mailto:billing@twinmind.app">
-              billing@twinmind.app
+            <a className="text-white underline" href="mailto:billing@twinminds.studio">
+              billing@twinminds.studio
             </a>{' '}
             and our team will assist you within one business day.
           </p>
