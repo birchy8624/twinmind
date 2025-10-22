@@ -2,16 +2,8 @@ import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 
 import { stripe } from '@/lib/stripe'
-import {
-  normalizePlanStatus,
-  normalizeStripeStatus,
-  normalizeStripeTimestamp,
-  resolvePlanStatus,
-  resolveSubscriptionPeriodEnd,
-  serializeSubscriptionCancellationDetails,
-} from '@/lib/stripe-subscription'
+import { upsertSubscriptionForAccount } from '@/lib/subscription-upsert'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import type { Database } from '@/types/supabase'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,61 +23,25 @@ const webhookSecret = (() => {
 async function updateSubscriptionRecord(subscription: Stripe.Subscription) {
   const supabase = supabaseAdmin()
 
-  const currentPeriodEnd = resolveSubscriptionPeriodEnd(subscription)
-  const providerStatus = normalizeStripeStatus(subscription.status) ?? 'canceled'
-  const planStatus = normalizePlanStatus(resolvePlanStatus(providerStatus, currentPeriodEnd))
-
-  const updatePayload: Database['public']['Tables']['subscriptions']['Update'] = {
-    status: planStatus,
-    provider: 'stripe',
-    provider_subscription_id: subscription.id,
-    current_period_end: currentPeriodEnd,
-    cancel_at: normalizeStripeTimestamp(subscription.cancel_at),
-    canceled_at: normalizeStripeTimestamp(subscription.canceled_at),
-    cancel_at_period_end:
-      typeof subscription.cancel_at_period_end === 'boolean'
-        ? subscription.cancel_at_period_end
-        : null,
-    cancellation_details:
-      serializeSubscriptionCancellationDetails(subscription.cancellation_details) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details'],
-  }
-
-  if (typeof subscription.customer === 'string') {
-    updatePayload.provider_customer_id = subscription.customer
-  } else if (
-    subscription.customer &&
-    typeof subscription.customer === 'object' &&
-    'id' in subscription.customer &&
-    typeof subscription.customer.id === 'string'
-  ) {
-    updatePayload.provider_customer_id = subscription.customer.id
-  }
-
   const { data: existing, error: fetchError } = await supabase
     .from(SUBSCRIPTIONS)
-    .select('id')
+    .select('account_id')
     .eq('provider_subscription_id', subscription.id)
-    .maybeSingle<{ id: string }>()
+    .maybeSingle<{ account_id: string }>()
 
   if (fetchError) {
     console.error('stripe webhook subscription lookup error:', fetchError)
     throw new Error(`Unable to load subscription record for ${subscription.id}`)
   }
 
-  if (!existing?.id) {
-    console.warn('stripe webhook subscription not found:', subscription.id)
+  const accountId = existing?.account_id
+
+  if (!accountId) {
+    console.warn('stripe webhook subscription not linked to account:', subscription.id)
     return
   }
 
-  const { error: updateError } = await supabase
-    .from(SUBSCRIPTIONS)
-    .update(updatePayload)
-    .eq('id', existing.id)
-
-  if (updateError) {
-    console.error('stripe webhook subscription update error:', updateError)
-    throw new Error(`Unable to update subscription record ${existing.id}`)
-  }
+  await upsertSubscriptionForAccount(accountId, subscription, supabase)
 }
 
 export async function POST(req: Request) {
