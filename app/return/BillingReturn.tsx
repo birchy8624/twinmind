@@ -5,11 +5,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { stripe } from '@/lib/stripe'
 import {
+  normalizePlanStatus,
+  normalizeStripeStatus,
   normalizeStripeTimestamp,
+  resolvePlanStatus,
   resolveSubscriptionPeriodEnd,
   serializeSubscriptionCancellationDetails,
+  type PlanStatus,
 } from '@/lib/stripe-subscription'
 import { createServerSupabase } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import type { Database } from '@/types/supabase'
 
 type BillingReturnProps = {
@@ -31,7 +36,8 @@ type SubscriptionSyncResult = {
   customerId: string | null
   subscriptionId: string | null
   currentPeriodEnd: string | null
-  status: string
+  planStatus: PlanStatus
+  providerStatus: string | null
   cancelAt: string | null
   canceledAt: string | null
   cancelAtPeriodEnd: boolean | null
@@ -42,6 +48,34 @@ function isDeletedCustomer(
   customer: Stripe.Customer | Stripe.DeletedCustomer
 ): customer is Stripe.DeletedCustomer {
   return 'deleted' in customer && customer.deleted === true
+}
+
+function normalizeAccountId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmed = value.trim()
+  return trimmed || null
+}
+
+function extractAccountIdFromSession(session: Stripe.Checkout.Session): string | null {
+  const sessionAccountId = normalizeAccountId(session.metadata?.account_id)
+
+  if (sessionAccountId) {
+    return sessionAccountId
+  }
+
+  if (typeof session.subscription === 'object' && session.subscription && 'metadata' in session.subscription) {
+    const subscriptionMetadata = session.subscription.metadata as Stripe.Metadata | undefined
+    const subscriptionAccountId = normalizeAccountId(subscriptionMetadata?.account_id)
+
+    if (subscriptionAccountId) {
+      return subscriptionAccountId
+    }
+  }
+
+  return normalizeAccountId(session.client_reference_id)
 }
 
 async function resolveSubscriptionMetadata(
@@ -75,8 +109,10 @@ async function resolveSubscriptionMetadata(
     customerId = session.customer.id
   }
 
-  const resolvedStatus =
+  const rawProviderStatus =
     subscription?.status ?? (session.status === 'complete' ? 'active' : session.status ?? 'active')
+  const providerStatus = normalizeStripeStatus(rawProviderStatus) ?? 'active'
+  const planStatus = resolvePlanStatus(providerStatus, currentPeriodEnd)
 
   const cancelAt = normalizeStripeTimestamp(subscription?.cancel_at)
   const canceledAt = normalizeStripeTimestamp(subscription?.canceled_at)
@@ -91,7 +127,8 @@ async function resolveSubscriptionMetadata(
     customerId,
     subscriptionId,
     currentPeriodEnd,
-    status: resolvedStatus,
+    planStatus,
+    providerStatus,
     cancelAt,
     canceledAt,
     cancelAtPeriodEnd,
@@ -103,38 +140,52 @@ async function syncWorkspaceSubscription({
   session,
   supabase,
 }: SubscriptionSyncContext) {
+  const adminClient = supabaseAdmin()
+
   const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser()
 
-  if (userError || !user) {
-    throw new Error('Unable to determine the authenticated user.')
+  if (userError) {
+    console.error('billing return user resolution error:', userError)
   }
 
-  const { data: membership, error: membershipError } = await supabase
-    .from(ACCOUNT_MEMBERS)
-    .select('account_id')
-    .eq('profile_id', user.id)
-    .maybeSingle<{ account_id: string | null }>()
+  let memberAccountId: string | null = null
 
-  if (membershipError) {
-    throw new Error('Unable to load workspace membership.')
+  if (user) {
+    const { data: membership, error: membershipError } = await supabase
+      .from(ACCOUNT_MEMBERS)
+      .select('account_id')
+      .eq('profile_id', user.id)
+      .maybeSingle<{ account_id: string | null }>({ head: false })
+
+    if (membershipError) {
+      throw new Error('Unable to load workspace membership.')
+    }
+
+    memberAccountId = membership?.account_id ?? null
   }
 
-  const accountId = membership?.account_id
+  const sessionAccountId = extractAccountIdFromSession(session)
+
+  if (memberAccountId && sessionAccountId && memberAccountId !== sessionAccountId) {
+    throw new Error('The checkout session does not match the active workspace.')
+  }
+
+  const accountId = memberAccountId ?? sessionAccountId
 
   if (!accountId) {
-    throw new Error('Workspace account is not linked to this profile.')
+    throw new Error('Workspace account is not linked to this checkout session.')
   }
 
   const metadata = await resolveSubscriptionMetadata(session)
 
-  const normalizedStatus = metadata.status?.trim() || 'active'
+  const normalizedPlanStatus = normalizePlanStatus(metadata.planStatus)
 
   const updatePayload: Database['public']['Tables']['subscriptions']['Update'] = {
     plan_code: PRO_PLAN_CODE,
-    status: normalizedStatus,
+    status: normalizedPlanStatus,
     provider: 'stripe',
     provider_customer_id: metadata.customerId,
     provider_subscription_id: metadata.subscriptionId,
@@ -145,7 +196,7 @@ async function syncWorkspaceSubscription({
     cancellation_details: metadata.cancellationDetails,
   }
 
-  const { data: existingSubscription, error: fetchError } = await supabase
+  const { data: existingSubscription, error: fetchError } = await adminClient
     .from(SUBSCRIPTIONS)
     .select('id')
     .eq('account_id', accountId)
@@ -156,7 +207,7 @@ async function syncWorkspaceSubscription({
   }
 
   if (existingSubscription?.id) {
-    const { error: updateError } = await supabase
+    const { error: updateError } = await adminClient
       .from(SUBSCRIPTIONS)
       .update(updatePayload)
       .eq('id', existingSubscription.id)
@@ -168,7 +219,7 @@ async function syncWorkspaceSubscription({
     const insertPayload: Database['public']['Tables']['subscriptions']['Insert'] = {
       account_id: accountId,
       plan_code: PRO_PLAN_CODE,
-      status: normalizedStatus,
+      status: normalizedPlanStatus,
       provider: 'stripe',
       provider_customer_id: metadata.customerId,
       provider_subscription_id: metadata.subscriptionId,
@@ -179,7 +230,7 @@ async function syncWorkspaceSubscription({
       cancellation_details: metadata.cancellationDetails,
     }
 
-    const { error: insertError } = await supabase.from(SUBSCRIPTIONS).insert(insertPayload)
+    const { error: insertError } = await adminClient.from(SUBSCRIPTIONS).insert(insertPayload)
 
     if (insertError) {
       throw new Error('Unable to create the subscription record.')

@@ -3,7 +3,10 @@ import type Stripe from 'stripe'
 
 import { stripe } from '@/lib/stripe'
 import {
+  normalizePlanStatus,
+  normalizeStripeStatus,
   normalizeStripeTimestamp,
+  resolvePlanStatus,
   resolveSubscriptionPeriodEnd,
   serializeSubscriptionCancellationDetails,
 } from '@/lib/stripe-subscription'
@@ -28,13 +31,15 @@ const webhookSecret = (() => {
 async function updateSubscriptionRecord(subscription: Stripe.Subscription) {
   const supabase = supabaseAdmin()
 
-  const normalizedStatus = subscription.status?.trim() || 'canceled'
+  const currentPeriodEnd = resolveSubscriptionPeriodEnd(subscription)
+  const providerStatus = normalizeStripeStatus(subscription.status) ?? 'canceled'
+  const planStatus = normalizePlanStatus(resolvePlanStatus(providerStatus, currentPeriodEnd))
 
   const updatePayload: Database['public']['Tables']['subscriptions']['Update'] = {
-    status: normalizedStatus,
+    status: planStatus,
     provider: 'stripe',
     provider_subscription_id: subscription.id,
-    current_period_end: resolveSubscriptionPeriodEnd(subscription),
+    current_period_end: currentPeriodEnd,
     cancel_at: normalizeStripeTimestamp(subscription.cancel_at),
     canceled_at: normalizeStripeTimestamp(subscription.canceled_at),
     cancel_at_period_end:
