@@ -1,7 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode
+} from 'react'
 import { motion } from 'framer-motion'
+import { useRouter } from 'next/navigation'
 
 import { fetchKanbanProjects, updateProjectStatus, type KanbanProject as ApiKanbanProject } from '@/lib/api/projects'
 import type { Database } from '@/types/supabase'
@@ -259,14 +270,14 @@ function LabelBadge({ label, color, onColorChange }: LabelBadgeProps) {
       return undefined
     }
 
-    const handlePointer = (event: MouseEvent) => {
+    const handlePointer = (event: globalThis.MouseEvent) => {
       if (containerRef.current && containerRef.current.contains(event.target as Node)) {
         return
       }
       setIsOpen(false)
     }
 
-    const handleKeyDown = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false)
       }
@@ -358,6 +369,7 @@ function LabelBadge({ label, color, onColorChange }: LabelBadgeProps) {
 }
 
 export default function KanbanPage() {
+  const router = useRouter()
   const [projects, setProjects] = useState<Map<string, KanbanProject>>(new Map())
   const [columnOrders, setColumnOrders] = useState<ColumnOrders>(() => createEmptyOrders())
   const [searchTerm, setSearchTerm] = useState('')
@@ -745,6 +757,25 @@ export default function KanbanPage() {
     [columnOrders, dragState, projects, pushToast]
   )
 
+  const handleProjectActivate = useCallback(
+    (
+      event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>,
+      projectId: string
+    ) => {
+      if (dragState) {
+        return
+      }
+
+      const target = event.target as HTMLElement | null
+      if (!('key' in event) && target?.closest('button, a, input, select, textarea')) {
+        return
+      }
+
+      router.push(`/app/projects/${projectId}`)
+    },
+    [dragState, router]
+  )
+
   const visibleCounts = useMemo(() => {
     const counts = new Map<ColumnStatus, number>()
     for (const column of PIPELINE_COLUMNS) {
@@ -910,10 +941,12 @@ export default function KanbanPage() {
                     key={id}
                     layout
                     layoutId={id}
-                    className={`space-y-3 rounded-2xl border border-white/10 bg-base-900/60 p-4 shadow-sm transition ${
+                    className={`space-y-3 rounded-2xl border border-white/10 bg-base-900/60 p-4 shadow-sm transition hover:border-white/20 hover:bg-base-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 cursor-pointer ${
                       'opacity-100'
                     }`}
                     draggable
+                    tabIndex={0}
+                    role="button"
                     onDragStart={(event) => {
                       const dragEvent = event as unknown as DragEvent<HTMLDivElement>
                       if (dragEvent.dataTransfer) {
@@ -923,6 +956,13 @@ export default function KanbanPage() {
                       handleDragStart(id, column.status)
                     }}
                     onDragEnd={handleDragEnd}
+                    onClick={(event) => handleProjectActivate(event, id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        handleProjectActivate(event, id)
+                      }
+                    }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
