@@ -1,151 +1,193 @@
-'use client'
+import { cache } from 'react'
 
-import { useRouter } from 'next/navigation'
+import { BillingManagement } from './_components/BillingManagement'
+import { BillingUpgrade } from './_components/BillingUpgrade'
+import { createServerSupabase } from '@/lib/supabase/server'
+import type { Database } from '@/types/supabase'
 
-const freeFeatures = [
-  'Up to 2 active clients',
-  'Project Kanban board access',
-  'Client portal invitations',
-  'Weekly email digest'
-] as const
+const ACCOUNT_MEMBERS = 'account_members' as const
+const SUBSCRIPTIONS = 'subscriptions' as const
 
-const premiumFeatures = [
-  'Unlimited clients and relationships',
-  'Advanced project reporting',
-  'Shared asset library with permissions',
-  'Priority workspace support'
-] as const
-
-const comparisonRows = [
+const PLAN_DETAILS: Record<
+  string,
   {
-    label: 'Active clients',
-    free: 'Up to 2',
-    premium: 'Unlimited'
-  },
-  {
-    label: 'Projects per client',
-    free: '3',
-    premium: 'Unlimited'
-  },
-  {
-    label: 'Portal customization',
-    free: 'Basic branding',
-    premium: 'Advanced themes'
-  },
-  {
-    label: 'Automation rules',
-    free: '1 rule',
-    premium: 'Unlimited'
-  },
-  {
-    label: 'Support',
-    free: 'Community forum',
-    premium: 'Priority email'
+    name: string
+    price: string
+    priceNote: string
+    description: string
   }
-] as const
-
-const CheckIcon = () => (
-  <svg className="h-4 w-4 text-limeglow-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
-    <path strokeLinecap="round" strokeLinejoin="round" d="m5 10 3 3 7-7" />
-  </svg>
-)
-
-export default function BillingPage() {
-  const router = useRouter()
-
-  const handleUpgrade = () => {
-    router.push('/app/billing/checkout')
+> = {
+  pro: {
+    name: 'Growth',
+    price: '$12',
+    priceNote: 'per month',
+    description: 'TwinMind Growth unlocks unlimited clients, workflow automation, and priority workspace support.'
   }
+}
+
+const DEFAULT_PLAN_DETAIL = PLAN_DETAILS['pro']
+
+const ACTIVE_STATUSES = new Set(['active', 'trialing', 'past_due'])
+
+const STATUS_APPEARANCE: Record<
+  string,
+  {
+    label: string
+    tone: 'positive' | 'warning' | 'danger' | 'default'
+  }
+> = {
+  active: { label: 'Active', tone: 'positive' },
+  trialing: { label: 'Trialing', tone: 'positive' },
+  past_due: { label: 'Past due', tone: 'warning' },
+  unpaid: { label: 'Unpaid', tone: 'danger' },
+  canceled: { label: 'Cancelled', tone: 'danger' },
+  incomplete: { label: 'Incomplete', tone: 'warning' },
+  incomplete_expired: { label: 'Incomplete', tone: 'warning' }
+}
+
+type AccountMembershipRow = Pick<
+  Database['public']['Tables']['account_members']['Row'],
+  'account_id' | 'role'
+>
+
+type SubscriptionRow = Pick<
+  Database['public']['Tables']['subscriptions']['Row'],
+  'plan_code' | 'status' | 'current_period_end' | 'provider_subscription_id' | 'provider_customer_id' | 'created_at'
+>
+
+type BillingState = {
+  membershipRole: AccountMembershipRow['role'] | null
+  subscription: SubscriptionRow | null
+}
+
+const getBillingState = cache(async (): Promise<BillingState> => {
+  const supabase = createServerSupabase()
+
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    return { membershipRole: null, subscription: null }
+  }
+
+  const {
+    data: membership,
+    error: membershipError
+  } = await supabase
+    .from(ACCOUNT_MEMBERS)
+    .select('account_id, role')
+    .eq('profile_id', user.id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle<AccountMembershipRow>()
+
+  if (membershipError) {
+    console.error('billing membership lookup error:', membershipError)
+    return { membershipRole: null, subscription: null }
+  }
+
+  const accountId = membership?.account_id ?? null
+
+  if (!accountId) {
+    return { membershipRole: membership?.role ?? null, subscription: null }
+  }
+
+  const {
+    data: subscription,
+    error: subscriptionError
+  } = await supabase
+    .from(SUBSCRIPTIONS)
+    .select('plan_code, status, current_period_end, provider_subscription_id, provider_customer_id, created_at')
+    .eq('account_id', accountId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<SubscriptionRow>()
+
+  if (subscriptionError) {
+    console.error('billing subscription lookup error:', subscriptionError)
+    return { membershipRole: membership?.role ?? null, subscription: null }
+  }
+
+  return {
+    membershipRole: membership?.role ?? null,
+    subscription: subscription ?? null
+  }
+})
+
+const formatBillingDate = (value: string | null): string | null => {
+  if (!value) {
+    return null
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(date)
+}
+
+const resolveStatusAppearance = (status: string | null | undefined) => {
+  if (!status) {
+    return { label: 'Unknown', tone: 'default' as const }
+  }
+
+  const normalized = status.toLowerCase()
+  return STATUS_APPEARANCE[normalized] ?? {
+    label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
+    tone: 'default' as const
+  }
+}
+
+export default async function BillingPage() {
+  const { subscription } = await getBillingState()
+
+  const planDetail = subscription ? PLAN_DETAILS[subscription.plan_code] ?? DEFAULT_PLAN_DETAIL : DEFAULT_PLAN_DETAIL
+  const normalizedStatus = subscription?.status ? subscription.status.toLowerCase() : null
+  const hasActiveSubscription = normalizedStatus ? ACTIVE_STATUSES.has(normalizedStatus) : false
+  const statusAppearance = resolveStatusAppearance(normalizedStatus)
+  const nextBillingLabel = formatBillingDate(subscription?.current_period_end ?? null)
+
+  const pageTitle = hasActiveSubscription
+    ? 'Manage your TwinMind subscription'
+    : 'Choose the plan that grows with your studio'
+
+  const pageDescription = hasActiveSubscription
+    ? 'Your workspace is on the TwinMind Growth plan. Review billing details, manage payment methods, or download invoices from one place.'
+    : 'TwinMind Studio helps agencies stay on top of client relationships. Upgrade to the premium plan to unlock unlimited clients, richer reporting, and proactive support from our team.'
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-12">
       <header className="space-y-3">
         <p className="text-xs uppercase tracking-[0.3em] text-white/40">Workspace billing</p>
-        <h1 className="text-3xl font-semibold text-white">Choose the plan that grows with your studio</h1>
-        <p className="max-w-2xl text-sm text-white/60">
-          TwinMind Studio helps agencies stay on top of client relationships. Upgrade to the premium plan to unlock
-          unlimited clients, richer reporting, and proactive support from our team.
-        </p>
+        <h1 className="text-3xl font-semibold text-white">{pageTitle}</h1>
+        <p className="max-w-2xl text-sm text-white/60">{pageDescription}</p>
       </header>
 
-      <section className="grid gap-6 md:grid-cols-2">
-        <article className="flex flex-col gap-6 rounded-3xl border border-white/10 bg-base-900/70 p-8 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.5)]">
-          <div className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.3em] text-white/50">Free plan</span>
-            <h2 className="text-2xl font-semibold text-white">Starter</h2>
-            <p className="text-sm text-white/60">
-              Perfect for small studios getting organized. Keep working with up to two clients at a time for no cost.
-            </p>
-          </div>
-          <div className="flex items-baseline gap-2 text-white">
-            <span className="text-4xl font-semibold">$0</span>
-            <span className="text-sm text-white/50">per month</span>
-          </div>
-          <ul className="flex flex-col gap-3 text-sm text-white/70">
-            {freeFeatures.map((feature) => (
-              <li key={feature} className="flex items-start gap-3">
-                <CheckIcon />
-                <span>{feature}</span>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            disabled
-            className="mt-auto inline-flex items-center justify-center rounded-full border border-white/20 px-5 py-2 text-sm font-medium text-white/70"
-          >
-            Current plan
-          </button>
-        </article>
-
-        <article className="relative flex flex-col gap-6 rounded-3xl border border-limeglow-400/50 bg-gradient-to-br from-base-900/80 via-base-900/60 to-base-900/30 p-8 shadow-[0_25px_70px_-25px_rgba(157,242,85,0.6)]">
-          <div className="absolute right-6 top-6 rounded-full bg-limeglow-400/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.25em] text-limeglow-300">
-            Most popular
-          </div>
-          <div className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.3em] text-limeglow-300/80">Premium plan</span>
-            <h2 className="text-2xl font-semibold text-white">Growth</h2>
-            <p className="text-sm text-white/60">
-              Unlock the full TwinMind CRM experience. Automate handoffs, scale to unlimited clients, and centralize
-              every touchpoint in one place.
-            </p>
-          </div>
-          <div className="flex items-baseline gap-2 text-white">
-            <span className="text-4xl font-semibold">$12</span>
-            <span className="text-sm text-white/50">per month</span>
-          </div>
-          <ul className="flex flex-col gap-3 text-sm text-white/80">
-            {premiumFeatures.map((feature) => (
-              <li key={feature} className="flex items-start gap-3">
-                <CheckIcon />
-                <span>{feature}</span>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={handleUpgrade}
-            className="mt-auto inline-flex items-center justify-center rounded-full bg-limeglow-400 px-5 py-2 text-sm font-semibold text-base-950 transition hover:bg-limeglow-300 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            Upgrade to Premium
-          </button>
-        </article>
-      </section>
-
-      <section className="overflow-hidden rounded-3xl border border-white/10 bg-base-900/50">
-        <div className="border-b border-white/5 bg-base-900/70 px-6 py-4">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-white/60">Plan comparison</h3>
-        </div>
-        <div className="divide-y divide-white/5 text-sm text-white/70">
-          {comparisonRows.map((row) => (
-            <div key={row.label} className="grid grid-cols-3 gap-4 px-6 py-4">
-              <span className="font-medium text-white/80">{row.label}</span>
-              <span>{row.free}</span>
-              <span className="text-white">{row.premium}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+      {hasActiveSubscription ? (
+        <BillingManagement
+          planName={planDetail.name}
+          planPrice={planDetail.price}
+          planPriceNote={planDetail.priceNote}
+          planDescription={planDetail.description}
+          statusLabel={statusAppearance.label}
+          statusTone={statusAppearance.tone}
+          statusValue={normalizedStatus ?? 'unknown'}
+          nextBillingDateLabel={nextBillingLabel}
+          nextBillingDateIso={subscription?.current_period_end ?? null}
+          subscriptionId={subscription?.provider_subscription_id ?? null}
+          canManageBilling={Boolean(subscription?.provider_customer_id)}
+        />
+      ) : (
+        <BillingUpgrade
+          planName={planDetail.name}
+          planPrice={planDetail.price}
+          planPriceNote={planDetail.priceNote}
+        />
+      )}
     </div>
   )
 }
