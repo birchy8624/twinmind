@@ -7,8 +7,8 @@ import {
   useRef,
   useState,
   type DragEvent,
-  type KeyboardEvent,
-  type MouseEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode
 } from 'react'
 import { motion } from 'framer-motion'
@@ -270,14 +270,14 @@ function LabelBadge({ label, color, onColorChange }: LabelBadgeProps) {
       return undefined
     }
 
-    const handlePointer = (event: MouseEvent) => {
+    const handlePointer = (event: globalThis.MouseEvent) => {
       if (containerRef.current && containerRef.current.contains(event.target as Node)) {
         return
       }
       setIsOpen(false)
     }
 
-    const handleKeyDown = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false)
       }
@@ -758,7 +758,10 @@ export default function KanbanPage() {
   )
 
   const handleProjectActivate = useCallback(
-    (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>, projectId: string) => {
+    (
+      event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>,
+      projectId: string
+    ) => {
       if (dragState) {
         return
       }
