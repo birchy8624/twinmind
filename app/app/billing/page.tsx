@@ -1,4 +1,12 @@
 import { cache } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+import { stripe } from '@/lib/stripe'
+import {
+  normalizeStripeTimestamp,
+  resolveSubscriptionPeriodEnd,
+  serializeSubscriptionCancellationDetails,
+} from '@/lib/stripe-subscription'
 
 import { BillingManagement } from './_components/BillingManagement'
 import { BillingUpgrade } from './_components/BillingUpgrade'
@@ -52,12 +60,119 @@ type AccountMembershipRow = Pick<
 
 type SubscriptionRow = Pick<
   Database['public']['Tables']['subscriptions']['Row'],
-  'plan_code' | 'status' | 'current_period_end' | 'provider_subscription_id' | 'provider_customer_id' | 'created_at'
+  |
+    'plan_code'
+    | 'status'
+    | 'current_period_end'
+    | 'provider_subscription_id'
+    | 'provider_customer_id'
+    | 'created_at'
+    | 'cancel_at'
+    | 'canceled_at'
+    | 'cancel_at_period_end'
+    | 'cancellation_details'
 >
 
 type BillingState = {
   membershipRole: AccountMembershipRow['role'] | null
   subscription: SubscriptionRow | null
+}
+
+type SubscriptionSyncContext = {
+  supabase: SupabaseClient<Database>
+  accountId: string
+  subscription: SubscriptionRow
+}
+
+const SUBSCRIPTION_SYNC_SELECT =
+  'plan_code, status, current_period_end, provider_subscription_id, provider_customer_id, created_at, cancel_at, canceled_at, cancel_at_period_end, cancellation_details'
+
+const normalizeStripeStatus = (value: string | null | undefined): string | null => {
+  if (!value) {
+    return null
+  }
+
+  return value.trim()
+}
+
+const resolvePaidAccess = (status: string | null, currentPeriodEnd: string | null): boolean => {
+  if (!status) {
+    return false
+  }
+
+  const normalized = status.toLowerCase()
+
+  if (ACTIVE_STATUSES.has(normalized)) {
+    return true
+  }
+
+  if (normalized !== 'canceled' || !currentPeriodEnd) {
+    return false
+  }
+
+  const periodEndDate = new Date(currentPeriodEnd)
+
+  if (Number.isNaN(periodEndDate.getTime())) {
+    return false
+  }
+
+  return periodEndDate.getTime() > Date.now()
+}
+
+const syncStripeSubscription = async ({
+  supabase,
+  accountId,
+  subscription,
+}: SubscriptionSyncContext): Promise<SubscriptionRow> => {
+  if (!subscription.provider_subscription_id) {
+    return subscription
+  }
+
+  try {
+    const stripeSubscription = await stripe.subscriptions.retrieve(subscription.provider_subscription_id, {
+      expand: ['items'],
+    })
+
+    const currentPeriodEnd = resolveSubscriptionPeriodEnd(stripeSubscription)
+    const cancelAt = normalizeStripeTimestamp(stripeSubscription.cancel_at)
+    const canceledAt = normalizeStripeTimestamp(stripeSubscription.canceled_at)
+    const cancelAtPeriodEnd =
+      typeof stripeSubscription.cancel_at_period_end === 'boolean'
+        ? stripeSubscription.cancel_at_period_end
+        : null
+    const cancellationDetails = serializeSubscriptionCancellationDetails(
+      stripeSubscription.cancellation_details,
+    ) as Database['public']['Tables']['subscriptions']['Update']['cancellation_details']
+
+    const nextStatus = normalizeStripeStatus(stripeSubscription.status) ?? subscription.status ?? 'active'
+
+    const updatePayload: Database['public']['Tables']['subscriptions']['Update'] = {
+      status: nextStatus,
+      current_period_end: currentPeriodEnd,
+      cancel_at: cancelAt,
+      canceled_at: canceledAt,
+      cancel_at_period_end: cancelAtPeriodEnd,
+      cancellation_details: cancellationDetails,
+    }
+
+    const { data: syncedSubscription, error: syncError } = await supabase
+      .from(SUBSCRIPTIONS)
+      .update(updatePayload)
+      .eq('account_id', accountId)
+      .eq('provider_subscription_id', subscription.provider_subscription_id)
+      .select(SUBSCRIPTION_SYNC_SELECT)
+      .maybeSingle<SubscriptionRow>()
+
+    if (syncError) {
+      console.error('billing subscription sync update error:', syncError)
+      return { ...subscription, ...updatePayload }
+    }
+
+    return syncedSubscription ?? { ...subscription, ...updatePayload }
+  } catch (error) {
+    console.error('billing subscription sync retrieve error:', error)
+    return subscription
+  }
 }
 
 const getBillingState = cache(async (): Promise<BillingState> => {
@@ -99,7 +214,7 @@ const getBillingState = cache(async (): Promise<BillingState> => {
     error: subscriptionError
   } = await supabase
     .from(SUBSCRIPTIONS)
-    .select('plan_code, status, current_period_end, provider_subscription_id, provider_customer_id, created_at')
+    .select(SUBSCRIPTION_SYNC_SELECT)
     .eq('account_id', accountId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -110,9 +225,19 @@ const getBillingState = cache(async (): Promise<BillingState> => {
     return { membershipRole: membership?.role ?? null, subscription: null }
   }
 
+  if (!subscription) {
+    return { membershipRole: membership?.role ?? null, subscription: null }
+  }
+
+  const syncedSubscription = await syncStripeSubscription({
+    supabase,
+    accountId,
+    subscription
+  })
+
   return {
     membershipRole: membership?.role ?? null,
-    subscription: subscription ?? null
+    subscription: syncedSubscription
   }
 })
 
@@ -145,15 +270,19 @@ const resolveStatusAppearance = (status: string | null | undefined) => {
 export default async function BillingPage() {
   const { subscription } = await getBillingState()
 
-  const planDetail = subscription ? PLAN_DETAILS[subscription.plan_code] ?? DEFAULT_PLAN_DETAIL : DEFAULT_PLAN_DETAIL
-  const hasSubscription = Boolean(subscription)
-  const normalizedStatus = subscription?.status ? subscription.status.toLowerCase() : null
-  const hasActiveSubscription = normalizedStatus ? ACTIVE_STATUSES.has(normalizedStatus) : false
+  const rawStatus = subscription?.status ?? null
+  const normalizedStatus = rawStatus ? rawStatus.toLowerCase() : null
   const isCanceledSubscription = normalizedStatus === 'canceled'
+  const hasPaidAccess = resolvePaidAccess(rawStatus, subscription?.current_period_end ?? null)
+  const subscriptionForDisplay = hasPaidAccess ? subscription : null
+  const planDetail = subscriptionForDisplay
+    ? PLAN_DETAILS[subscriptionForDisplay.plan_code] ?? DEFAULT_PLAN_DETAIL
+    : DEFAULT_PLAN_DETAIL
+  const hasSubscription = Boolean(subscriptionForDisplay)
   const statusAppearance = resolveStatusAppearance(normalizedStatus)
   const nextBillingLabel = formatBillingDate(subscription?.current_period_end ?? null)
   const cancellationNotice =
-    isCanceledSubscription && nextBillingLabel
+    normalizedStatus === 'canceled' && nextBillingLabel
       ? `Your TwinMind Premium plan will remain active until ${nextBillingLabel}. You can reactivate anytime from the billing center.`
       : null
 
@@ -186,18 +315,11 @@ export default async function BillingPage() {
             statusTone={statusAppearance.tone}
             statusValue={normalizedStatus ?? 'unknown'}
             nextBillingDateLabel={nextBillingLabel}
-            nextBillingDateIso={subscription?.current_period_end ?? null}
-            subscriptionId={subscription?.provider_subscription_id ?? null}
-            canManageBilling={Boolean(subscription?.provider_customer_id)}
+            nextBillingDateIso={subscriptionForDisplay?.current_period_end ?? null}
+            subscriptionId={subscriptionForDisplay?.provider_subscription_id ?? null}
+            canManageBilling={Boolean(subscriptionForDisplay?.provider_customer_id)}
             cancellationNotice={cancellationNotice}
           />
-          {!hasActiveSubscription ? (
-            <BillingUpgrade
-              planName={planDetail.name}
-              planPrice={planDetail.price}
-              planPriceNote={planDetail.priceNote}
-            />
-          ) : null}
         </>
       ) : (
         <BillingUpgrade planName={planDetail.name} planPrice={planDetail.price} planPriceNote={planDetail.priceNote} />
