@@ -17,9 +17,12 @@ type WinRate = {
   paid: number
 }
 
-type VelocityItem = {
-  stage: string
-  days: number
+type StaleProject = {
+  id: string
+  name: string
+  client: string
+  lastUpdatedAt: string | null
+  daysSinceUpdate: number | null
 }
 
 type UpcomingProject = {
@@ -40,7 +43,7 @@ type DashboardResponse = {
   pipelineOverview: PipelineOverviewItem[]
   revenuePerformance: RevenuePerformanceItem[]
   winRate: WinRate
-  velocityByStage: VelocityItem[]
+  staleProjects: StaleProject[]
   upcomingProjects: UpcomingProject[]
   activityFeed: ActivityFeedItem[]
 }
@@ -71,7 +74,7 @@ export type {
   PipelineOverviewItem,
   RevenuePerformanceItem,
   WinRate,
-  VelocityItem,
+  StaleProject,
   UpcomingProject,
   ActivityFeedItem,
   DashboardResponse,
