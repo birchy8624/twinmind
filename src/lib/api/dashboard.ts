@@ -34,6 +34,8 @@ type UpcomingProject = {
 
 type ActivityFeedItem = {
   id: string
+  projectId: string
+  projectName: string
   author: string
   description: string
   timeAgo: string
