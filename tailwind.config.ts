@@ -28,7 +28,7 @@ export default {
       },
       backgroundImage: {
         'tw-gradient':
-          'radial-gradient(65% 65% at 50% 0%, rgb(var(--brand-color-300) / 0.3) 0%, rgb(var(--brand-color-500) / 0.18) 35%, rgb(var(--color-base-900) / 0) 75%)'
+          'radial-gradient(65% 65% at 50% 0, rgb(var(--brand-color-300) / .3) 0, rgb(var(--brand-color-500) / .18) 35%, rgb(var(--color-base-900) / 0) 75%)'
       },
       boxShadow: {
         glow: '0 0 40px 0 rgb(var(--brand-color-500) / 0.25)'
