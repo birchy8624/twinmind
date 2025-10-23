@@ -6,9 +6,9 @@ const previewImage = `${siteUrl.replace(/\/$/, '')}/twinminds-preview.jpg`
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: 'TwinMinds Studio. AI + Human Craft for Beautiful, Fast Web Apps',
+  title: 'TwinMinds — Human creativity, AI speed',
   description:
-    'Where AI speed meets human creativity. Build smarter and ship faster with TwinMinds Studio. MVPs, web apps, internal tools, and AI integrations.',
+    'TwinMinds is an AI-driven startup studio. We discover niche markets, launch focused SaaS, and iterate fast. Human creativity, AI speed.',
   icons: { icon: '/favicon.svg' },
   keywords: [
     'AI web app development',
@@ -31,9 +31,9 @@ export const metadata: Metadata = {
     'AI software development studio'
   ],
   openGraph: {
-    title: 'TwinMinds Studio — AI + Human Craft for Beautiful, Fast Web Apps',
+    title: 'TwinMinds — Human creativity, AI speed',
     description:
-      'Where AI speed meets human creativity. Build smarter and ship faster with TwinMinds Studio. MVPs, web apps, internal tools, and AI integrations.',
+      'TwinMinds is an AI-driven startup studio. We discover niche markets, launch focused SaaS, and iterate fast. Human creativity, AI speed.',
     url: siteUrl,
     siteName: 'TwinMinds Studio',
     type: 'website',
@@ -48,9 +48,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'TwinMinds Studio — AI + Human Craft for Beautiful, Fast Web Apps',
+    title: 'TwinMinds — Human creativity, AI speed',
     description:
-      'Where AI speed meets human creativity. Build smarter and ship faster with TwinMinds Studio. MVPs, web apps, internal tools, and AI integrations.',
+      'TwinMinds is an AI-driven startup studio. We discover niche markets, launch focused SaaS, and iterate fast. Human creativity, AI speed.',
     images: [previewImage]
   }
 }

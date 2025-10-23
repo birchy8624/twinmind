@@ -1,9 +1,8 @@
 import Navbar from '@/components/Navbar'
 import Hero from '@/components/Hero'
-import Services from '@/components/Services'
+import WhatWeDo from '@/components/WhatWeDo'
 import Projects from '@/components/Projects'
-import Process from '@/components/Process'
-import Pricing from '@/components/Pricing'
+import Approach from '@/components/Approach'
 import About from '@/components/About'
 import Contact from '@/components/Contact'
 import Footer from '@/components/Footer'
@@ -28,11 +27,10 @@ export default function Page({ searchParams }: PageProps){
         </div>
       ) : null}
       <Hero />
-      <Services />
-      <Projects />
-      <Process />
-      <Pricing />
       <About />
+      <WhatWeDo />
+      <Approach />
+      <Projects />
       <Contact />
       <Footer />
     </main>
