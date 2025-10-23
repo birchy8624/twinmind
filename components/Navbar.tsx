@@ -4,10 +4,10 @@ import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 
 const links = [
-  { href: '#services', label: 'Services' },
-  { href: '#portfolio', label: 'Portfolio' },
-  { href: '#pricing', label: 'Pricing' },
   { href: '#about', label: 'About' },
+  { href: '#what-we-do', label: 'What We Do' },
+  { href: '#approach', label: 'Approach' },
+  { href: '#projects', label: 'Projects' },
   { href: '#contact', label: 'Contact' },
 ]
 
@@ -38,10 +38,7 @@ export default function Navbar(){
           {links.map(l => (
             <a key={l.href} href={l.href} className="text-sm text-white/80 hover:text-white transition-colors">{l.label}</a>
           ))}
-          <Link href="/sign_in" className="text-sm text-white/80 hover:text-white transition-colors">
-            Sign in
-          </Link>
-          <a href="#contact" className="btn btn-primary text-sm">Start your project</a>
+          <a href="#contact" className="btn btn-primary text-sm">Work With Us</a>
         </div>
         <button
           className="md:hidden rounded-xl p-2 ring-1 ring-white/10"
@@ -59,14 +56,7 @@ export default function Navbar(){
             {links.map(l => (
               <a key={l.href} href={l.href} onClick={()=>setOpen(false)} className="text-sm text-white/80 hover:text-white transition-colors">{l.label}</a>
             ))}
-            <Link
-              href="/sign_in"
-              onClick={()=>setOpen(false)}
-              className="text-sm text-white/80 hover:text-white transition-colors"
-            >
-              Sign in
-            </Link>
-            <a href="#contact" className="btn btn-primary w-full text-sm sm:w-auto">Start your project</a>
+            <a href="#contact" className="btn btn-primary w-full text-sm sm:w-auto">Work With Us</a>
           </div>
         </div>
       )}
